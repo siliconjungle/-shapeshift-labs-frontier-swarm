@@ -4,11 +4,18 @@ import {
   checkSwarmOwnership,
   completeSwarmJob,
   compileSwarm,
+  checkSwarmBudget,
+  createSwarmArtifactIndex,
+  createSwarmLeases,
   createSwarmManifest,
+  createSwarmMergePlan,
   createSwarmPlan,
   createSwarmProof,
+  createSwarmReviewPlan,
   createSwarmRun,
+  createSwarmSchedule,
   decodeSwarmJsonl,
+  decomposeSwarmFeature,
   defineSwarmManifest,
   defineSwarmTasks,
   encodeSwarmJsonl,
@@ -97,6 +104,12 @@ assert.strictEqual(plan.summary.jobCount, 1);
 const allPlan = createSwarmPlan(manifest, tasks, { includeCompleted: true });
 assert.strictEqual(allPlan.jobs.length, 3);
 assert.strictEqual(createSwarmPlan(manifest, tasks).jobs.length, 2);
+assert.deepStrictEqual(createSwarmPlan(manifest, [{
+  id: 'child-task',
+  lane: 'runtime',
+  dependsOn: ['missing-parent'],
+  targetRefs: ['inkwell/apps/web/src/runtime/child.ts']
+}]).validation.issues.map((issue) => issue.code), ['missing-job-dependency', 'missing-task-dependency']);
 
 assert.strictEqual(matchesGlob('inkwell/apps/web/src/runtime/runtime.ts', 'inkwell/apps/web/src/runtime/**'), true);
 const ownership = checkSwarmOwnership(plan.jobs[0], [
@@ -131,3 +144,87 @@ const invalid = validateSwarmManifest({
   policy: { defaultCompute: 'known' }
 });
 assert.strictEqual(invalid.valid, false);
+
+const scaleTasks = defineSwarmTasks(Array.from({ length: 1000 }, (_, index) => ({
+  id: `scale-${index}`,
+  lane: index % 2 === 0 ? 'runtime' : 'harness',
+  dependsOn: index % 10 === 0 ? [] : [`scale-${index - 1}`],
+  targetRefs: [index % 2 === 0 ? `inkwell/apps/web/src/runtime/${index}.ts` : `inkwell/e2e-${index}.mjs`],
+  concurrencyKey: `surface-${index % 25}`,
+  budget: { maxInputTokens: 2000, maxOutputTokens: 1000, maxDurationMs: 60000, maxRetries: 1 },
+  review: { sampleRate: 0.05, requiredReviewers: 1, reviewerPool: ['reviewer-a', 'reviewer-b'] }
+})));
+const scalePlan = createSwarmPlan(manifest, scaleTasks, {
+  includeCompleted: true,
+  maxReadyJobs: 40,
+  maxLaneConcurrency: { runtime: 100, harness: 100 },
+  maxConcurrencyKeyConcurrency: Object.fromEntries(Array.from({ length: 25 }, (_, index) => [`surface-${index}`, 10])),
+  maxComputeConcurrency: { deep: 50, fast: 50 }
+});
+assert.strictEqual(scalePlan.jobs.length, 1000);
+assert.strictEqual(scalePlan.graph.roots.length, 100);
+assert.strictEqual(scalePlan.graph.edges.length, 900);
+assert.strictEqual(scalePlan.validation.valid, true);
+
+const scaleSchedule = createSwarmSchedule(scalePlan);
+assert.strictEqual(scaleSchedule.ready.length, 40);
+assert.ok(scaleSchedule.blocked.length > 0);
+const leases = createSwarmLeases({ schedule: scaleSchedule, workerId: 'worker-1', now: 1000, leaseMs: 5000, count: 5 });
+assert.strictEqual(leases.length, 5);
+assert.strictEqual(leases[0].expiresAt, 6000);
+assert.strictEqual(new Set(leases.map((lease) => lease.fencingToken)).size, 5);
+
+const firstScaleJob = scalePlan.jobs[0];
+const budgetDecision = checkSwarmBudget(firstScaleJob, { inputTokens: 2500, outputTokens: 10, durationMs: 20, attempts: 1 });
+assert.strictEqual(budgetDecision.ok, false);
+assert.deepStrictEqual(budgetDecision.violations, ['max-input-tokens']);
+
+let scaleRun = createSwarmRun({ plan: scalePlan, startedAt: 2000 });
+scaleRun = completeSwarmJob(scaleRun, {
+  jobId: firstScaleJob.id,
+  status: 'completed',
+  changedPaths: [firstScaleJob.task.targetRefs[0]],
+  evidencePaths: ['agent-runs/scale/evidence.json']
+});
+const artifactIndex = createSwarmArtifactIndex({
+  run: scaleRun,
+  artifacts: [{ jobId: firstScaleJob.id, path: 'agent-runs/scale/timeline.jsonl', kind: 'timeline', bytes: 128 }],
+  generatedAt: 3000
+});
+assert.strictEqual(artifactIndex.summary.artifactCount, 2);
+assert.strictEqual(artifactIndex.byKind.evidence.length, 1);
+
+const reviewPlan = createSwarmReviewPlan({
+  plan: scalePlan,
+  run: scaleRun,
+  budgetDecisions: [budgetDecision],
+  reviewers: ['fallback-reviewer'],
+  generatedAt: 4000,
+  sampleSalt: 'stable'
+});
+assert.ok(reviewPlan.assignments.some((assignment) => assignment.jobId === firstScaleJob.id && assignment.reason === 'budget'));
+
+let conflictRun = createSwarmRun({ plan: scalePlan, startedAt: 5000 });
+conflictRun = completeSwarmJob(conflictRun, {
+  jobId: scalePlan.jobs[0].id,
+  status: 'completed',
+  changedPaths: ['shared/file.ts']
+});
+conflictRun = completeSwarmJob(conflictRun, {
+  jobId: scalePlan.jobs[10].id,
+  status: 'completed',
+  changedPaths: ['shared/file.ts']
+});
+const mergePlan = createSwarmMergePlan({ plan: scalePlan, run: conflictRun, generatedAt: 6000 });
+assert.ok(mergePlan.blocked.some((blocker) => blocker.reasons.includes('conflicting-changes')));
+
+const decomposed = decomposeSwarmFeature({
+  featureId: 'feature-x',
+  objective: 'Implement feature x',
+  lanes: ['runtime', 'harness'],
+  files: ['src/runtime/action.ts', 'test/harness.mjs'],
+  reviewers: ['reviewer-a'],
+  checks: [{ command: 'npm', args: ['test'] }]
+});
+assert.strictEqual(decomposed.length, 2);
+assert.ok(decomposed[0].verification?.length);

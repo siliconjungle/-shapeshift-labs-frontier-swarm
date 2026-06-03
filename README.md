@@ -203,6 +203,46 @@ const tasks = defineSwarmTasks([{
 const plan = createSwarmPlan(manifest, tasks, { limit: 4 });
 ```
 
+## 1000-Agent Control Plane
+
+Large swarms need a control plane, not just a flat worker loop. `frontier-swarm` now exports deterministic data helpers for that layer:
+
+```ts
+import {
+  checkSwarmBudget,
+  createSwarmArtifactIndex,
+  createSwarmLeases,
+  createSwarmMergePlan,
+  createSwarmReviewPlan,
+  createSwarmSchedule
+} from '@shapeshift-labs/frontier-swarm';
+
+const schedule = createSwarmSchedule({
+  plan,
+  maxReadyJobs: 100,
+  maxConcurrencyKeyConcurrency: { 'runtime-state': 1 },
+  maxComputeConcurrency: { deep: 40 }
+});
+
+const leases = createSwarmLeases({
+  schedule,
+  workerId: 'worker-a',
+  leaseMs: 15 * 60 * 1000,
+  count: 10
+});
+```
+
+The scale APIs are runtime-neutral and serializable:
+
+- dependency DAGs are compiled into `plan.graph`,
+- `createSwarmSchedule` returns ready, blocked, running, completed, and failed jobs under lane/compute/contention limits,
+- `createSwarmLeases` gives workers expiring leases with fencing tokens,
+- `checkSwarmBudget` records token/cost/time/retry budget decisions,
+- `createSwarmArtifactIndex` groups evidence, timelines, logs, and produced files,
+- `createSwarmReviewPlan` samples or requires reviewer assignments,
+- `createSwarmMergePlan` blocks jobs with failed checks, required reviews, ownership violations, or conflicting changed paths,
+- `decomposeSwarmFeature` creates an initial task queue for feature work across lanes.
+
 ## Hierarchical Compute
 
 Higher swarm layers can choose compute for lower layers without binding the core package to Codex or any other runtime. Compute resolution is deterministic:
@@ -221,6 +261,11 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `defineSwarmTasks`
 - `compileSwarm`, `validateSwarmManifest`
 - `createSwarmPlan`, `createSwarmRun`
+- `createSwarmSchedule`, `createSwarmLeases`
+- `checkSwarmBudget`
+- `createSwarmArtifactIndex`
+- `createSwarmReviewPlan`, `createSwarmMergePlan`
+- `decomposeSwarmFeature`
 - `recordSwarmEvent`, `completeSwarmJob`
 - `resolveSwarmCompute`
 - `checkSwarmOwnership`, `matchesGlob`
