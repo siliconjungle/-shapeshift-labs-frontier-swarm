@@ -36,7 +36,7 @@ The published Frontier package family is generated from one shared package catal
 - [`@shapeshift-labs/frontier-workflow`](https://www.npmjs.com/package/@shapeshift-labs/frontier-workflow): Serializable durable workflow/process manifests for Frontier apps, including steps, waits, approvals, timers, retries, expected patches, compensation, records, timelines, and registry graph output.
 - [`@shapeshift-labs/frontier-worker`](https://www.npmjs.com/package/@shapeshift-labs/frontier-worker): Serializable worker and edge task descriptors for Frontier apps, including queues, idempotency keys, retry and timeout policy, declared reads/writes/effects, snapshots, patch outputs, produced assets, execution records, logs, trace links, proof hashes, dedupe indexes, and registry graph output.
 - [`@shapeshift-labs/frontier-queue`](https://www.npmjs.com/package/@shapeshift-labs/frontier-queue): Serializable durable queue state, leases, retries, dedupe keys, patch-carrying jobs, dead-letter records, replay evidence, and queue inspection for Frontier apps.
-- [`@shapeshift-labs/frontier-swarm-codex`](https://www.npmjs.com/package/@shapeshift-labs/frontier-swarm-codex): Node Codex CLI adapter for Frontier swarm plans, including prompt rendering, worktree and snapshot workspaces, Codex argument construction, JSONL capture, verification commands, and result artifacts.
+- [`@shapeshift-labs/frontier-swarm-codex`](https://www.npmjs.com/package/@shapeshift-labs/frontier-swarm-codex): Node Codex CLI adapter for Frontier swarm plans, including prompt rendering, worktree and snapshot workspaces, Codex argument compatibility, JSONL capture, verification commands, pid-backed stop, collect buckets, merge bundles, and result artifacts.
 - [`@shapeshift-labs/frontier-kv`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv): Serializable in-memory key/value state for Frontier apps, including TTL, versioned compare-and-set, batched patch mutations, scans, watchers, snapshots, JSONL event evidence, and replay verification.
 - [`@shapeshift-labs/frontier-kv-locks`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv-locks): Lease-style lock records on top of Frontier KV, including acquire, renew, release, fencing tokens, expiration, owner evidence, and replayable lock events.
 - [`@shapeshift-labs/frontier-kv-rate-limit`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv-rate-limit): Patch-native rate limit buckets for Frontier KV, including fixed windows, sliding windows, token buckets, deterministic refill, consume evidence, and reset records.
@@ -211,10 +211,13 @@ Large swarms need a control plane, not just a flat worker loop. `frontier-swarm`
 import {
   checkSwarmBudget,
   createSwarmArtifactIndex,
+  createSwarmEventStream,
   createSwarmLeases,
   createSwarmMergePlan,
+  createSwarmQueueSnapshot,
   createSwarmReviewPlan,
-  createSwarmSchedule
+  createSwarmSchedule,
+  routeSwarmEventToMailboxes
 } from '@shapeshift-labs/frontier-swarm';
 
 const schedule = createSwarmSchedule({
@@ -237,10 +240,16 @@ The scale APIs are runtime-neutral and serializable:
 - dependency DAGs are compiled into `plan.graph`,
 - `createSwarmSchedule` returns ready, blocked, running, completed, and failed jobs under lane/compute/contention limits,
 - `createSwarmLeases` gives workers expiring leases with fencing tokens,
+- lane/task `capabilities` and `resourceRequirements` can reserve browser work with lower concurrency, port pools, profile directories, and explicit capability checks,
+- `createSwarmQueueSnapshot` and run checkpoints give durable queue/run-store adapters a stable serialization shape,
+- `createSwarmEventStream` and `routeSwarmEventToMailboxes` route global, lane, task, and worker events into coordinator-facing JSONL streams,
 - `checkSwarmBudget` records token/cost/time/retry budget decisions,
 - `createSwarmArtifactIndex` groups evidence, timelines, logs, and produced files,
 - `createSwarmReviewPlan` samples or requires reviewer assignments,
 - `createSwarmMergePlan` blocks jobs with failed checks, required reviews, ownership violations, or conflicting changed paths,
+- job results include merge-readiness classification: `discovery-only`, `patch-candidate`, `verified-patch`, `rejected`, or `blocked`,
+- `ownershipRegions` allow hot files to be split into semantic regions such as `content.docs.*` or `adminSettings.quota.*`; merge conflict detection prefers changed regions when workers report them,
+- `createSwarmMergeBundle` builds a compact worker `merge.json` shape with touched owned files, patch path, evidence, verification, queue items satisfied, risk, and disposition,
 - `decomposeSwarmFeature` creates an initial task queue for feature work across lanes.
 
 ## Hierarchical Compute
@@ -260,11 +269,17 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `defineSwarmManifest`, `createSwarmManifest`
 - `defineSwarmTasks`
 - `compileSwarm`, `validateSwarmManifest`
+- `createSwarmTaskSelection`
 - `createSwarmPlan`, `createSwarmRun`
 - `createSwarmSchedule`, `createSwarmLeases`
+- `createSwarmQueueSnapshot`, `createSwarmRunCheckpoint`
+- `createSwarmEventStream`, `createSwarmMailbox`, `routeSwarmEventToMailboxes`
 - `checkSwarmBudget`
 - `createSwarmArtifactIndex`
 - `createSwarmReviewPlan`, `createSwarmMergePlan`
+- `createSwarmMergeBundle`
+- `classifySwarmMergeReadiness`, `classifySwarmMergeDisposition`
+- `resolveSwarmChangedRegions`
 - `decomposeSwarmFeature`
 - `recordSwarmEvent`, `completeSwarmJob`
 - `resolveSwarmCompute`
@@ -280,7 +295,7 @@ Run the package-local benchmark:
 npm run bench
 ```
 
-The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, run creation, JSONL, and proof hashing.
+The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, queue snapshots, merge bundle creation, event routing, run checkpoints, JSONL, and proof hashing.
 
 ## Source Repository
 
