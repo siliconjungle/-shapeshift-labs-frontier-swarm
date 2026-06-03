@@ -4,12 +4,20 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import {
   checkSwarmOwnership,
+  createSwarmContextPack,
+  createSwarmHotspotReport,
+  createSwarmLanePlaybook,
+  createSwarmMergeAdmission,
   createSwarmManifest,
   createSwarmEventStream,
   createSwarmLeases,
   createSwarmMergeBundle,
+  createSwarmMergeIndex,
+  createSwarmOracleCorpus,
+  createSwarmPatchStackPlan,
   createSwarmPlan,
   createSwarmProof,
+  createSwarmQueueOverlay,
   createSwarmQueueSnapshot,
   createSwarmRun,
   createSwarmRunCheckpoint,
@@ -41,6 +49,8 @@ let cursor = 0;
 let schedule = createSwarmSchedule({ plan, maxReadyJobs: 128 });
 let leases = createSwarmLeases({ schedule, workerId: 'bench-worker', now: 1000, leaseMs: 60000, count: 16 });
 let eventStream = createSwarmEventStream({ runId: 'bench', root: 'agent-runs/bench/streams', lanes: manifest.lanes });
+let bundles = makeBundles(plan, 32);
+let mergeIndex = createSwarmMergeIndex({ bundles });
 
 const rows = [
   measure('create-plan-' + taskCount, 8, () => {
@@ -80,6 +90,45 @@ const rows = [
     },
     patchPath: 'agent-runs/bench/changes.patch'
   }).id.length),
+  measure('queue-overlay-' + taskCount, 16, () => createSwarmQueueOverlay({ bundles, generatedAt: 3000 + cursor++ }).summary.entryCount),
+  measure('merge-index-' + taskCount, 8, () => {
+    bundles = makeBundles(plan, 32);
+    mergeIndex = createSwarmMergeIndex({ bundles, generatedAt: 4000 + cursor++ });
+    return mergeIndex.summary.entryCount + mergeIndex.summary.conflictCount;
+  }),
+  measure('merge-admission-' + taskCount, 16, () => createSwarmMergeAdmission({ index: mergeIndex, maxReady: 8, maxChangedPaths: 16 }).summary.admittedCount),
+  measure('hotspot-report-' + taskCount, 16, () => createSwarmHotspotReport({ bundles, threshold: 3 }).summary.recommendationCount),
+  measure('context-pack-' + taskCount, 32, () => createSwarmContextPack({
+    job: plan.jobs[cursor % plan.jobs.length],
+    files: ['src/runtime/file.ts', 'test/runtime-smoke.mjs'],
+    apiMap: {
+      runtime: ['createRuntime', 'stepRuntime'],
+      tests: ['runtime smoke gate']
+    },
+    knownFailures: ['shared renderer gate is noisy on old snapshots'],
+    oracleCommands: [{ name: 'focused-gate', command: 'npm', args: ['test'], required: true }],
+    evidenceSchema: { type: 'object', required: ['ok', 'commands'] },
+    avoidInvestigating: ['unrelated route snapshots'],
+    playbookIds: ['runtime-playbook']
+  }).files.length),
+  measure('oracle-corpus-' + taskCount, 32, () => createSwarmOracleCorpus({
+    artifacts: [
+      { id: 'trace-runtime', path: 'oracles/runtime-trace.jsonl', kind: 'trace', tags: ['runtime', 'reference'], hash: 'fnv1a32:trace' },
+      { id: 'snapshot-routing', path: 'oracles/routing-snapshot.json', kind: 'snapshot', tags: ['routing', 'reference'] }
+    ]
+  }).summary.artifactCount),
+  measure('lane-playbook-' + taskCount, 16, () => createSwarmLanePlaybook({
+    lane: 'runtime',
+    successfulBundles: bundles,
+    notes: ['prefer narrow patches with focused evidence'],
+    commands: [{ name: 'runtime-smoke', command: 'npm', args: ['test'], required: true }],
+    avoidInvestigating: ['generated fixtures unless task owns them'],
+    evidencePatterns: ['evidence.json', 'commands.md']
+  }).successfulJobIds.length),
+  measure('patch-stack-plan-' + taskCount, 16, () => createSwarmPatchStackPlan({
+    index: mergeIndex,
+    maxStackSize: 8
+  }).summary.stackCount),
   measure('event-route-' + taskCount, 64, () => {
     eventStream = createSwarmEventStream({ runId: 'bench', root: 'agent-runs/bench/streams', lanes: manifest.lanes });
     return routeSwarmEventToMailboxes(eventStream, { type: 'agent.evidence', jobId: plan.jobs[cursor++ % plan.jobs.length].id, lane: 'runtime' }).length;
@@ -144,6 +193,25 @@ function makeTasks(count) {
     });
   }
   return tasks;
+}
+
+function makeBundles(plan, count) {
+  const bundles = [];
+  for (let i = 0; i < Math.min(count, plan.jobs.length); i += 1) {
+    const job = plan.jobs[i];
+    bundles.push(createSwarmMergeBundle({
+      job,
+      result: {
+        jobId: job.id,
+        status: 'verified',
+        changedPaths: [job.task.targetRefs[0] ?? `src/runtime/file-${i}.ts`],
+        changedRegions: i % 2 === 0 ? [`region.${i}`] : [],
+        verification: [{ status: 0 }]
+      },
+      patchPath: `agent-runs/bench/${job.id}/changes.patch`
+    }));
+  }
+  return bundles;
 }
 
 function measure(fixture, operationsPerRound, fn) {
