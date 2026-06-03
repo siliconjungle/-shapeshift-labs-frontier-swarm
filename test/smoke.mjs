@@ -2,18 +2,25 @@ import assert from 'node:assert';
 import {
   FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID,
   checkSwarmOwnership,
+  classifySwarmMergeDisposition,
+  classifySwarmMergeReadiness,
   completeSwarmJob,
   compileSwarm,
   checkSwarmBudget,
   createSwarmArtifactIndex,
+  createSwarmEventStream,
   createSwarmLeases,
   createSwarmManifest,
+  createSwarmMergeBundle,
   createSwarmMergePlan,
   createSwarmPlan,
   createSwarmProof,
+  createSwarmQueueSnapshot,
   createSwarmReviewPlan,
+  createSwarmRunCheckpoint,
   createSwarmRun,
   createSwarmSchedule,
+  createSwarmTaskSelection,
   decodeSwarmJsonl,
   decomposeSwarmFeature,
   defineSwarmManifest,
@@ -21,7 +28,10 @@ import {
   encodeSwarmJsonl,
   matchesGlob,
   recordSwarmEvent,
+  renewSwarmLease,
+  resolveSwarmChangedRegions,
   resolveSwarmCompute,
+  routeSwarmEventToMailboxes,
   validateSwarmManifest
 } from '../dist/index.js';
 
@@ -43,6 +53,13 @@ const manifest = defineSwarmManifest({
       layer: 'implementation',
       allowedWrites: ['inkwell/apps/web/src/runtime/**'],
       sharedReadOnly: ['inkwell/features/**'],
+      ownershipRegions: [
+        {
+          id: 'content.docs',
+          globs: ['inkwell/apps/web/src/runtime/runtime-website-content.ts'],
+          selectors: ['content.docs.*']
+        }
+      ],
       evidencePrefix: 'inkwell/.frontier/evidence/runtime/',
       worktreePath: '../json-diff-inkwell-runtime',
       handoffCommands: [{ name: 'lint', command: 'npm', args: ['run', 'inkwell:lint'] }]
@@ -51,7 +68,17 @@ const manifest = defineSwarmManifest({
       id: 'harness',
       layer: 'evidence',
       allowedWrites: ['inkwell/e2e.mjs'],
-      evidencePrefix: 'inkwell/.frontier/evidence/harness/'
+      evidencePrefix: 'inkwell/.frontier/evidence/harness/',
+      capabilities: ['browser.playwright'],
+      resourceRequirements: {
+        resources: { browser: 1 },
+        browser: {
+          required: true,
+          portPool: [4177, 4178],
+          profileDirPrefix: 'agent-runs/browser-profiles/',
+          maxConcurrency: 1
+        }
+      }
     }
   ],
   policy: {
@@ -74,6 +101,14 @@ const tasks = defineSwarmTasks([
     objective: 'Port runtime action behavior.',
     targetRefs: ['inkwell/apps/web/src/runtime/runtime.ts'],
     sourceRefs: ['/legacy/runtime.js'],
+    ownershipRegions: [
+      {
+        id: 'runtime.actions',
+        globs: ['inkwell/apps/web/src/runtime/runtime.ts'],
+        selectors: ['runtime.actions.*']
+      }
+    ],
+    changedRegions: ['runtime.actions'],
     acceptanceChecks: [{ description: 'runtime action evidence passes' }],
     verification: [{ command: 'node', args: ['inkwell/parity-shards.mjs', '--selector', 'runtime'] }]
   },
@@ -99,7 +134,56 @@ assert.strictEqual(plan.jobs.length, 1);
 assert.strictEqual(plan.jobs[0].compute.id, 'deep');
 assert.strictEqual(plan.jobs[0].verification[0].command, 'node');
 assert.ok(plan.jobs[0].allowedWrites.includes('inkwell/.frontier/evidence/runtime/runtime-action-parity/**'));
+assert.ok(plan.jobs[0].ownedRegions.includes('runtime.actions'));
+assert.deepStrictEqual(resolveSwarmChangedRegions(plan.jobs[0], ['inkwell/apps/web/src/runtime/runtime.ts']), ['runtime.actions']);
 assert.strictEqual(plan.summary.jobCount, 1);
+
+const selection = createSwarmTaskSelection(manifest, tasks, {
+  workKinds: ['agent-task'],
+  selectors: ['runtime'],
+  limit: 2,
+  assignSelectionPriority: true,
+  priority: { statuses: { open: 0 }, workKinds: { 'agent-task': 0 } }
+});
+assert.strictEqual(selection.entries.length, 1);
+assert.strictEqual(selection.tasks[0].priority, 0);
+assert.deepStrictEqual(selection.summary.byLane, { runtime: 1 });
+
+const warningSelection = createSwarmTaskSelection(manifest, [{
+  id: 'off-lane',
+  lane: 'runtime',
+  targetRefs: ['inkwell/apps/web/src/components/off-lane.tsx']
+}], { includeOwnershipWarnings: true });
+assert.strictEqual(warningSelection.entries.length, 1);
+assert.strictEqual(warningSelection.summary.ownershipWarningCount, 1);
+assert.strictEqual(createSwarmTaskSelection(manifest, warningSelection.tasks).entries.length, 0);
+
+const spreadSelection = createSwarmTaskSelection(manifest, [
+  { id: 'runtime-a', lane: 'runtime', targetRefs: ['inkwell/apps/web/src/runtime/a.ts'] },
+  { id: 'runtime-b', lane: 'runtime', targetRefs: ['inkwell/apps/web/src/runtime/b.ts'] },
+  { id: 'harness-a', lane: 'harness', targetRefs: ['inkwell/e2e.mjs'] },
+  { id: 'harness-b', lane: 'harness', targetRefs: ['inkwell/e2e.mjs'] }
+], { spreadLanes: true, limit: 4 });
+assert.deepStrictEqual(spreadSelection.entries.map((entry) => entry.task.id), ['harness-a', 'runtime-a', 'harness-b', 'runtime-b']);
+
+const stream = createSwarmEventStream({ runId: 'run-1', root: 'agent-runs/run-1/streams', lanes: manifest.lanes });
+assert.strictEqual(stream.summary.mailboxCount, 3);
+assert.strictEqual(stream.lanes.runtime.path, 'agent-runs/run-1/streams/lanes/runtime.jsonl');
+assert.deepStrictEqual(
+  routeSwarmEventToMailboxes(stream, { type: 'agent.evidence', lane: 'runtime' }).map((mailbox) => mailbox.scope),
+  ['global', 'lane']
+);
+
+const browserPlan = createSwarmPlan(manifest, [{
+  id: 'browser-smoke',
+  lane: 'harness',
+  targetRefs: ['inkwell/e2e.mjs'],
+  capabilities: ['dom.assertions']
+}], { includeCompleted: true });
+assert.strictEqual(browserPlan.limits.maxLaneConcurrency.harness, 1);
+assert.ok(browserPlan.jobs[0].capabilities.includes('browser.playwright'));
+assert.ok(browserPlan.jobs[0].capabilities.includes('dom.assertions'));
+assert.deepStrictEqual(browserPlan.jobs[0].resourceRequirements.browser.portPool, ['4177', '4178']);
 
 const allPlan = createSwarmPlan(manifest, tasks, { includeCompleted: true });
 assert.strictEqual(allPlan.jobs.length, 3);
@@ -173,6 +257,7 @@ const leases = createSwarmLeases({ schedule: scaleSchedule, workerId: 'worker-1'
 assert.strictEqual(leases.length, 5);
 assert.strictEqual(leases[0].expiresAt, 6000);
 assert.strictEqual(new Set(leases.map((lease) => lease.fencingToken)).size, 5);
+assert.strictEqual(renewSwarmLease({ lease: leases[0], now: 7000, leaseMs: 5000 }).expiresAt, 12000);
 
 const firstScaleJob = scalePlan.jobs[0];
 const budgetDecision = checkSwarmBudget(firstScaleJob, { inputTokens: 2500, outputTokens: 10, durationMs: 20, attempts: 1 });
@@ -186,6 +271,29 @@ scaleRun = completeSwarmJob(scaleRun, {
   changedPaths: [firstScaleJob.task.targetRefs[0]],
   evidencePaths: ['agent-runs/scale/evidence.json']
 });
+assert.strictEqual(scaleRun.results[0].mergeReadiness, 'patch-candidate');
+assert.strictEqual(classifySwarmMergeReadiness({ jobId: 'discovery', status: 'completed', changedPaths: [] }), 'discovery-only');
+assert.strictEqual(classifySwarmMergeDisposition({ jobId: 'verified', status: 'verified', changedPaths: ['src/runtime/a.ts'], verification: [{ status: 0 }] }), 'auto-mergeable');
+const mergeBundle = createSwarmMergeBundle({
+  runId: scaleRun.id,
+  planId: scalePlan.id,
+  job: firstScaleJob,
+  result: scaleRun.results[0],
+  patchPath: 'agent-runs/scale/changes.patch',
+  queueItemIds: [firstScaleJob.taskId],
+  riskLevel: 'low'
+});
+assert.strictEqual(mergeBundle.disposition, 'needs-port');
+assert.strictEqual(mergeBundle.patchPath, 'agent-runs/scale/changes.patch');
+assert.deepStrictEqual(mergeBundle.queueItemIds, [firstScaleJob.taskId]);
+const queueSnapshot = createSwarmQueueSnapshot({ plan: scalePlan, run: scaleRun, leases, generatedAt: 8000 });
+assert.strictEqual(queueSnapshot.summary.jobCount, 1000);
+assert.strictEqual(queueSnapshot.summary.leaseCount, 5);
+assert.strictEqual(queueSnapshot.summary.leasedCount, 4);
+assert.strictEqual(queueSnapshot.summary.completedCount, 1);
+const checkpoint = createSwarmRunCheckpoint({ run: scaleRun, sequence: 1, savedAt: 9000 });
+assert.strictEqual(checkpoint.runId, scaleRun.id);
+assert.strictEqual(checkpoint.resultCount, 1);
 const artifactIndex = createSwarmArtifactIndex({
   run: scaleRun,
   artifacts: [{ jobId: firstScaleJob.id, path: 'agent-runs/scale/timeline.jsonl', kind: 'timeline', bytes: 128 }],

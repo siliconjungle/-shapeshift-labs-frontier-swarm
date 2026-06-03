@@ -10,18 +10,28 @@ export const FRONTIER_SWARM_RUN_KIND = 'frontier.swarm.run';
 export const FRONTIER_SWARM_RUN_VERSION = 1;
 export const FRONTIER_SWARM_EVENT_KIND = 'frontier.swarm.event';
 export const FRONTIER_SWARM_EVENT_VERSION = 1;
+export const FRONTIER_SWARM_EVENT_STREAM_KIND = 'frontier.swarm.event-stream';
+export const FRONTIER_SWARM_EVENT_STREAM_VERSION = 1;
+export const FRONTIER_SWARM_MAILBOX_KIND = 'frontier.swarm.mailbox';
+export const FRONTIER_SWARM_MAILBOX_VERSION = 1;
 export const FRONTIER_SWARM_PROOF_KIND = 'frontier.swarm.proof';
 export const FRONTIER_SWARM_PROOF_VERSION = 1;
 export const FRONTIER_SWARM_SCHEDULE_KIND = 'frontier.swarm.schedule';
 export const FRONTIER_SWARM_SCHEDULE_VERSION = 1;
 export const FRONTIER_SWARM_LEASE_KIND = 'frontier.swarm.lease';
 export const FRONTIER_SWARM_LEASE_VERSION = 1;
+export const FRONTIER_SWARM_QUEUE_SNAPSHOT_KIND = 'frontier.swarm.queue-snapshot';
+export const FRONTIER_SWARM_QUEUE_SNAPSHOT_VERSION = 1;
+export const FRONTIER_SWARM_RUN_CHECKPOINT_KIND = 'frontier.swarm.run-checkpoint';
+export const FRONTIER_SWARM_RUN_CHECKPOINT_VERSION = 1;
 export const FRONTIER_SWARM_ARTIFACT_INDEX_KIND = 'frontier.swarm.artifact-index';
 export const FRONTIER_SWARM_ARTIFACT_INDEX_VERSION = 1;
 export const FRONTIER_SWARM_REVIEW_PLAN_KIND = 'frontier.swarm.review-plan';
 export const FRONTIER_SWARM_REVIEW_PLAN_VERSION = 1;
 export const FRONTIER_SWARM_MERGE_PLAN_KIND = 'frontier.swarm.merge-plan';
 export const FRONTIER_SWARM_MERGE_PLAN_VERSION = 1;
+export const FRONTIER_SWARM_MERGE_BUNDLE_KIND = 'frontier.swarm.merge-bundle';
+export const FRONTIER_SWARM_MERGE_BUNDLE_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
@@ -48,6 +58,22 @@ export type FrontierSwarmJobStatus =
   | 'completed'
   | 'verified'
   | string;
+export type FrontierSwarmMergeReadiness =
+  | 'discovery-only'
+  | 'patch-candidate'
+  | 'verified-patch'
+  | 'rejected'
+  | 'blocked'
+  | string;
+export type FrontierSwarmMergeDisposition =
+  | 'auto-mergeable'
+  | 'needs-port'
+  | 'discovery-only'
+  | 'rejected'
+  | 'blocked'
+  | 'stale-against-head'
+  | string;
+export type FrontierSwarmRiskLevel = 'low' | 'medium' | 'high' | 'unknown' | string;
 
 export interface FrontierSwarmComputeInput {
   id: string;
@@ -103,6 +129,27 @@ export interface FrontierSwarmLayer {
   metadata?: JsonObject;
 }
 
+export interface FrontierSwarmOwnershipRegionInput {
+  id: string;
+  title?: string;
+  description?: string;
+  globs?: readonly string[];
+  paths?: readonly string[];
+  selectors?: readonly string[];
+  owner?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmOwnershipRegion {
+  id: string;
+  title: string;
+  description?: string;
+  globs: string[];
+  selectors: string[];
+  owner?: string;
+  metadata?: JsonObject;
+}
+
 export interface FrontierSwarmLaneInput {
   id: string;
   title?: string;
@@ -113,6 +160,9 @@ export interface FrontierSwarmLaneInput {
   allowedGlobs?: readonly string[];
   sharedReadOnly?: readonly string[];
   neverEdit?: readonly string[];
+  ownershipRegions?: readonly FrontierSwarmOwnershipRegionInput[];
+  capabilities?: readonly string[];
+  resourceRequirements?: FrontierSwarmResourceRequirementsInput;
   worktreePath?: string;
   evidencePrefix?: string;
   evidenceOutDirPrefix?: string;
@@ -132,6 +182,9 @@ export interface FrontierSwarmLane {
   allowedWrites: string[];
   sharedReadOnly: string[];
   neverEdit: string[];
+  ownershipRegions: FrontierSwarmOwnershipRegion[];
+  capabilities: string[];
+  resourceRequirements?: FrontierSwarmResourceRequirements;
   worktreePath?: string;
   evidencePrefix?: string;
   concurrencyKey: string;
@@ -156,6 +209,40 @@ export interface FrontierSwarmCommand {
   args: string[];
   required: boolean;
   cwd?: string;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmBrowserResourceInput {
+  required?: boolean;
+  portPool?: readonly (string | number)[];
+  profileDir?: string;
+  profileDirPrefix?: string;
+  maxConcurrency?: number;
+  headless?: boolean;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmBrowserResource {
+  required: boolean;
+  portPool: string[];
+  profileDir?: string;
+  profileDirPrefix?: string;
+  maxConcurrency?: number;
+  headless?: boolean;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmResourceRequirementsInput {
+  capabilities?: readonly string[];
+  resources?: Record<string, number>;
+  browser?: FrontierSwarmBrowserResourceInput;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmResourceRequirements {
+  capabilities: string[];
+  resources: Record<string, number>;
+  browser?: FrontierSwarmBrowserResource;
   metadata?: JsonObject;
 }
 
@@ -250,6 +337,11 @@ export interface FrontierSwarmTaskInput {
   targetRefs?: readonly string[];
   ownedFiles?: readonly string[];
   allowedWrites?: readonly string[];
+  ownershipRegions?: readonly FrontierSwarmOwnershipRegionInput[];
+  ownedRegions?: readonly string[];
+  changedRegions?: readonly string[];
+  capabilities?: readonly string[];
+  resourceRequirements?: FrontierSwarmResourceRequirementsInput;
   acceptance?: readonly string[];
   acceptanceChecks?: readonly ({ id?: string; description?: string } | string)[];
   verification?: readonly (string | FrontierSwarmCommandInput)[];
@@ -280,6 +372,11 @@ export interface FrontierSwarmTask {
   sourceRefs: string[];
   targetRefs: string[];
   allowedWrites: string[];
+  ownershipRegions: FrontierSwarmOwnershipRegion[];
+  ownedRegions: string[];
+  changedRegions: string[];
+  capabilities: string[];
+  resourceRequirements?: FrontierSwarmResourceRequirements;
   acceptance: string[];
   verification: FrontierSwarmCommand[];
   evidenceCommand?: string;
@@ -321,6 +418,43 @@ export interface FrontierSwarmPlanFilter {
   includeCompleted?: boolean;
   limit?: number;
   compute?: string;
+}
+
+export interface FrontierSwarmSelectionPriorityInput {
+  statuses?: Record<string, number>;
+  workKinds?: Record<string, number>;
+  defaultStatusRank?: number;
+  defaultWorkKindRank?: number;
+  statusWeight?: number;
+  workKindWeight?: number;
+}
+
+export interface FrontierSwarmTaskSelectionInput extends FrontierSwarmPlanFilter {
+  workKinds?: readonly string[];
+  spreadLanes?: boolean;
+  includeOwnershipWarnings?: boolean;
+  assignSelectionPriority?: boolean;
+  priority?: FrontierSwarmSelectionPriorityInput;
+}
+
+export interface FrontierSwarmTaskSelectionEntry {
+  task: FrontierSwarmTask;
+  lane?: FrontierSwarmLane;
+  ownershipWarnings: string[];
+  selectionPriority: number;
+}
+
+export interface FrontierSwarmTaskSelectionSummary {
+  total: number;
+  byLane: Record<string, number>;
+  byWorkKind: Record<string, number>;
+  ownershipWarningCount: number;
+}
+
+export interface FrontierSwarmTaskSelection {
+  tasks: FrontierSwarmTask[];
+  entries: FrontierSwarmTaskSelectionEntry[];
+  summary: FrontierSwarmTaskSelectionSummary;
 }
 
 export interface FrontierSwarmPlanInput extends FrontierSwarmPlanFilter {
@@ -370,6 +504,11 @@ export interface FrontierSwarmJob {
   allowedWrites: string[];
   sharedReadOnly: string[];
   neverEdit: string[];
+  ownershipRegions: FrontierSwarmOwnershipRegion[];
+  ownedRegions: string[];
+  changedRegions: string[];
+  capabilities: string[];
+  resourceRequirements?: FrontierSwarmResourceRequirements;
   worktreePath?: string;
   evidencePrefix?: string;
   concurrencyKey: string;
@@ -508,6 +647,8 @@ export interface FrontierSwarmScheduledJob {
   concurrencyKey: string;
   priority: number;
   dependsOn: string[];
+  capabilities: string[];
+  resourceRequirements?: FrontierSwarmResourceRequirements;
 }
 
 export interface FrontierSwarmBlockedJob extends FrontierSwarmScheduledJob {
@@ -520,6 +661,8 @@ export interface FrontierSwarmRunningJob {
   lane: string;
   compute: string;
   concurrencyKey: string;
+  capabilities: string[];
+  resourceRequirements?: FrontierSwarmResourceRequirements;
 }
 
 export interface FrontierSwarmScheduleSummary {
@@ -551,6 +694,129 @@ export interface FrontierSwarmLease {
   expiresAt: number;
   fencingToken: number;
   status: 'active' | 'expired' | 'released';
+}
+
+export type FrontierSwarmQueueJobStatus =
+  | 'ready'
+  | 'leased'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'blocked'
+  | 'retrying'
+  | 'dead-letter'
+  | string;
+
+export interface FrontierSwarmQueueJobInput {
+  jobId: string;
+  taskId?: string;
+  runId?: string;
+  status?: FrontierSwarmQueueJobStatus;
+  lane?: string;
+  compute?: string;
+  concurrencyKey?: string;
+  priority?: number;
+  attempts?: number;
+  maxAttempts?: number;
+  availableAt?: number;
+  lease?: FrontierSwarmLease;
+  lastError?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmQueueJob {
+  jobId: string;
+  taskId?: string;
+  runId?: string;
+  status: FrontierSwarmQueueJobStatus;
+  lane?: string;
+  compute?: string;
+  concurrencyKey?: string;
+  priority: number;
+  attempts: number;
+  maxAttempts: number;
+  availableAt?: number;
+  lease?: FrontierSwarmLease;
+  lastError?: string;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmQueueSnapshotInput {
+  id?: string;
+  plan: FrontierSwarmPlan;
+  run?: FrontierSwarmRun;
+  jobs?: readonly FrontierSwarmQueueJobInput[];
+  leases?: readonly FrontierSwarmLease[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmQueueSnapshot {
+  kind: typeof FRONTIER_SWARM_QUEUE_SNAPSHOT_KIND;
+  version: typeof FRONTIER_SWARM_QUEUE_SNAPSHOT_VERSION;
+  id: string;
+  planId: string;
+  runId: string;
+  generatedAt: number;
+  jobs: FrontierSwarmQueueJob[];
+  byStatus: Record<string, string[]>;
+  byLane: Record<string, string[]>;
+  leases: FrontierSwarmLease[];
+  metadata?: JsonObject;
+  summary: {
+    jobCount: number;
+    leaseCount: number;
+    readyCount: number;
+    leasedCount: number;
+    completedCount: number;
+    failedCount: number;
+    deadLetterCount: number;
+  };
+}
+
+export interface FrontierSwarmLeaseRenewalInput {
+  lease: FrontierSwarmLease;
+  now?: number;
+  leaseMs?: number;
+  status?: FrontierSwarmLease['status'];
+}
+
+export interface FrontierSwarmQueueAdapter {
+  snapshot(): FrontierSwarmQueueSnapshot | Promise<FrontierSwarmQueueSnapshot>;
+  enqueue?(snapshot: FrontierSwarmQueueSnapshot): FrontierSwarmQueueSnapshot | Promise<FrontierSwarmQueueSnapshot>;
+  lease?(input: FrontierSwarmLeaseInput): readonly FrontierSwarmLease[] | Promise<readonly FrontierSwarmLease[]>;
+  renew?(input: FrontierSwarmLeaseRenewalInput): FrontierSwarmLease | Promise<FrontierSwarmLease>;
+  complete?(result: FrontierSwarmJobResultInput): FrontierSwarmQueueSnapshot | Promise<FrontierSwarmQueueSnapshot>;
+}
+
+export interface FrontierSwarmRunCheckpointInput {
+  run: FrontierSwarmRun;
+  sequence?: number;
+  savedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRunCheckpoint {
+  kind: typeof FRONTIER_SWARM_RUN_CHECKPOINT_KIND;
+  version: typeof FRONTIER_SWARM_RUN_CHECKPOINT_VERSION;
+  id: string;
+  runId: string;
+  planId: string;
+  sequence: number;
+  savedAt: number;
+  status: FrontierSwarmJobStatus;
+  eventCount: number;
+  resultCount: number;
+  hash: string;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmRunStoreAdapter {
+  loadRun(runId: string): FrontierSwarmRun | undefined | Promise<FrontierSwarmRun | undefined>;
+  saveRun(run: FrontierSwarmRun, checkpoint?: FrontierSwarmRunCheckpoint): void | Promise<void>;
+  appendEvents?(runId: string, events: readonly FrontierSwarmEventInput[]): void | Promise<void>;
+  appendResults?(runId: string, results: readonly FrontierSwarmJobResultInput[]): void | Promise<void>;
+  checkpoint?(run: FrontierSwarmRun): FrontierSwarmRunCheckpoint | Promise<FrontierSwarmRunCheckpoint>;
 }
 
 export interface FrontierSwarmArtifactInput {
@@ -707,16 +973,78 @@ export interface FrontierSwarmEvent {
   metadata?: JsonObject;
 }
 
+export type FrontierSwarmMailboxScope = 'global' | 'lane' | 'job' | string;
+
+export interface FrontierSwarmMailboxInput {
+  id?: string;
+  runId?: string;
+  scope?: FrontierSwarmMailboxScope;
+  lane?: string;
+  jobId?: string;
+  path?: string;
+  eventTypes?: readonly string[];
+  appendOnly?: boolean;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmMailbox {
+  kind: typeof FRONTIER_SWARM_MAILBOX_KIND;
+  version: typeof FRONTIER_SWARM_MAILBOX_VERSION;
+  id: string;
+  runId?: string;
+  scope: FrontierSwarmMailboxScope;
+  lane?: string;
+  jobId?: string;
+  path?: string;
+  eventTypes: string[];
+  appendOnly: boolean;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmEventStreamInput {
+  id?: string;
+  runId?: string;
+  root?: string;
+  lanes?: readonly (string | FrontierSwarmLaneInput | FrontierSwarmLane)[];
+  eventTypes?: readonly string[];
+  appendOnly?: boolean;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmEventStream {
+  kind: typeof FRONTIER_SWARM_EVENT_STREAM_KIND;
+  version: typeof FRONTIER_SWARM_EVENT_STREAM_VERSION;
+  id: string;
+  runId?: string;
+  root?: string;
+  appendOnly: boolean;
+  global: FrontierSwarmMailbox;
+  lanes: Record<string, FrontierSwarmMailbox>;
+  eventTypes: string[];
+  metadata?: JsonObject;
+  summary: {
+    mailboxCount: number;
+    laneCount: number;
+    eventTypeCount: number;
+  };
+}
+
 export interface FrontierSwarmJobResultInput {
   jobId: string;
   status?: FrontierSwarmJobStatus;
+  mergeReadiness?: FrontierSwarmMergeReadiness;
   startedAt?: number;
   finishedAt?: number;
   exitCode?: number;
   signal?: string;
   changedPaths?: readonly string[];
+  changedRegions?: readonly string[];
   ownershipViolations?: readonly string[];
   evidencePaths?: readonly string[];
+  patchPath?: string;
+  queueItemIds?: readonly string[];
+  riskLevel?: FrontierSwarmRiskLevel;
+  mergeDisposition?: FrontierSwarmMergeDisposition;
   verification?: readonly FrontierSwarmVerificationResultInput[];
   lastMessage?: string;
   error?: unknown;
@@ -748,14 +1076,20 @@ export interface FrontierSwarmVerificationResult {
 export interface FrontierSwarmJobResult {
   jobId: string;
   status: FrontierSwarmJobStatus;
+  mergeReadiness: FrontierSwarmMergeReadiness;
   startedAt?: number;
   finishedAt?: number;
   durationMs?: number;
   exitCode?: number;
   signal?: string;
   changedPaths: string[];
+  changedRegions: string[];
   ownershipViolations: string[];
   evidencePaths: string[];
+  patchPath?: string;
+  queueItemIds: string[];
+  riskLevel: FrontierSwarmRiskLevel;
+  mergeDisposition: FrontierSwarmMergeDisposition;
   verification: FrontierSwarmVerificationResult[];
   lastMessage?: string;
   error?: string;
@@ -767,6 +1101,59 @@ export interface FrontierSwarmOwnershipReport {
   changedPaths: string[];
   allowedWrites: string[];
   violations: string[];
+}
+
+export interface FrontierSwarmMergeBundleInput {
+  id?: string;
+  runId?: string;
+  planId?: string;
+  job?: FrontierSwarmJob;
+  result: FrontierSwarmJobResult | FrontierSwarmJobResultInput;
+  patchPath?: string;
+  patchHash?: string;
+  evidencePaths?: readonly string[];
+  queueItemIds?: readonly string[];
+  riskLevel?: FrontierSwarmRiskLevel;
+  disposition?: FrontierSwarmMergeDisposition;
+  staleAgainstHead?: boolean;
+  branchName?: string;
+  commit?: string;
+  metadata?: unknown;
+  generatedAt?: number;
+}
+
+export interface FrontierSwarmMergeBundle {
+  kind: typeof FRONTIER_SWARM_MERGE_BUNDLE_KIND;
+  version: typeof FRONTIER_SWARM_MERGE_BUNDLE_VERSION;
+  id: string;
+  runId?: string;
+  planId?: string;
+  jobId: string;
+  taskId?: string;
+  lane?: string;
+  title?: string;
+  generatedAt: number;
+  status: FrontierSwarmJobStatus;
+  mergeReadiness: FrontierSwarmMergeReadiness;
+  disposition: FrontierSwarmMergeDisposition;
+  riskLevel: FrontierSwarmRiskLevel;
+  autoMergeable: boolean;
+  changedPaths: string[];
+  changedRegions: string[];
+  ownedFilesTouched: string[];
+  allowedWrites: string[];
+  ownershipViolations: string[];
+  patchPath?: string;
+  patchHash?: string;
+  evidencePaths: string[];
+  commandsPassed: FrontierSwarmVerificationResult[];
+  commandsFailed: FrontierSwarmVerificationResult[];
+  queueItemIds: string[];
+  branchName?: string;
+  commit?: string;
+  staleAgainstHead: boolean;
+  reasons: string[];
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmProof {
@@ -782,6 +1169,19 @@ export interface FrontierSwarmProof {
 }
 
 const DEFAULT_COMPLETED_STATUSES = ['completed', 'verified', 'done', 'verified-local-harness'];
+const DEFAULT_SWARM_EVENT_TYPES = [
+  'swarm.started',
+  'swarm.finished',
+  'agent.scheduled',
+  'agent.finished',
+  'agent.handoff',
+  'agent.blocked',
+  'agent.ownership-request',
+  'agent.evidence',
+  'review.requested',
+  'review.completed',
+  'merge.proposed'
+];
 
 export function defineSwarmManifest(input: FrontierSwarmManifestInput = {}): FrontierSwarmManifest {
   return createSwarmManifest(input);
@@ -928,6 +1328,47 @@ export function createSwarmPlan(
   };
 }
 
+export function createSwarmTaskSelection(
+  manifestInput: FrontierSwarmManifest | FrontierSwarmManifestInput,
+  taskInput: readonly FrontierSwarmTaskInput[] | FrontierSwarmTaskSetInput | readonly FrontierSwarmTask[],
+  options: FrontierSwarmTaskSelectionInput = {}
+): FrontierSwarmTaskSelection {
+  const manifest = compileSwarm(manifestInput).manifest;
+  const tasks = normalizeTaskList(taskInput);
+  const lanes = new Set(options.lanes ?? []);
+  const layers = new Set(options.layers ?? []);
+  const statuses = new Set(options.statuses ?? []);
+  const workKinds = new Set(options.workKinds ?? []);
+  const selectors = (options.selectors ?? []).map((selector) => selector.toLowerCase());
+  const completed = new Set(manifest.policy.completedStatuses);
+  const limit = options.limit === undefined ? tasks.length : Math.max(0, Math.floor(options.limit));
+  const candidates = tasks
+    .filter((task) => !task.lane || manifest.lanes.some((lane) => lane.id === task.lane))
+    .filter((task) => lanes.size === 0 || (task.lane !== undefined && lanes.has(task.lane)))
+    .filter((task) => layers.size === 0 || taskLayer(manifest, task) !== undefined && layers.has(taskLayer(manifest, task) as string))
+    .filter((task) => statuses.size === 0 || statuses.has(task.status))
+    .filter((task) => workKinds.size === 0 || workKinds.has(task.workKind))
+    .filter((task) => options.includeCompleted || !completed.has(task.status))
+    .filter((task) => selectors.length === 0 || selectors.some((selector) => searchableTask(task).includes(selector)))
+    .map((task) => createSelectionEntry(manifest, task, options.priority))
+    .filter((entry) => options.includeOwnershipWarnings || entry.ownershipWarnings.length === 0)
+    .sort((left, right) => (
+      left.selectionPriority - right.selectionPriority
+      || left.task.priority - right.task.priority
+      || left.task.id.localeCompare(right.task.id)
+    ));
+  const ordered = options.spreadLanes ? roundRobinSelectionByLane(candidates) : candidates;
+  const entries = ordered.slice(0, limit).map((entry, index) => {
+    if (!options.assignSelectionPriority) return entry;
+    return { ...entry, task: { ...entry.task, priority: index } };
+  });
+  return {
+    tasks: entries.map((entry) => entry.task),
+    entries,
+    summary: summarizeTaskSelection(entries)
+  };
+}
+
 export function createSwarmRun(input: FrontierSwarmRunInput): FrontierSwarmRun {
   const results = (input.results ?? []).map(normalizeResult);
   const events = (input.events ?? []).map((event) => normalizeEvent({ ...event, runId: event.runId ?? input.id ?? input.plan.runId }));
@@ -952,6 +1393,72 @@ export function recordSwarmEvent(runInput: FrontierSwarmRun, eventInput: Frontie
   const run = cloneJsonValue(runInput) as FrontierSwarmRun;
   run.events = run.events.concat(normalizeEvent({ ...eventInput, runId: eventInput.runId ?? run.id }));
   return run;
+}
+
+export function createSwarmMailbox(input: FrontierSwarmMailboxInput = {}): FrontierSwarmMailbox {
+  const scope = input.scope ?? (input.lane ? 'lane' : input.jobId ? 'job' : 'global');
+  const eventTypes = uniqueStrings(input.eventTypes ?? DEFAULT_SWARM_EVENT_TYPES);
+  return {
+    kind: FRONTIER_SWARM_MAILBOX_KIND,
+    version: FRONTIER_SWARM_MAILBOX_VERSION,
+    id: input.id ?? 'swarm-mailbox:' + stableHash([input.runId, scope, input.lane, input.jobId, input.path, eventTypes]),
+    ...(input.runId ? { runId: input.runId } : {}),
+    scope,
+    ...(input.lane ? { lane: input.lane } : {}),
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.path ? { path: input.path } : {}),
+    eventTypes,
+    appendOnly: input.appendOnly ?? true,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmEventStream(input: FrontierSwarmEventStreamInput = {}): FrontierSwarmEventStream {
+  const laneIds = uniqueStrings((input.lanes ?? []).map(readLaneId));
+  const eventTypes = uniqueStrings(input.eventTypes ?? DEFAULT_SWARM_EVENT_TYPES);
+  const appendOnly = input.appendOnly ?? true;
+  const global = createSwarmMailbox({
+    runId: input.runId,
+    scope: 'global',
+    path: input.root ? joinPathParts(input.root, 'global.jsonl') : undefined,
+    eventTypes,
+    appendOnly
+  });
+  const lanes = Object.fromEntries(laneIds.map((lane) => [lane, createSwarmMailbox({
+    runId: input.runId,
+    scope: 'lane',
+    lane,
+    path: input.root ? joinPathParts(input.root, 'lanes', `${lane}.jsonl`) : undefined,
+    eventTypes,
+    appendOnly
+  })]));
+  return {
+    kind: FRONTIER_SWARM_EVENT_STREAM_KIND,
+    version: FRONTIER_SWARM_EVENT_STREAM_VERSION,
+    id: input.id ?? 'swarm-event-stream:' + stableHash([input.runId, input.root, laneIds, eventTypes]),
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.root ? { root: input.root } : {}),
+    appendOnly,
+    global,
+    lanes,
+    eventTypes,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}),
+    summary: {
+      mailboxCount: 1 + laneIds.length,
+      laneCount: laneIds.length,
+      eventTypeCount: eventTypes.length
+    }
+  };
+}
+
+export function routeSwarmEventToMailboxes(
+  stream: FrontierSwarmEventStream,
+  eventInput: FrontierSwarmEvent | FrontierSwarmEventInput
+): FrontierSwarmMailbox[] {
+  const event = isSwarmEvent(eventInput) ? eventInput : normalizeEvent(eventInput);
+  const mailboxes = [stream.global];
+  if (event.lane && stream.lanes[event.lane]) mailboxes.push(stream.lanes[event.lane]);
+  return mailboxes;
 }
 
 export function completeSwarmJob(runInput: FrontierSwarmRun, resultInput: FrontierSwarmJobResultInput): FrontierSwarmRun {
@@ -979,6 +1486,95 @@ export function checkSwarmOwnership(job: FrontierSwarmJob, changedPaths: readonl
     changedPaths: changed,
     allowedWrites: [...job.allowedWrites],
     violations
+  };
+}
+
+export function resolveSwarmChangedRegions(job: FrontierSwarmJob, changedPaths: readonly string[]): string[] {
+  const changed = uniqueStrings(changedPaths);
+  const regions = new Set(job.changedRegions);
+  for (const region of job.ownershipRegions) {
+    if (region.globs.some((glob) => changed.some((file) => matchesGlob(file, glob)))) regions.add(region.id);
+    for (const selector of region.selectors) {
+      if (changed.includes(selector)) regions.add(region.id);
+    }
+  }
+  return Array.from(regions).sort();
+}
+
+export function classifySwarmMergeReadiness(result: FrontierSwarmJobResultInput | FrontierSwarmJobResult): FrontierSwarmMergeReadiness {
+  if (result.mergeReadiness) return result.mergeReadiness;
+  if (result.status === 'blocked') return 'blocked';
+  if (result.status === 'failed' || result.exitCode !== undefined && result.exitCode !== 0) return 'rejected';
+  const changedPaths = result.changedPaths ?? [];
+  if (changedPaths.length === 0) return 'discovery-only';
+  const ownershipViolations = result.ownershipViolations ?? [];
+  if (ownershipViolations.length) return 'rejected';
+  const verification = result.verification ?? [];
+  const failedRequired = verification.some((entry) => entry.required !== false && entry.status !== 0);
+  if (failedRequired) return 'patch-candidate';
+  return verification.length > 0 || result.status === 'verified' ? 'verified-patch' : 'patch-candidate';
+}
+
+export function classifySwarmMergeDisposition(
+  result: FrontierSwarmJobResultInput | FrontierSwarmJobResult,
+  input: { staleAgainstHead?: boolean } = {}
+): FrontierSwarmMergeDisposition {
+  if (result.mergeDisposition) return result.mergeDisposition;
+  if (input.staleAgainstHead) return 'stale-against-head';
+  const readiness = classifySwarmMergeReadiness(result);
+  if (readiness === 'discovery-only') return 'discovery-only';
+  if (readiness === 'blocked') return 'blocked';
+  if (readiness === 'rejected') return 'rejected';
+  if (readiness === 'verified-patch') return 'auto-mergeable';
+  return 'needs-port';
+}
+
+export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): FrontierSwarmMergeBundle {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const result = isSwarmJobResult(input.result) ? cloneJsonValue(input.result) as FrontierSwarmJobResult : normalizeResult(input.result);
+  const job = input.job;
+  const changedPaths = uniqueStrings(result.changedPaths);
+  const changedRegions = uniqueStrings([
+    ...result.changedRegions,
+    ...(job ? resolveSwarmChangedRegions(job, changedPaths) : [])
+  ]);
+  const evidencePaths = uniqueStrings([...(result.evidencePaths ?? []), ...(input.evidencePaths ?? [])]);
+  const queueItemIds = uniqueStrings([...(result.queueItemIds ?? []), ...(input.queueItemIds ?? []), ...(job ? [job.taskId] : [])]);
+  const disposition = input.disposition ?? classifySwarmMergeDisposition(result, { staleAgainstHead: input.staleAgainstHead });
+  const commandsPassed = result.verification.filter((entry) => entry.status === 0 || entry.required === false && entry.status === undefined);
+  const commandsFailed = result.verification.filter((entry) => entry.status !== undefined && entry.status !== 0 && entry.required !== false);
+  const ownedFilesTouched = job ? changedPaths.filter((file) => job.allowedWrites.some((glob) => matchesGlob(file, glob))) : changedPaths;
+  const reasons = mergeBundleReasons(result, disposition, input.staleAgainstHead ?? false);
+  return {
+    kind: FRONTIER_SWARM_MERGE_BUNDLE_KIND,
+    version: FRONTIER_SWARM_MERGE_BUNDLE_VERSION,
+    id: input.id ?? 'swarm-merge-bundle:' + stableHash([input.runId, input.planId, result.jobId, changedPaths, changedRegions, disposition, generatedAt]),
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.planId ? { planId: input.planId } : {}),
+    jobId: result.jobId,
+    ...(job ? { taskId: job.taskId, lane: job.lane, title: job.title } : {}),
+    generatedAt,
+    status: result.status,
+    mergeReadiness: result.mergeReadiness,
+    disposition,
+    riskLevel: input.riskLevel ?? result.riskLevel ?? inferMergeRisk(result, disposition),
+    autoMergeable: disposition === 'auto-mergeable' && reasons.length === 0,
+    changedPaths,
+    changedRegions,
+    ownedFilesTouched,
+    allowedWrites: job ? [...job.allowedWrites] : [],
+    ownershipViolations: [...result.ownershipViolations],
+    ...(input.patchPath ?? result.patchPath ? { patchPath: input.patchPath ?? result.patchPath } : {}),
+    ...(input.patchHash ? { patchHash: input.patchHash } : {}),
+    evidencePaths,
+    commandsPassed,
+    commandsFailed,
+    queueItemIds,
+    ...(input.branchName ? { branchName: input.branchName } : {}),
+    ...(input.commit ? { commit: input.commit } : {}),
+    staleAgainstHead: input.staleAgainstHead ?? false,
+    reasons,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
 }
 
@@ -1025,7 +1621,14 @@ export function createSwarmSchedule(input: FrontierSwarmPlan | FrontierSwarmSche
   }
   const runningJobs = (run?.jobs ?? plan.jobs)
     .filter((job) => job.status === 'running')
-    .map((job) => ({ jobId: job.id, lane: job.lane, compute: job.compute.id, concurrencyKey: job.concurrencyKey }));
+    .map((job) => ({
+      jobId: job.id,
+      lane: job.lane,
+      compute: job.compute.id,
+      concurrencyKey: job.concurrencyKey,
+      capabilities: [...job.capabilities],
+      ...(job.resourceRequirements ? { resourceRequirements: cloneJsonValue(job.resourceRequirements) as FrontierSwarmResourceRequirements } : {})
+    }));
   const runningByLane = countBy(runningJobs.map((job) => job.lane));
   const runningByKey = countBy(runningJobs.map((job) => job.concurrencyKey));
   const runningByCompute = countBy(runningJobs.map((job) => job.compute));
@@ -1102,6 +1705,70 @@ export function createSwarmLeases(input: FrontierSwarmLeaseInput): FrontierSwarm
       fencingToken: existingMaxFence + index + 1,
       status: 'active'
     }));
+}
+
+export function renewSwarmLease(input: FrontierSwarmLeaseRenewalInput): FrontierSwarmLease {
+  const now = input.now ?? Date.now();
+  const leaseMs = Math.max(1, Math.floor(input.leaseMs ?? Math.max(1, input.lease.expiresAt - input.lease.leasedAt)));
+  return {
+    ...cloneJsonValue(input.lease),
+    leasedAt: now,
+    expiresAt: now + leaseMs,
+    status: input.status ?? 'active'
+  };
+}
+
+export function createSwarmQueueSnapshot(input: FrontierSwarmQueueSnapshotInput): FrontierSwarmQueueSnapshot {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const leases = [...(input.leases ?? [])].map((lease) => cloneJsonValue(lease) as FrontierSwarmLease);
+  const jobs = (input.jobs ? input.jobs.map(normalizeQueueJob) : queueJobsFromPlan(input.plan, input.run, leases)).sort((left, right) => (
+    left.priority - right.priority
+    || left.jobId.localeCompare(right.jobId)
+  ));
+  const byStatus = groupIds(jobs, (job) => job.status);
+  const byLane = groupIds(jobs, (job) => job.lane ?? 'unassigned');
+  return {
+    kind: FRONTIER_SWARM_QUEUE_SNAPSHOT_KIND,
+    version: FRONTIER_SWARM_QUEUE_SNAPSHOT_VERSION,
+    id: input.id ?? 'swarm-queue-snapshot:' + stableHash([input.plan.id, input.run?.id, jobs, leases, generatedAt]),
+    planId: input.plan.id,
+    runId: input.run?.id ?? input.plan.runId,
+    generatedAt,
+    jobs,
+    byStatus,
+    byLane,
+    leases,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}),
+    summary: {
+      jobCount: jobs.length,
+      leaseCount: leases.length,
+      readyCount: byStatus.ready?.length ?? 0,
+      leasedCount: byStatus.leased?.length ?? 0,
+      completedCount: byStatus.completed?.length ?? 0,
+      failedCount: byStatus.failed?.length ?? 0,
+      deadLetterCount: byStatus['dead-letter']?.length ?? 0
+    }
+  };
+}
+
+export function createSwarmRunCheckpoint(input: FrontierSwarmRun | FrontierSwarmRunCheckpointInput): FrontierSwarmRunCheckpoint {
+  const run = 'kind' in input ? input : input.run;
+  const sequence = 'kind' in input ? run.events.length + run.results.length : input.sequence ?? run.events.length + run.results.length;
+  const savedAt = 'kind' in input ? Date.now() : input.savedAt ?? Date.now();
+  return {
+    kind: FRONTIER_SWARM_RUN_CHECKPOINT_KIND,
+    version: FRONTIER_SWARM_RUN_CHECKPOINT_VERSION,
+    id: 'swarm-run-checkpoint:' + stableHash([run.id, sequence, savedAt, run.summary]),
+    runId: run.id,
+    planId: run.planId,
+    sequence,
+    savedAt,
+    status: run.status,
+    eventCount: run.events.length,
+    resultCount: run.results.length,
+    hash: stableHash(run),
+    ...(!('kind' in input) && toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
 }
 
 export function checkSwarmBudget(job: FrontierSwarmJob, usageInput: FrontierSwarmUsageInput): FrontierSwarmBudgetDecision {
@@ -1294,7 +1961,8 @@ function createSwarmJobGraph(jobs: readonly FrontierSwarmJob[]): FrontierSwarmJo
 function normalizeScheduleLimits(manifest: FrontierSwarmManifest, options: FrontierSwarmPlanInput): FrontierSwarmScheduleLimits {
   const maxLaneConcurrency: Record<string, number> = {};
   for (const lane of manifest.lanes) {
-    const value = options.maxLaneConcurrency?.[lane.id] ?? lane.maxConcurrency ?? manifest.policy.defaultConcurrency;
+    const browserMax = lane.resourceRequirements?.browser?.maxConcurrency;
+    const value = options.maxLaneConcurrency?.[lane.id] ?? lane.maxConcurrency ?? browserMax ?? manifest.policy.defaultConcurrency;
     maxLaneConcurrency[lane.id] = Math.max(1, Math.floor(value));
   }
   return {
@@ -1322,7 +1990,9 @@ function scheduleJob(job: FrontierSwarmJob, dependsOn: readonly string[] = job.d
     compute: job.compute.id,
     concurrencyKey: job.concurrencyKey,
     priority: job.priority,
-    dependsOn: [...dependsOn]
+    dependsOn: [...dependsOn],
+    capabilities: [...job.capabilities],
+    ...(job.resourceRequirements ? { resourceRequirements: cloneJsonValue(job.resourceRequirements) as FrontierSwarmResourceRequirements } : {})
   };
 }
 
@@ -1396,10 +2066,13 @@ function selectReviewers(pool: readonly string[], required: number, salt: string
 function conflictMap(results: readonly FrontierSwarmJobResult[]): Map<string, Set<string>> {
   const byPath = new Map<string, string[]>();
   for (const result of results) {
-    for (const file of result.changedPaths) {
-      const list = byPath.get(file) ?? [];
+    const keys = result.changedRegions.length
+      ? result.changedRegions.map((region) => `region:${region}`)
+      : result.changedPaths.map((file) => `file:${file}`);
+    for (const key of keys) {
+      const list = byPath.get(key) ?? [];
       list.push(result.jobId);
-      byPath.set(file, list);
+      byPath.set(key, list);
     }
   }
   const conflicts = new Map<string, Set<string>>();
@@ -1434,6 +2107,16 @@ function groupArtifacts(artifacts: readonly FrontierSwarmArtifact[], key: (artif
     const group = key(artifact);
     out[group] = [...(out[group] ?? []), artifact];
   }
+  return out;
+}
+
+function groupIds<T extends { jobId: string }>(items: readonly T[], key: (item: T) => string): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const item of items) {
+    const group = key(item);
+    out[group] = [...(out[group] ?? []), item.jobId];
+  }
+  for (const ids of Object.values(out)) ids.sort();
   return out;
 }
 
@@ -1513,6 +2196,9 @@ function normalizeLane(input: FrontierSwarmLaneInput): FrontierSwarmLane {
     allowedWrites,
     sharedReadOnly: uniqueStrings(input.sharedReadOnly ?? []),
     neverEdit: uniqueStrings(input.neverEdit ?? []),
+    ownershipRegions: normalizeOwnershipRegions(input.ownershipRegions ?? []),
+    capabilities: uniqueStrings(input.capabilities ?? []),
+    ...(input.resourceRequirements ? { resourceRequirements: normalizeResourceRequirements(input.resourceRequirements) } : {}),
     ...(input.worktreePath ? { worktreePath: input.worktreePath } : {}),
     ...(input.evidencePrefix || input.evidenceOutDirPrefix ? { evidencePrefix: input.evidencePrefix ?? input.evidenceOutDirPrefix } : {}),
     concurrencyKey: input.concurrencyKey ?? input.id,
@@ -1520,6 +2206,75 @@ function normalizeLane(input: FrontierSwarmLaneInput): FrontierSwarmLane {
     handoffCommands: normalizeCommands(input.handoffCommands ?? []),
     tags: uniqueStrings(input.tags ?? []),
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function normalizeOwnershipRegions(input: readonly FrontierSwarmOwnershipRegionInput[] = []): FrontierSwarmOwnershipRegion[] {
+  return input.map((region) => {
+    const globs = uniqueStrings([...(region.globs ?? []), ...(region.paths ?? [])]);
+    return {
+      id: normalizeId(region.id, 'ownership region id'),
+      title: region.title ?? titleFromId(region.id),
+      ...(region.description ? { description: region.description } : {}),
+      globs,
+      selectors: uniqueStrings(region.selectors ?? []),
+      ...(region.owner ? { owner: region.owner } : {}),
+      ...(toJsonObject(region.metadata) ? { metadata: toJsonObject(region.metadata) } : {})
+    };
+  });
+}
+
+function mergeOwnershipRegions(
+  laneRegions: readonly FrontierSwarmOwnershipRegion[],
+  taskRegions: readonly FrontierSwarmOwnershipRegion[]
+): FrontierSwarmOwnershipRegion[] {
+  const byId = new Map<string, FrontierSwarmOwnershipRegion>();
+  for (const region of laneRegions) byId.set(region.id, cloneJsonValue(region) as FrontierSwarmOwnershipRegion);
+  for (const region of taskRegions) byId.set(region.id, cloneJsonValue(region) as FrontierSwarmOwnershipRegion);
+  return Array.from(byId.values()).sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function normalizeResourceRequirements(input: FrontierSwarmResourceRequirementsInput = {}): FrontierSwarmResourceRequirements {
+  const resources: Record<string, number> = {};
+  for (const [key, value] of Object.entries(input.resources ?? {})) {
+    if (Number.isFinite(value) && value > 0) resources[key] = value;
+  }
+  return {
+    capabilities: uniqueStrings(input.capabilities ?? []),
+    resources,
+    ...(input.browser ? { browser: normalizeBrowserResource(input.browser) } : {}),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function normalizeBrowserResource(input: FrontierSwarmBrowserResourceInput): FrontierSwarmBrowserResource {
+  return {
+    required: input.required ?? true,
+    portPool: uniqueStrings((input.portPool ?? []).map((port) => String(port))),
+    ...(input.profileDir ? { profileDir: input.profileDir } : {}),
+    ...(input.profileDirPrefix ? { profileDirPrefix: input.profileDirPrefix } : {}),
+    ...(positiveNumber(input.maxConcurrency) ? { maxConcurrency: Math.floor(input.maxConcurrency as number) } : {}),
+    ...(input.headless !== undefined ? { headless: input.headless } : {}),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function mergeResourceRequirements(
+  lane: FrontierSwarmResourceRequirements | undefined,
+  task: FrontierSwarmResourceRequirements | undefined,
+  extraCapabilities: readonly string[] = []
+): FrontierSwarmResourceRequirements | undefined {
+  if (!lane && !task && extraCapabilities.length === 0) return undefined;
+  const capabilities = uniqueStrings([...(lane?.capabilities ?? []), ...(task?.capabilities ?? []), ...extraCapabilities]);
+  const resources: Record<string, number> = { ...(lane?.resources ?? {}) };
+  for (const [key, value] of Object.entries(task?.resources ?? {})) resources[key] = Math.max(resources[key] ?? 0, value);
+  const browser = task?.browser ?? lane?.browser;
+  const metadata = toJsonObject({ ...(lane?.metadata ?? {}), ...(task?.metadata ?? {}) });
+  return {
+    capabilities,
+    resources,
+    ...(browser ? { browser } : {}),
+    ...(metadata && Object.keys(metadata).length ? { metadata } : {})
   };
 }
 
@@ -1560,6 +2315,11 @@ function normalizeTask(input: FrontierSwarmTaskInput): FrontierSwarmTask {
     sourceRefs: uniqueStrings(input.sourceRefs ?? []),
     targetRefs,
     allowedWrites: uniqueStrings([...(input.allowedWrites ?? []), ...targetRefs]),
+    ownershipRegions: normalizeOwnershipRegions(input.ownershipRegions ?? []),
+    ownedRegions: uniqueStrings(input.ownedRegions ?? []),
+    changedRegions: uniqueStrings(input.changedRegions ?? []),
+    capabilities: uniqueStrings(input.capabilities ?? []),
+    ...(input.resourceRequirements ? { resourceRequirements: normalizeResourceRequirements(input.resourceRequirements) } : {}),
     acceptance: normalizeAcceptance(input),
     verification: normalizeCommands(input.verification ?? []),
     ...(input.evidenceCommand ? { evidenceCommand: input.evidenceCommand } : {}),
@@ -1613,6 +2373,61 @@ function selectSwarmTasks(manifest: FrontierSwarmManifest, tasks: readonly Front
     .slice(0, limit);
 }
 
+function createSelectionEntry(
+  manifest: FrontierSwarmManifest,
+  task: FrontierSwarmTask,
+  priority?: FrontierSwarmSelectionPriorityInput
+): FrontierSwarmTaskSelectionEntry {
+  const lane = task.lane ? manifest.lanes.find((entry) => entry.id === task.lane) : undefined;
+  return {
+    task,
+    ...(lane ? { lane } : {}),
+    ownershipWarnings: selectionOwnershipWarnings(task, lane),
+    selectionPriority: selectionPriority(task, priority)
+  };
+}
+
+function selectionOwnershipWarnings(task: FrontierSwarmTask, lane: FrontierSwarmLane | undefined): string[] {
+  if (!lane || lane.allowedWrites.length === 0) return [];
+  return task.targetRefs
+    .filter((file) => !lane.allowedWrites.some((glob) => matchesGlob(file, glob)))
+    .map((file) => `${file} is outside allowed write globs for ${lane.id}`);
+}
+
+function selectionPriority(task: FrontierSwarmTask, input?: FrontierSwarmSelectionPriorityInput): number {
+  const statusRanks = input?.statuses ?? {};
+  const workKindRanks = input?.workKinds ?? {};
+  const statusRank = statusRanks[task.status] ?? input?.defaultStatusRank ?? 100;
+  const workKindRank = workKindRanks[task.workKind] ?? input?.defaultWorkKindRank ?? 100;
+  const statusWeight = input?.statusWeight ?? 1000;
+  const workKindWeight = input?.workKindWeight ?? 1;
+  return statusRank * statusWeight + workKindRank * workKindWeight;
+}
+
+function roundRobinSelectionByLane(entries: readonly FrontierSwarmTaskSelectionEntry[]): FrontierSwarmTaskSelectionEntry[] {
+  const groups = new Map<string, FrontierSwarmTaskSelectionEntry[]>();
+  for (const entry of entries) groups.set(entry.task.lane ?? 'unassigned', [...(groups.get(entry.task.lane ?? 'unassigned') ?? []), entry]);
+  const selected: FrontierSwarmTaskSelectionEntry[] = [];
+  while (Array.from(groups.values()).some((group) => group.length > 0)) {
+    for (const group of groups.values()) {
+      const next = group.shift();
+      if (next) selected.push(next);
+    }
+  }
+  return selected;
+}
+
+function summarizeTaskSelection(entries: readonly FrontierSwarmTaskSelectionEntry[]): FrontierSwarmTaskSelectionSummary {
+  return entries.reduce<FrontierSwarmTaskSelectionSummary>((summary, entry) => {
+    const lane = entry.task.lane ?? 'unassigned';
+    summary.total += 1;
+    summary.byLane[lane] = (summary.byLane[lane] ?? 0) + 1;
+    summary.byWorkKind[entry.task.workKind] = (summary.byWorkKind[entry.task.workKind] ?? 0) + 1;
+    summary.ownershipWarningCount += entry.ownershipWarnings.length;
+    return summary;
+  }, { total: 0, byLane: {}, byWorkKind: {}, ownershipWarningCount: 0 });
+}
+
 function createJob(compiled: FrontierSwarmCompiled, task: FrontierSwarmTask, options: FrontierSwarmPlanFilter): FrontierSwarmJob {
   const lane = task.lane ? compiled.lanesById.get(task.lane) : undefined;
   const layer = task.layer ?? lane?.layer ?? compiled.manifest.policy.defaultLayer;
@@ -1628,6 +2443,10 @@ function createJob(compiled: FrontierSwarmCompiled, task: FrontierSwarmTask, opt
   const ownershipWarnings = task.targetRefs
     .filter((file) => allowedWrites.length > 0 && !allowedWrites.some((glob) => matchesGlob(file, glob)))
     .map((file) => `${file} is outside allowed write globs for ${lane?.id ?? 'unassigned'}`);
+  const capabilities = uniqueStrings([...(lane?.capabilities ?? []), ...task.capabilities]);
+  const resourceRequirements = mergeResourceRequirements(lane?.resourceRequirements, task.resourceRequirements, capabilities);
+  const ownershipRegions = mergeOwnershipRegions(lane?.ownershipRegions ?? [], task.ownershipRegions);
+  const ownedRegions = uniqueStrings([...task.ownedRegions, ...ownershipRegions.map((region) => region.id)]);
   return {
     id: `${lane?.id ?? 'unassigned'}-${slug(task.id)}`,
     taskId: task.id,
@@ -1641,6 +2460,11 @@ function createJob(compiled: FrontierSwarmCompiled, task: FrontierSwarmTask, opt
     allowedWrites,
     sharedReadOnly: uniqueStrings([...(compiled.manifest.policy.sharedReadOnly ?? []), ...(lane?.sharedReadOnly ?? [])]),
     neverEdit: uniqueStrings([...(compiled.manifest.policy.neverEditWithoutParent ?? []), ...(lane?.neverEdit ?? [])]),
+    ownershipRegions,
+    ownedRegions,
+    changedRegions: uniqueStrings(task.changedRegions),
+    capabilities,
+    ...(resourceRequirements ? { resourceRequirements } : {}),
     ...(lane?.worktreePath ? { worktreePath: lane.worktreePath } : {}),
     ...(evidencePrefix ? { evidencePrefix } : {}),
     concurrencyKey: task.concurrencyKey ?? lane?.concurrencyKey ?? task.lane ?? compute.id,
@@ -1737,25 +2561,122 @@ function normalizeEvent(input: FrontierSwarmEventInput): FrontierSwarmEvent {
   };
 }
 
+function normalizeQueueJob(input: FrontierSwarmQueueJobInput): FrontierSwarmQueueJob {
+  return {
+    jobId: input.jobId,
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
+    status: input.status ?? 'ready',
+    ...(input.lane ? { lane: input.lane } : {}),
+    ...(input.compute ? { compute: input.compute } : {}),
+    ...(input.concurrencyKey ? { concurrencyKey: input.concurrencyKey } : {}),
+    priority: input.priority ?? 100,
+    attempts: Math.max(0, Math.floor(input.attempts ?? 0)),
+    maxAttempts: Math.max(1, Math.floor(input.maxAttempts ?? 1)),
+    ...(input.availableAt !== undefined ? { availableAt: input.availableAt } : {}),
+    ...(input.lease ? { lease: cloneJsonValue(input.lease) as FrontierSwarmLease } : {}),
+    ...(input.lastError ? { lastError: input.lastError } : {}),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function queueJobsFromPlan(
+  plan: FrontierSwarmPlan,
+  run: FrontierSwarmRun | undefined,
+  leases: readonly FrontierSwarmLease[]
+): FrontierSwarmQueueJob[] {
+  const resultsByJob = new Map((run?.results ?? []).map((result) => [result.jobId, result]));
+  const activeLeases = new Map(leases.filter((lease) => lease.status === 'active').map((lease) => [lease.jobId, lease]));
+  return plan.jobs.map((job) => {
+    const result = resultsByJob.get(job.id);
+    const lease = activeLeases.get(job.id);
+    const failed = result?.status === 'failed' || result?.exitCode !== undefined && result.exitCode !== 0;
+    const completed = result?.status === 'completed' || result?.status === 'verified';
+    const status: FrontierSwarmQueueJobStatus = completed
+      ? 'completed'
+      : failed
+        ? 'failed'
+        : lease
+          ? 'leased'
+          : job.status === 'running'
+            ? 'running'
+            : 'ready';
+    return normalizeQueueJob({
+      jobId: job.id,
+      taskId: job.taskId,
+      runId: run?.id ?? plan.runId,
+      status,
+      lane: job.lane,
+      compute: job.compute.id,
+      concurrencyKey: job.concurrencyKey,
+      priority: job.priority,
+      attempts: result?.metadata && typeof result.metadata.attempts === 'number' ? result.metadata.attempts : undefined,
+      maxAttempts: job.budget?.maxRetries !== undefined ? job.budget.maxRetries + 1 : 1,
+      lease,
+      lastError: result?.error
+    });
+  });
+}
+
 function normalizeResult(input: FrontierSwarmJobResultInput): FrontierSwarmJobResult {
   const startedAt = input.startedAt;
   const finishedAt = input.finishedAt;
+  const status = input.status ?? (input.exitCode === 0 || input.exitCode === undefined ? 'completed' : 'failed');
   return {
     jobId: input.jobId,
-    status: input.status ?? (input.exitCode === 0 || input.exitCode === undefined ? 'completed' : 'failed'),
+    status,
+    mergeReadiness: classifySwarmMergeReadiness({ ...input, status }),
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(finishedAt !== undefined ? { finishedAt } : {}),
     ...(startedAt !== undefined && finishedAt !== undefined ? { durationMs: Math.max(0, finishedAt - startedAt) } : {}),
     ...(input.exitCode !== undefined ? { exitCode: input.exitCode } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
     changedPaths: uniqueStrings(input.changedPaths ?? []),
+    changedRegions: uniqueStrings(input.changedRegions ?? []),
     ownershipViolations: uniqueStrings(input.ownershipViolations ?? []),
     evidencePaths: uniqueStrings(input.evidencePaths ?? []),
+    ...(input.patchPath ? { patchPath: input.patchPath } : {}),
+    queueItemIds: uniqueStrings(input.queueItemIds ?? []),
+    riskLevel: input.riskLevel ?? 'unknown',
+    mergeDisposition: input.mergeDisposition ?? classifySwarmMergeDisposition({ ...input, status }),
     verification: (input.verification ?? []).map(normalizeVerificationResult),
     ...(input.lastMessage ? { lastMessage: input.lastMessage } : {}),
     ...(input.error !== undefined ? { error: stringifyError(input.error) } : {}),
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
+}
+
+function isSwarmJobResult(value: FrontierSwarmJobResult | FrontierSwarmJobResultInput): value is FrontierSwarmJobResult {
+  return Array.isArray((value as FrontierSwarmJobResult).changedPaths)
+    && Array.isArray((value as FrontierSwarmJobResult).changedRegions)
+    && Array.isArray((value as FrontierSwarmJobResult).verification)
+    && Array.isArray((value as FrontierSwarmJobResult).queueItemIds)
+    && typeof (value as FrontierSwarmJobResult).riskLevel === 'string'
+    && typeof (value as FrontierSwarmJobResult).mergeDisposition === 'string';
+}
+
+function mergeBundleReasons(
+  result: FrontierSwarmJobResult,
+  disposition: FrontierSwarmMergeDisposition,
+  staleAgainstHead: boolean
+): string[] {
+  const reasons: string[] = [];
+  if (staleAgainstHead) reasons.push('stale-against-head');
+  if (result.status === 'blocked') reasons.push('blocked');
+  if (result.status === 'failed') reasons.push('failed');
+  if (result.ownershipViolations.length) reasons.push('ownership-violations');
+  if (result.verification.some((entry) => entry.required !== false && entry.status !== 0)) reasons.push('failed-verification');
+  if (disposition === 'needs-port') reasons.push('needs-human-port');
+  if (disposition === 'rejected') reasons.push('rejected');
+  return uniqueStrings(reasons);
+}
+
+function inferMergeRisk(result: FrontierSwarmJobResult, disposition: FrontierSwarmMergeDisposition): FrontierSwarmRiskLevel {
+  if (disposition === 'discovery-only') return 'low';
+  if (disposition === 'rejected' || disposition === 'blocked' || disposition === 'stale-against-head') return 'high';
+  if (result.changedPaths.length <= 2 && result.ownershipViolations.length === 0) return 'low';
+  if (result.changedPaths.length <= 8) return 'medium';
+  return 'high';
 }
 
 function normalizeVerificationResult(input: FrontierSwarmVerificationResultInput): FrontierSwarmVerificationResult {
@@ -1838,6 +2759,23 @@ function isSwarmManifest(value: unknown): value is FrontierSwarmManifest {
 
 function isSwarmTask(value: unknown): value is FrontierSwarmTask {
   return !!value && typeof value === 'object' && (value as { kind?: unknown }).kind === FRONTIER_SWARM_TASK_KIND;
+}
+
+function isSwarmEvent(value: unknown): value is FrontierSwarmEvent {
+  return !!value && typeof value === 'object' && (value as { kind?: unknown }).kind === FRONTIER_SWARM_EVENT_KIND;
+}
+
+function readLaneId(value: string | FrontierSwarmLaneInput | FrontierSwarmLane): string {
+  return typeof value === 'string' ? value : value.id;
+}
+
+function joinPathParts(...parts: readonly string[]): string {
+  const first = parts[0] ? String(parts[0]) : '';
+  const prefix = first.startsWith('/') ? '/' : '';
+  return prefix + parts
+    .map((part, index) => String(part).replace(index === 0 ? /\/+$/g : /^\/+|\/+$/g, ''))
+    .filter(Boolean)
+    .join('/');
 }
 
 function normalizeId(value: string, label: string): string {

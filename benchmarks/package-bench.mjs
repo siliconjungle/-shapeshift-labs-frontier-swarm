@@ -5,12 +5,19 @@ import { fileURLToPath } from 'node:url';
 import {
   checkSwarmOwnership,
   createSwarmManifest,
+  createSwarmEventStream,
+  createSwarmLeases,
+  createSwarmMergeBundle,
   createSwarmPlan,
   createSwarmProof,
+  createSwarmQueueSnapshot,
   createSwarmRun,
+  createSwarmRunCheckpoint,
+  createSwarmSchedule,
   decodeSwarmJsonl,
   defineSwarmTasks,
   encodeSwarmJsonl,
+  routeSwarmEventToMailboxes,
   resolveSwarmCompute,
   validateSwarmManifest
 } from '../dist/index.js';
@@ -31,6 +38,9 @@ let plan = createSwarmPlan(manifest, tasks, { limit: 64 });
 let run = createSwarmRun({ plan });
 let jsonl = encodeSwarmJsonl([plan, run]);
 let cursor = 0;
+let schedule = createSwarmSchedule({ plan, maxReadyJobs: 128 });
+let leases = createSwarmLeases({ schedule, workerId: 'bench-worker', now: 1000, leaseMs: 60000, count: 16 });
+let eventStream = createSwarmEventStream({ runId: 'bench', root: 'agent-runs/bench/streams', lanes: manifest.lanes });
 
 const rows = [
   measure('create-plan-' + taskCount, 8, () => {
@@ -49,7 +59,31 @@ const rows = [
     return jsonl.length;
   }),
   measure('jsonl-decode', 16, () => decodeSwarmJsonl(jsonl).length),
-  measure('proof', 16, () => createSwarmProof(plan).hash.length)
+  measure('proof', 16, () => createSwarmProof(plan).hash.length),
+  measure('schedule-lease-' + taskCount, 8, () => {
+    schedule = createSwarmSchedule({ plan, maxReadyJobs: 128, maxComputeConcurrency: { fast: 64, deep: 32 } });
+    leases = createSwarmLeases({ schedule, workerId: 'bench-worker', now: 1000 + cursor++, leaseMs: 60000, count: 16 });
+    return schedule.ready.length + leases.length;
+  }),
+  measure('queue-snapshot-' + taskCount, 8, () => {
+    const snapshot = createSwarmQueueSnapshot({ plan, run, leases, generatedAt: 2000 + cursor++ });
+    return snapshot.summary.jobCount + snapshot.summary.leaseCount;
+  }),
+  measure('run-checkpoint-' + taskCount, 16, () => createSwarmRunCheckpoint({ run, sequence: cursor++ }).hash.length),
+  measure('merge-bundle-' + taskCount, 32, () => createSwarmMergeBundle({
+    job: plan.jobs[cursor % plan.jobs.length],
+    result: {
+      jobId: plan.jobs[cursor++ % plan.jobs.length].id,
+      status: 'completed',
+      changedPaths: ['src/runtime/file.ts'],
+      verification: [{ status: 0 }]
+    },
+    patchPath: 'agent-runs/bench/changes.patch'
+  }).id.length),
+  measure('event-route-' + taskCount, 64, () => {
+    eventStream = createSwarmEventStream({ runId: 'bench', root: 'agent-runs/bench/streams', lanes: manifest.lanes });
+    return routeSwarmEventToMailboxes(eventStream, { type: 'agent.evidence', jobId: plan.jobs[cursor++ % plan.jobs.length].id, lane: 'runtime' }).length;
+  })
 ];
 
 const report = {
