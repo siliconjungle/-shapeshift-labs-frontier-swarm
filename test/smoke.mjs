@@ -8,15 +8,25 @@ import {
   compileSwarm,
   checkSwarmBudget,
   createSwarmArtifactIndex,
+  createSwarmContextPack,
   createSwarmEventStream,
   createSwarmLeases,
+  createSwarmHotspotReport,
+  createSwarmLanePlaybook,
+  createSwarmMergeAdmission,
   createSwarmManifest,
   createSwarmMergeBundle,
+  createSwarmMergeIndex,
+  createSwarmOracleCorpus,
+  createSwarmPatchStackPlan,
   createSwarmMergePlan,
   createSwarmPlan,
   createSwarmProof,
+  createSwarmQueueOverlay,
   createSwarmQueueSnapshot,
   createSwarmReviewPlan,
+  createSwarmReviewerLanePlan,
+  createSwarmRunStoreShards,
   createSwarmRunCheckpoint,
   createSwarmRun,
   createSwarmSchedule,
@@ -26,10 +36,12 @@ import {
   defineSwarmManifest,
   defineSwarmTasks,
   encodeSwarmJsonl,
+  deriveSwarmQueueStatus,
   matchesGlob,
   recordSwarmEvent,
   renewSwarmLease,
   resolveSwarmChangedRegions,
+  checkSwarmRegionOwnership,
   resolveSwarmCompute,
   routeSwarmEventToMailboxes,
   validateSwarmManifest
@@ -291,6 +303,10 @@ assert.strictEqual(queueSnapshot.summary.jobCount, 1000);
 assert.strictEqual(queueSnapshot.summary.leaseCount, 5);
 assert.strictEqual(queueSnapshot.summary.leasedCount, 4);
 assert.strictEqual(queueSnapshot.summary.completedCount, 1);
+const queueOverlay = createSwarmQueueOverlay({ runId: scaleRun.id, bundles: [mergeBundle], generatedAt: 8100 });
+assert.strictEqual(queueOverlay.summary.needsHumanPortCount, 1);
+const derivedQueue = deriveSwarmQueueStatus({ snapshot: queueSnapshot, overlays: [queueOverlay], generatedAt: 8200 });
+assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).status, 'blocked');
 const checkpoint = createSwarmRunCheckpoint({ run: scaleRun, sequence: 1, savedAt: 9000 });
 assert.strictEqual(checkpoint.runId, scaleRun.id);
 assert.strictEqual(checkpoint.resultCount, 1);
@@ -325,6 +341,151 @@ conflictRun = completeSwarmJob(conflictRun, {
 });
 const mergePlan = createSwarmMergePlan({ plan: scalePlan, run: conflictRun, generatedAt: 6000 });
 assert.ok(mergePlan.blocked.some((blocker) => blocker.reasons.includes('conflicting-changes')));
+
+let explicitRegionRun = createSwarmRun({ plan: scalePlan, startedAt: 6050 });
+explicitRegionRun = completeSwarmJob(explicitRegionRun, {
+  jobId: scalePlan.jobs[2].id,
+  status: 'completed',
+  changedPaths: ['src/hot/runtime-website-content.ts'],
+  changedRegions: ['content.docs']
+});
+explicitRegionRun = completeSwarmJob(explicitRegionRun, {
+  jobId: scalePlan.jobs[4].id,
+  status: 'completed',
+  changedPaths: ['src/hot/runtime-website-content.ts'],
+  changedRegions: ['content.legal']
+});
+const explicitRegionMergePlan = createSwarmMergePlan({ plan: scalePlan, run: explicitRegionRun, generatedAt: 6060 });
+assert.ok(explicitRegionMergePlan.ready.includes(scalePlan.jobs[2].id));
+assert.ok(explicitRegionMergePlan.ready.includes(scalePlan.jobs[4].id));
+assert.deepStrictEqual(
+  explicitRegionMergePlan.blocked.filter((blocker) => [scalePlan.jobs[2].id, scalePlan.jobs[4].id].includes(blocker.jobId)),
+  []
+);
+
+let incompleteRegionRun = createSwarmRun({ plan: scalePlan, startedAt: 6070 });
+incompleteRegionRun = completeSwarmJob(incompleteRegionRun, {
+  jobId: scalePlan.jobs[2].id,
+  status: 'completed',
+  changedPaths: ['src/hot/runtime-website-content.ts'],
+  changedRegions: ['content.docs']
+});
+incompleteRegionRun = completeSwarmJob(incompleteRegionRun, {
+  jobId: scalePlan.jobs[6].id,
+  status: 'completed',
+  changedPaths: ['src/hot/runtime-website-content.ts']
+});
+const incompleteRegionMergePlan = createSwarmMergePlan({ plan: scalePlan, run: incompleteRegionRun, generatedAt: 6080 });
+const incompleteRegionBlockers = incompleteRegionMergePlan.blocked.filter((blocker) => [scalePlan.jobs[2].id, scalePlan.jobs[6].id].includes(blocker.jobId));
+assert.deepStrictEqual(incompleteRegionBlockers.map((blocker) => blocker.jobId).sort(), [scalePlan.jobs[2].id, scalePlan.jobs[6].id].sort());
+assert.ok(incompleteRegionBlockers.every((blocker) => blocker.reasons.includes('conflicting-changes')));
+
+const regionOwnership = checkSwarmRegionOwnership(plan.jobs[0], {
+  changedPaths: ['inkwell/apps/web/src/runtime/runtime.ts'],
+  changedRegions: ['runtime.actions']
+});
+assert.strictEqual(regionOwnership.ok, true);
+const badRegionOwnership = checkSwarmRegionOwnership(plan.jobs[0], {
+  changedPaths: ['inkwell/apps/web/src/runtime/runtime.ts'],
+  changedRegions: ['content.legal']
+});
+assert.strictEqual(badRegionOwnership.ok, false);
+assert.deepStrictEqual(badRegionOwnership.regionViolations, ['content.legal']);
+
+const regionBundleA = createSwarmMergeBundle({
+  job: scalePlan.jobs[2],
+  result: {
+    jobId: scalePlan.jobs[2].id,
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-website-content.ts'],
+    changedRegions: ['content.docs'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/a/changes.patch',
+  riskLevel: 'low'
+});
+const regionBundleB = createSwarmMergeBundle({
+  job: scalePlan.jobs[4],
+  result: {
+    jobId: scalePlan.jobs[4].id,
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-website-content.ts'],
+    changedRegions: ['content.legal'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/b/changes.patch',
+  riskLevel: 'low'
+});
+const unregionedBundle = createSwarmMergeBundle({
+  job: scalePlan.jobs[6],
+  result: {
+    jobId: scalePlan.jobs[6].id,
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-website-content.ts'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/c/changes.patch',
+  riskLevel: 'low'
+});
+const regionIndex = createSwarmMergeIndex({ bundles: [regionBundleA, regionBundleB], generatedAt: 6100 });
+assert.strictEqual(regionIndex.summary.conflictCount, 0);
+assert.strictEqual(regionIndex.summary.readyToApplyCount, 2);
+const pathFallbackIndex = createSwarmMergeIndex({ bundles: [regionBundleA, unregionedBundle], generatedAt: 6200 });
+assert.strictEqual(pathFallbackIndex.summary.conflictCount, 1);
+assert.deepStrictEqual(pathFallbackIndex.entries.find((entry) => entry.jobId === regionBundleA.jobId).conflictingJobIds, [unregionedBundle.jobId]);
+const hotspotReport = createSwarmHotspotReport({ bundles: [regionBundleA, regionBundleB, unregionedBundle], threshold: 2, generatedAt: 6300 });
+assert.strictEqual(hotspotReport.summary.hotspotCount, 1);
+assert.ok(hotspotReport.recommendations.some((entry) => entry.path === 'src/hot/runtime-website-content.ts'));
+const reviewerLane = createSwarmReviewerLanePlan({ index: pathFallbackIndex, reviewerLane: 'merge-review', reviewers: ['reviewer-a'], generatedAt: 6400 });
+assert.ok(reviewerLane.tasks.every((task) => task.lane === 'merge-review'));
+const runStoreShards = createSwarmRunStoreShards({ plan: scalePlan, root: 'agent-runs/sharded', shardSize: 200, groupBy: 'lane', generatedAt: 6500 });
+assert.strictEqual(runStoreShards.summary.jobCount, 1000);
+assert.ok(runStoreShards.summary.shardCount > 1);
+const admission = createSwarmMergeAdmission({ index: regionIndex, maxReady: 1, maxChangedPaths: 2, maxChangedRegions: 2, generatedAt: 6600 });
+assert.deepStrictEqual(admission.admitted, [regionBundleA.jobId]);
+assert.strictEqual(admission.deferred[0].reasons.includes('max-ready'), true);
+const admissionReviewerLane = createSwarmReviewerLanePlan({ index: regionIndex, admission, reviewerLane: 'merge-review', generatedAt: 6700 });
+assert.ok(admissionReviewerLane.assignments.some((assignment) => assignment.jobId === regionBundleB.jobId && assignment.reasons.includes('max-ready')));
+const contextPack = createSwarmContextPack({
+  job: firstScaleJob,
+  files: ['docs/architecture.md'],
+	  apiMap: { runtime: ['createSwarmPlan', 'createSwarmRun'] },
+	  knownFailures: ['global smoke fails on stale fixture'],
+	  commands: [{ command: 'npm', args: ['run', 'focused-gate'] }],
+	  oracleCommands: [{ command: 'node', args: ['oracle.mjs'] }],
+	  expectedEvidence: ['evidence/commands.md'],
+	  exclusions: ['dist', 'node_modules'],
+	  avoidInvestigating: ['unrelated renderer rewrite'],
+	  playbookIds: ['runtime-playbook'],
+	  generatedAt: 6800
+	});
+assert.ok(contextPack.files.includes(firstScaleJob.task.targetRefs[0]));
+assert.ok(contextPack.expectedEvidence.includes('evidence/commands.md'));
+assert.ok(contextPack.exclusions.includes('node_modules'));
+assert.strictEqual(contextPack.commands[0].command, 'npm');
+assert.strictEqual(contextPack.oracleCommands[1].command, 'node');
+const oracleCorpus = createSwarmOracleCorpus({
+  id: 'generic-oracles',
+  artifacts: [
+    { id: 'api-trace', path: 'oracles/api-trace.jsonl', kind: 'trace', tags: ['api', 'deterministic'], command: 'node oracle.mjs' },
+    { id: 'ui-trace', path: 'oracles/ui-trace.jsonl', kind: 'trace', tags: ['ui'] }
+  ],
+  generatedAt: 6900
+});
+assert.deepStrictEqual(oracleCorpus.byKind.trace, ['api-trace', 'ui-trace']);
+assert.deepStrictEqual(oracleCorpus.byTag.deterministic, ['api-trace']);
+const lanePlaybook = createSwarmLanePlaybook({
+  lane: 'runtime',
+  successfulBundles: [regionBundleA, regionBundleB],
+  notes: ['Prefer the focused oracle before global smoke.'],
+  commands: ['npm test'],
+  avoidInvestigating: ['generated dist'],
+  generatedAt: 7000
+});
+assert.deepStrictEqual(lanePlaybook.changedRegions, ['content.docs', 'content.legal']);
+const patchStackPlan = createSwarmPatchStackPlan({ index: pathFallbackIndex, maxStackSize: 4, generatedAt: 7100 });
+assert.strictEqual(patchStackPlan.summary.jobCount, 2);
+assert.ok(patchStackPlan.stacks.some((stack) => stack.conflicts.length === 1));
 
 const decomposed = decomposeSwarmFeature({
   featureId: 'feature-x',

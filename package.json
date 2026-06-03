@@ -1,6 +1,6 @@
 {
   "name": "@shapeshift-labs/frontier-swarm",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and proofs for Frontier agent work.",
   "type": "module",
   "license": "MIT",

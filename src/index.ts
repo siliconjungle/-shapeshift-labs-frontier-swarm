@@ -32,6 +32,26 @@ export const FRONTIER_SWARM_MERGE_PLAN_KIND = 'frontier.swarm.merge-plan';
 export const FRONTIER_SWARM_MERGE_PLAN_VERSION = 1;
 export const FRONTIER_SWARM_MERGE_BUNDLE_KIND = 'frontier.swarm.merge-bundle';
 export const FRONTIER_SWARM_MERGE_BUNDLE_VERSION = 1;
+export const FRONTIER_SWARM_QUEUE_OVERLAY_KIND = 'frontier.swarm.queue-overlay';
+export const FRONTIER_SWARM_QUEUE_OVERLAY_VERSION = 1;
+export const FRONTIER_SWARM_MERGE_INDEX_KIND = 'frontier.swarm.merge-index';
+export const FRONTIER_SWARM_MERGE_INDEX_VERSION = 1;
+export const FRONTIER_SWARM_HOTSPOT_REPORT_KIND = 'frontier.swarm.hotspot-report';
+export const FRONTIER_SWARM_HOTSPOT_REPORT_VERSION = 1;
+export const FRONTIER_SWARM_REVIEWER_LANE_PLAN_KIND = 'frontier.swarm.reviewer-lane-plan';
+export const FRONTIER_SWARM_REVIEWER_LANE_PLAN_VERSION = 1;
+export const FRONTIER_SWARM_RUN_STORE_SHARDS_KIND = 'frontier.swarm.run-store-shards';
+export const FRONTIER_SWARM_RUN_STORE_SHARDS_VERSION = 1;
+export const FRONTIER_SWARM_MERGE_ADMISSION_KIND = 'frontier.swarm.merge-admission';
+export const FRONTIER_SWARM_MERGE_ADMISSION_VERSION = 1;
+export const FRONTIER_SWARM_CONTEXT_PACK_KIND = 'frontier.swarm.context-pack';
+export const FRONTIER_SWARM_CONTEXT_PACK_VERSION = 1;
+export const FRONTIER_SWARM_ORACLE_CORPUS_KIND = 'frontier.swarm.oracle-corpus';
+export const FRONTIER_SWARM_ORACLE_CORPUS_VERSION = 1;
+export const FRONTIER_SWARM_LANE_PLAYBOOK_KIND = 'frontier.swarm.lane-playbook';
+export const FRONTIER_SWARM_LANE_PLAYBOOK_VERSION = 1;
+export const FRONTIER_SWARM_PATCH_STACK_PLAN_KIND = 'frontier.swarm.patch-stack-plan';
+export const FRONTIER_SWARM_PATCH_STACK_PLAN_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
@@ -74,6 +94,18 @@ export type FrontierSwarmMergeDisposition =
   | 'stale-against-head'
   | string;
 export type FrontierSwarmRiskLevel = 'low' | 'medium' | 'high' | 'unknown' | string;
+export type FrontierSwarmPatchStatus = 'unknown' | 'applies' | 'missing' | 'stale' | 'failed-check' | string;
+export type FrontierSwarmQueueOverlayStatus =
+  | 'satisfied'
+  | 'ready-to-apply'
+  | 'needs-human-port'
+  | 'failed-evidence'
+  | 'stale-against-head'
+  | 'discovery-only'
+  | 'blocked'
+  | 'rejected'
+  | 'unknown'
+  | string;
 
 export interface FrontierSwarmComputeInput {
   id: string;
@@ -1156,6 +1188,458 @@ export interface FrontierSwarmMergeBundle {
   metadata?: JsonObject;
 }
 
+export interface FrontierSwarmQueueOverlayInput {
+  id?: string;
+  runId?: string;
+  bundles?: readonly FrontierSwarmMergeBundle[];
+  results?: readonly (FrontierSwarmJobResult | FrontierSwarmJobResultInput)[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmQueueOverlay {
+  kind: typeof FRONTIER_SWARM_QUEUE_OVERLAY_KIND;
+  version: typeof FRONTIER_SWARM_QUEUE_OVERLAY_VERSION;
+  id: string;
+  runId?: string;
+  generatedAt: number;
+  entries: FrontierSwarmQueueOverlayEntry[];
+  byQueueItemId: Record<string, FrontierSwarmQueueOverlayEntry[]>;
+  summary: {
+    entryCount: number;
+    queueItemCount: number;
+    readyToApplyCount: number;
+    needsHumanPortCount: number;
+    failedEvidenceCount: number;
+    staleAgainstHeadCount: number;
+    discoveryOnlyCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmQueueOverlayEntry {
+  queueItemId: string;
+  jobId: string;
+  status: FrontierSwarmQueueOverlayStatus;
+  mergeReadiness: FrontierSwarmMergeReadiness;
+  disposition: FrontierSwarmMergeDisposition;
+  riskLevel: FrontierSwarmRiskLevel;
+  patchPath?: string;
+  evidencePaths: string[];
+  changedPaths: string[];
+  changedRegions: string[];
+  reasons: string[];
+  generatedAt: number;
+}
+
+export interface FrontierSwarmDerivedQueueStatusInput {
+  snapshot: FrontierSwarmQueueSnapshot;
+  overlays?: readonly FrontierSwarmQueueOverlay[];
+  generatedAt?: number;
+}
+
+export interface FrontierSwarmDerivedQueueStatus {
+  generatedAt: number;
+  jobs: FrontierSwarmQueueJob[];
+  byStatus: Record<string, string[]>;
+  summary: FrontierSwarmQueueSnapshot['summary'];
+}
+
+export interface FrontierSwarmMergeIndexInput {
+  id?: string;
+  runId?: string;
+  planId?: string;
+  bundles: readonly FrontierSwarmMergeBundle[];
+  patchStatuses?: Record<string, FrontierSwarmPatchStatus>;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmMergeIndex {
+  kind: typeof FRONTIER_SWARM_MERGE_INDEX_KIND;
+  version: typeof FRONTIER_SWARM_MERGE_INDEX_VERSION;
+  id: string;
+  runId?: string;
+  planId?: string;
+  generatedAt: number;
+  entries: FrontierSwarmMergeIndexEntry[];
+  conflicts: FrontierSwarmMergeConflict[];
+  byDisposition: Record<string, string[]>;
+  byPath: Record<string, string[]>;
+  byRegion: Record<string, string[]>;
+  summary: {
+    entryCount: number;
+    readyToApplyCount: number;
+    needsHumanPortCount: number;
+    failedEvidenceCount: number;
+    staleAgainstHeadCount: number;
+    discoveryOnlyCount: number;
+    conflictCount: number;
+    conflictedJobCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmMergeIndexEntry {
+  jobId: string;
+  taskId?: string;
+  lane?: string;
+  title?: string;
+  status: FrontierSwarmJobStatus;
+  mergeReadiness: FrontierSwarmMergeReadiness;
+  disposition: FrontierSwarmMergeDisposition;
+  riskLevel: FrontierSwarmRiskLevel;
+  patchStatus: FrontierSwarmPatchStatus;
+  staleAgainstHead: boolean;
+  autoMergeable: boolean;
+  changedPaths: string[];
+  changedRegions: string[];
+  conflictKeys: string[];
+  conflictingJobIds: string[];
+  ownedFilesTouched: string[];
+  ownershipViolations: string[];
+  patchPath?: string;
+  patchHash?: string;
+  evidencePaths: string[];
+  queueItemIds: string[];
+  reasons: string[];
+  generatedAt: number;
+}
+
+export interface FrontierSwarmMergeConflict {
+  jobIds: string[];
+  key: string;
+  kind: 'path' | 'region';
+  path?: string;
+  region?: string;
+}
+
+export interface FrontierSwarmRegionOwnershipInput {
+  changedPaths?: readonly string[];
+  changedRegions?: readonly string[];
+}
+
+export interface FrontierSwarmRegionOwnershipReport {
+  ok: boolean;
+  jobId: string;
+  changedPaths: string[];
+  changedRegions: string[];
+  ownedRegions: string[];
+  regionViolations: string[];
+  unclassifiedChangedPaths: string[];
+}
+
+export interface FrontierSwarmHotspotReportInput {
+  id?: string;
+  bundles?: readonly FrontierSwarmMergeBundle[];
+  results?: readonly (FrontierSwarmJobResult | FrontierSwarmJobResultInput)[];
+  threshold?: number;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmHotspotReport {
+  kind: typeof FRONTIER_SWARM_HOTSPOT_REPORT_KIND;
+  version: typeof FRONTIER_SWARM_HOTSPOT_REPORT_VERSION;
+  id: string;
+  generatedAt: number;
+  threshold: number;
+  entries: FrontierSwarmHotspotEntry[];
+  recommendations: FrontierSwarmHotspotRecommendation[];
+  summary: {
+    pathCount: number;
+    hotspotCount: number;
+    recommendationCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmHotspotEntry {
+  path: string;
+  touchCount: number;
+  jobIds: string[];
+  regions: string[];
+  dispositions: string[];
+  riskLevels: string[];
+}
+
+export interface FrontierSwarmHotspotRecommendation {
+  path: string;
+  reason: 'repeated-conflicts' | 'hot-file' | 'region-overlap';
+  suggestedModuleId: string;
+  suggestedOwnershipRegions: string[];
+  jobIds: string[];
+}
+
+export interface FrontierSwarmReviewerLanePlanInput {
+  id?: string;
+  index: FrontierSwarmMergeIndex;
+  admission?: FrontierSwarmMergeAdmission;
+  reviewerLane?: string;
+  reviewers?: readonly string[];
+  includeAutoMergeable?: boolean;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmReviewerLanePlan {
+  kind: typeof FRONTIER_SWARM_REVIEWER_LANE_PLAN_KIND;
+  version: typeof FRONTIER_SWARM_REVIEWER_LANE_PLAN_VERSION;
+  id: string;
+  mergeIndexId: string;
+  generatedAt: number;
+  reviewerLane: string;
+  assignments: FrontierSwarmReviewerLaneAssignment[];
+  tasks: FrontierSwarmTaskInput[];
+  summary: {
+    assignmentCount: number;
+    taskCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmReviewerLaneAssignment {
+  jobId: string;
+  reviewers: string[];
+  required: boolean;
+  reasons: string[];
+}
+
+export interface FrontierSwarmRunStoreShardsInput {
+  id?: string;
+  run?: FrontierSwarmRun;
+  plan?: FrontierSwarmPlan;
+  root?: string;
+  shardSize?: number;
+  groupBy?: 'lane' | 'hash' | 'none';
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRunStoreShards {
+  kind: typeof FRONTIER_SWARM_RUN_STORE_SHARDS_KIND;
+  version: typeof FRONTIER_SWARM_RUN_STORE_SHARDS_VERSION;
+  id: string;
+  runId?: string;
+  planId?: string;
+  root: string;
+  generatedAt: number;
+  groupBy: 'lane' | 'hash' | 'none';
+  shardSize: number;
+  shards: FrontierSwarmRunStoreShard[];
+  summary: {
+    shardCount: number;
+    jobCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmRunStoreShard {
+  id: string;
+  lane?: string;
+  path: string;
+  eventPath: string;
+  resultPath: string;
+  checkpointPath: string;
+  jobIds: string[];
+}
+
+export interface FrontierSwarmMergeAdmissionInput {
+  id?: string;
+  index: FrontierSwarmMergeIndex;
+  maxReady?: number;
+  maxChangedPaths?: number;
+  maxChangedRegions?: number;
+  maxHighRisk?: number;
+  allowRisks?: readonly FrontierSwarmRiskLevel[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmMergeAdmission {
+  kind: typeof FRONTIER_SWARM_MERGE_ADMISSION_KIND;
+  version: typeof FRONTIER_SWARM_MERGE_ADMISSION_VERSION;
+  id: string;
+  mergeIndexId: string;
+  generatedAt: number;
+  admitted: string[];
+  deferred: FrontierSwarmMergeAdmissionDeferral[];
+  budget: {
+    maxReady: number;
+    maxChangedPaths?: number;
+    maxChangedRegions?: number;
+    maxHighRisk?: number;
+    allowRisks: string[];
+  };
+  summary: {
+    admittedCount: number;
+    deferredCount: number;
+    changedPathCount: number;
+    changedRegionCount: number;
+    highRiskCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmMergeAdmissionDeferral {
+  jobId: string;
+  reasons: string[];
+}
+
+export interface FrontierSwarmContextPackInput {
+  id?: string;
+  job?: FrontierSwarmJob;
+  task?: FrontierSwarmTask | FrontierSwarmTaskInput;
+  title?: string;
+  files?: readonly string[];
+  apiMap?: Record<string, readonly string[]>;
+  knownFailures?: readonly string[];
+  commands?: readonly (string | FrontierSwarmCommandInput)[];
+  oracleCommands?: readonly (string | FrontierSwarmCommandInput)[];
+  evidenceSchema?: unknown;
+  expectedEvidence?: readonly string[];
+  exclusions?: readonly string[];
+  avoidInvestigating?: readonly string[];
+  playbookIds?: readonly string[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmContextPack {
+  kind: typeof FRONTIER_SWARM_CONTEXT_PACK_KIND;
+  version: typeof FRONTIER_SWARM_CONTEXT_PACK_VERSION;
+  id: string;
+  jobId?: string;
+  taskId?: string;
+  lane?: string;
+  title: string;
+  generatedAt: number;
+  files: string[];
+  apiMap: Record<string, string[]>;
+  knownFailures: string[];
+  commands: FrontierSwarmCommand[];
+  oracleCommands: FrontierSwarmCommand[];
+  evidenceSchema?: JsonValue;
+  expectedEvidence: string[];
+  exclusions: string[];
+  avoidInvestigating: string[];
+  playbookIds: string[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmOracleArtifactInput {
+  id: string;
+  path: string;
+  kind?: string;
+  command?: string | FrontierSwarmCommandInput;
+  hash?: string;
+  sourceRef?: string;
+  tags?: readonly string[];
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmOracleArtifact {
+  id: string;
+  path: string;
+  kind: string;
+  command?: FrontierSwarmCommand;
+  hash?: string;
+  sourceRef?: string;
+  tags: string[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmOracleCorpusInput {
+  id?: string;
+  title?: string;
+  artifacts?: readonly FrontierSwarmOracleArtifactInput[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmOracleCorpus {
+  kind: typeof FRONTIER_SWARM_ORACLE_CORPUS_KIND;
+  version: typeof FRONTIER_SWARM_ORACLE_CORPUS_VERSION;
+  id: string;
+  title: string;
+  generatedAt: number;
+  artifacts: FrontierSwarmOracleArtifact[];
+  byKind: Record<string, string[]>;
+  byTag: Record<string, string[]>;
+  summary: {
+    artifactCount: number;
+    kindCount: number;
+    tagCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmLanePlaybookInput {
+  id?: string;
+  lane: string;
+  title?: string;
+  successfulBundles?: readonly FrontierSwarmMergeBundle[];
+  notes?: readonly string[];
+  commands?: readonly (string | FrontierSwarmCommandInput)[];
+  avoidInvestigating?: readonly string[];
+  evidencePatterns?: readonly string[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmLanePlaybook {
+  kind: typeof FRONTIER_SWARM_LANE_PLAYBOOK_KIND;
+  version: typeof FRONTIER_SWARM_LANE_PLAYBOOK_VERSION;
+  id: string;
+  lane: string;
+  title: string;
+  generatedAt: number;
+  notes: string[];
+  commands: FrontierSwarmCommand[];
+  avoidInvestigating: string[];
+  evidencePatterns: string[];
+  successfulJobIds: string[];
+  hotPaths: string[];
+  changedRegions: string[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmPatchStackPlanInput {
+  id?: string;
+  index: FrontierSwarmMergeIndex;
+  maxStackSize?: number;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmPatchStackPlan {
+  kind: typeof FRONTIER_SWARM_PATCH_STACK_PLAN_KIND;
+  version: typeof FRONTIER_SWARM_PATCH_STACK_PLAN_VERSION;
+  id: string;
+  mergeIndexId: string;
+  generatedAt: number;
+  stacks: FrontierSwarmPatchStack[];
+  summary: {
+    stackCount: number;
+    jobCount: number;
+    conflictedStackCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmPatchStack {
+  id: string;
+  title: string;
+  lane?: string;
+  jobIds: string[];
+  changedPaths: string[];
+  changedRegions: string[];
+  riskLevels: string[];
+  dispositions: string[];
+  conflicts: FrontierSwarmMergeConflict[];
+  gateHints: string[];
+}
+
 export interface FrontierSwarmProof {
   kind: typeof FRONTIER_SWARM_PROOF_KIND;
   version: typeof FRONTIER_SWARM_PROOF_VERSION;
@@ -1574,6 +2058,573 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
     ...(input.commit ? { commit: input.commit } : {}),
     staleAgainstHead: input.staleAgainstHead ?? false,
     reasons,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmQueueOverlay(input: FrontierSwarmQueueOverlayInput = {}): FrontierSwarmQueueOverlay {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const entries: FrontierSwarmQueueOverlayEntry[] = [];
+  for (const bundle of input.bundles ?? []) {
+    const status = queueOverlayStatusFromBundle(bundle);
+    const queueItemIds = bundle.queueItemIds.length ? bundle.queueItemIds : [bundle.taskId ?? bundle.jobId];
+    for (const queueItemId of queueItemIds) {
+      entries.push({
+        queueItemId,
+        jobId: bundle.jobId,
+        status,
+        mergeReadiness: bundle.mergeReadiness,
+        disposition: bundle.disposition,
+        riskLevel: bundle.riskLevel,
+        ...(bundle.patchPath ? { patchPath: bundle.patchPath } : {}),
+        evidencePaths: [...bundle.evidencePaths],
+        changedPaths: [...bundle.changedPaths],
+        changedRegions: [...bundle.changedRegions],
+        reasons: [...bundle.reasons],
+        generatedAt: bundle.generatedAt
+      });
+    }
+  }
+  for (const raw of input.results ?? []) {
+    const result = isSwarmJobResult(raw) ? cloneJsonValue(raw) as FrontierSwarmJobResult : normalizeResult(raw);
+    const queueItemIds = result.queueItemIds.length ? result.queueItemIds : [result.jobId];
+    for (const queueItemId of queueItemIds) {
+      entries.push({
+        queueItemId,
+        jobId: result.jobId,
+        status: queueOverlayStatusFromResult(result),
+        mergeReadiness: result.mergeReadiness,
+        disposition: result.mergeDisposition,
+        riskLevel: result.riskLevel,
+        ...(result.patchPath ? { patchPath: result.patchPath } : {}),
+        evidencePaths: [...result.evidencePaths],
+        changedPaths: [...result.changedPaths],
+        changedRegions: [...result.changedRegions],
+        reasons: result.error ? [result.error] : [],
+        generatedAt
+      });
+    }
+  }
+  const byQueueItemId = groupOverlayEntries(entries);
+  return {
+    kind: FRONTIER_SWARM_QUEUE_OVERLAY_KIND,
+    version: FRONTIER_SWARM_QUEUE_OVERLAY_VERSION,
+    id: input.id ?? 'swarm-queue-overlay:' + stableHash([input.runId, entries, generatedAt]),
+    ...(input.runId ? { runId: input.runId } : {}),
+    generatedAt,
+    entries,
+    byQueueItemId,
+    summary: {
+      entryCount: entries.length,
+      queueItemCount: Object.keys(byQueueItemId).length,
+      readyToApplyCount: entries.filter((entry) => entry.status === 'ready-to-apply').length,
+      needsHumanPortCount: entries.filter((entry) => entry.status === 'needs-human-port').length,
+      failedEvidenceCount: entries.filter((entry) => entry.status === 'failed-evidence').length,
+      staleAgainstHeadCount: entries.filter((entry) => entry.status === 'stale-against-head').length,
+      discoveryOnlyCount: entries.filter((entry) => entry.status === 'discovery-only').length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function deriveSwarmQueueStatus(input: FrontierSwarmDerivedQueueStatusInput): FrontierSwarmDerivedQueueStatus {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const latestByQueueItem = new Map<string, FrontierSwarmQueueOverlayEntry>();
+  for (const overlay of input.overlays ?? []) {
+    for (const entry of overlay.entries) {
+      const existing = latestByQueueItem.get(entry.queueItemId);
+      if (!existing || entry.generatedAt >= existing.generatedAt) latestByQueueItem.set(entry.queueItemId, entry);
+    }
+  }
+  const jobs = input.snapshot.jobs.map((job) => {
+    const overlay = latestByQueueItem.get(job.taskId ?? job.jobId) ?? latestByQueueItem.get(job.jobId);
+    if (!overlay) return cloneJsonValue(job) as FrontierSwarmQueueJob;
+    return {
+      ...cloneJsonValue(job) as FrontierSwarmQueueJob,
+      status: queueJobStatusFromOverlay(overlay),
+      lastError: overlay.status === 'failed-evidence' || overlay.status === 'stale-against-head' ? overlay.reasons.join(', ') : job.lastError,
+      metadata: toJsonObject({
+        ...(job.metadata ?? {}),
+        overlayStatus: overlay.status,
+        mergeDisposition: overlay.disposition,
+        mergeReadiness: overlay.mergeReadiness,
+        evidencePaths: overlay.evidencePaths
+      })
+    };
+  });
+  const byStatus = groupIds(jobs, (job) => job.status);
+  return {
+    generatedAt,
+    jobs,
+    byStatus,
+    summary: {
+      jobCount: jobs.length,
+      leaseCount: input.snapshot.leases.length,
+      readyCount: byStatus.ready?.length ?? 0,
+      leasedCount: byStatus.leased?.length ?? 0,
+      completedCount: byStatus.completed?.length ?? 0,
+      failedCount: byStatus.failed?.length ?? 0,
+      deadLetterCount: byStatus['dead-letter']?.length ?? 0
+    }
+  };
+}
+
+export function createSwarmMergeIndex(input: FrontierSwarmMergeIndexInput): FrontierSwarmMergeIndex {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const entries: FrontierSwarmMergeIndexEntry[] = input.bundles.map((bundle) => {
+    const patchStatus = input.patchStatuses?.[bundle.jobId] ?? (bundle.staleAgainstHead ? 'stale' : bundle.patchPath ? 'unknown' : 'missing');
+    const staleAgainstHead = bundle.staleAgainstHead || patchStatus === 'stale' || patchStatus === 'failed-check';
+    return {
+      jobId: bundle.jobId,
+      ...(bundle.taskId ? { taskId: bundle.taskId } : {}),
+      ...(bundle.lane ? { lane: bundle.lane } : {}),
+      ...(bundle.title ? { title: bundle.title } : {}),
+      status: bundle.status,
+      mergeReadiness: bundle.mergeReadiness,
+      disposition: staleAgainstHead ? 'stale-against-head' : bundle.disposition,
+      riskLevel: bundle.riskLevel,
+      patchStatus,
+      staleAgainstHead,
+      autoMergeable: bundle.autoMergeable && !staleAgainstHead,
+      changedPaths: [...bundle.changedPaths],
+      changedRegions: [...bundle.changedRegions],
+      conflictKeys: mergeIndexConflictKeys(bundle),
+      conflictingJobIds: [],
+      ownedFilesTouched: [...bundle.ownedFilesTouched],
+      ownershipViolations: [...bundle.ownershipViolations],
+      ...(bundle.patchPath ? { patchPath: bundle.patchPath } : {}),
+      ...(bundle.patchHash ? { patchHash: bundle.patchHash } : {}),
+      evidencePaths: [...bundle.evidencePaths],
+      queueItemIds: [...bundle.queueItemIds],
+      reasons: uniqueStrings([...bundle.reasons, ...(staleAgainstHead ? ['stale-against-head'] : [])]),
+      generatedAt: bundle.generatedAt
+    };
+  });
+  const conflicts = createMergeIndexConflicts(entries);
+  const conflictsByJob = new Map<string, Set<string>>();
+  for (const conflict of conflicts) {
+    for (const jobId of conflict.jobIds) {
+      const set = conflictsByJob.get(jobId) ?? new Set<string>();
+      for (const other of conflict.jobIds) if (other !== jobId) set.add(other);
+      conflictsByJob.set(jobId, set);
+    }
+  }
+  const indexed = entries.map((entry) => ({
+    ...entry,
+    conflictingJobIds: Array.from(conflictsByJob.get(entry.jobId) ?? []).sort()
+  }));
+  const byDisposition = groupJobIdsBy(indexed, (entry) => entry.disposition);
+  const byPath = groupJobIdsByMany(indexed, (entry) => entry.changedPaths);
+  const byRegion = groupJobIdsByMany(indexed, (entry) => entry.changedRegions);
+  return {
+    kind: FRONTIER_SWARM_MERGE_INDEX_KIND,
+    version: FRONTIER_SWARM_MERGE_INDEX_VERSION,
+    id: input.id ?? 'swarm-merge-index:' + stableHash([input.runId, input.planId, indexed, conflicts, generatedAt]),
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.planId ? { planId: input.planId } : {}),
+    generatedAt,
+    entries: indexed,
+    conflicts,
+    byDisposition,
+    byPath,
+    byRegion,
+    summary: {
+      entryCount: indexed.length,
+      readyToApplyCount: indexed.filter((entry) => entry.disposition === 'auto-mergeable' && entry.autoMergeable && !entry.conflictingJobIds.length).length,
+      needsHumanPortCount: indexed.filter((entry) => entry.disposition === 'needs-port').length,
+      failedEvidenceCount: indexed.filter((entry) => entry.disposition === 'rejected' || entry.disposition === 'blocked' || entry.ownershipViolations.length > 0).length,
+      staleAgainstHeadCount: indexed.filter((entry) => entry.staleAgainstHead || entry.disposition === 'stale-against-head').length,
+      discoveryOnlyCount: indexed.filter((entry) => entry.disposition === 'discovery-only').length,
+      conflictCount: conflicts.length,
+      conflictedJobCount: conflictsByJob.size
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function checkSwarmRegionOwnership(job: FrontierSwarmJob, input: FrontierSwarmRegionOwnershipInput = {}): FrontierSwarmRegionOwnershipReport {
+  const changedPaths = uniqueStrings(input.changedPaths ?? []);
+  const resolvedRegions = resolveSwarmChangedRegions(job, changedPaths);
+  const changedRegions = uniqueStrings([...(input.changedRegions ?? []), ...resolvedRegions]);
+  const ownedRegions = new Set(job.ownedRegions);
+  const regionViolations = changedRegions.filter((region) => !ownedRegions.has(region));
+  const classifiedPaths = new Set<string>();
+  for (const region of job.ownershipRegions) {
+    for (const file of changedPaths) {
+      if (region.globs.some((glob) => matchesGlob(file, glob))) classifiedPaths.add(file);
+    }
+  }
+  const unclassifiedChangedPaths = changedPaths.filter((file) => !classifiedPaths.has(file));
+  return {
+    ok: regionViolations.length === 0 && (job.ownershipRegions.length === 0 || unclassifiedChangedPaths.length === 0),
+    jobId: job.id,
+    changedPaths,
+    changedRegions,
+    ownedRegions: [...job.ownedRegions],
+    regionViolations,
+    unclassifiedChangedPaths
+  };
+}
+
+export function createSwarmHotspotReport(input: FrontierSwarmHotspotReportInput = {}): FrontierSwarmHotspotReport {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const threshold = Math.max(2, Math.floor(input.threshold ?? 3));
+  const byPath = new Map<string, FrontierSwarmHotspotEntry>();
+  for (const bundle of input.bundles ?? []) {
+    for (const file of bundle.changedPaths) {
+      const current = byPath.get(file) ?? {
+        path: file,
+        touchCount: 0,
+        jobIds: [],
+        regions: [],
+        dispositions: [],
+        riskLevels: []
+      };
+      current.touchCount += 1;
+      current.jobIds = uniqueStrings([...current.jobIds, bundle.jobId]);
+      current.regions = uniqueStrings([...current.regions, ...bundle.changedRegions]);
+      current.dispositions = uniqueStrings([...current.dispositions, bundle.disposition]);
+      current.riskLevels = uniqueStrings([...current.riskLevels, bundle.riskLevel]);
+      byPath.set(file, current);
+    }
+  }
+  for (const raw of input.results ?? []) {
+    const result = isSwarmJobResult(raw) ? raw : normalizeResult(raw);
+    for (const file of result.changedPaths) {
+      const current = byPath.get(file) ?? {
+        path: file,
+        touchCount: 0,
+        jobIds: [],
+        regions: [],
+        dispositions: [],
+        riskLevels: []
+      };
+      current.touchCount += 1;
+      current.jobIds = uniqueStrings([...current.jobIds, result.jobId]);
+      current.regions = uniqueStrings([...current.regions, ...result.changedRegions]);
+      current.dispositions = uniqueStrings([...current.dispositions, result.mergeDisposition]);
+      current.riskLevels = uniqueStrings([...current.riskLevels, result.riskLevel]);
+      byPath.set(file, current);
+    }
+  }
+  const entries = Array.from(byPath.values()).sort((left, right) => right.touchCount - left.touchCount || left.path.localeCompare(right.path));
+  const recommendations = entries
+    .filter((entry) => entry.touchCount >= threshold || entry.regions.length > 1)
+    .map((entry) => ({
+      path: entry.path,
+      reason: entry.regions.length > 1 ? 'region-overlap' as const : 'hot-file' as const,
+      suggestedModuleId: suggestedModuleId(entry.path),
+      suggestedOwnershipRegions: entry.regions.length ? entry.regions : [`${suggestedModuleId(entry.path)}.*`],
+      jobIds: [...entry.jobIds]
+    }));
+  return {
+    kind: FRONTIER_SWARM_HOTSPOT_REPORT_KIND,
+    version: FRONTIER_SWARM_HOTSPOT_REPORT_VERSION,
+    id: input.id ?? 'swarm-hotspot-report:' + stableHash([entries, threshold, generatedAt]),
+    generatedAt,
+    threshold,
+    entries,
+    recommendations,
+    summary: {
+      pathCount: entries.length,
+      hotspotCount: entries.filter((entry) => entry.touchCount >= threshold).length,
+      recommendationCount: recommendations.length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmReviewerLanePlan(input: FrontierSwarmReviewerLanePlanInput): FrontierSwarmReviewerLanePlan {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const reviewerLane = input.reviewerLane ?? 'review';
+  const reviewers = uniqueStrings(input.reviewers ?? []);
+  const deferralsByJob = new Map((input.admission?.deferred ?? []).map((entry) => [entry.jobId, entry.reasons]));
+  const candidates = input.index.entries.filter((entry) => input.includeAutoMergeable
+    || deferralsByJob.has(entry.jobId)
+    || entry.conflictingJobIds.length > 0
+    || entry.riskLevel === 'high'
+    || entry.disposition !== 'auto-mergeable'
+    || !entry.autoMergeable);
+  const assignments = candidates.map((entry) => ({
+    jobId: entry.jobId,
+    reviewers: selectReviewers(reviewers, reviewers.length ? 1 : 0, entry.jobId),
+    required: deferralsByJob.has(entry.jobId) || entry.conflictingJobIds.length > 0 || entry.riskLevel === 'high' || entry.disposition !== 'auto-mergeable',
+    reasons: uniqueStrings([...reviewerLaneReasons(entry), ...(deferralsByJob.get(entry.jobId) ?? [])])
+  }));
+  const tasks = candidates.map((entry) => ({
+    id: `review-${slug(entry.jobId)}`,
+    lane: reviewerLane,
+    kind: 'review',
+    title: `Review ${entry.title ?? entry.jobId}`,
+    objective: `Review swarm merge bundle ${entry.jobId}.`,
+    sourceRefs: entry.evidencePaths,
+    targetRefs: entry.changedPaths,
+    ownedRegions: entry.changedRegions,
+    acceptance: [
+      'Review evidence, patch applicability, ownership, conflicts, and risk.',
+      `Merge disposition: ${entry.disposition}.`
+    ],
+    metadata: {
+      mergeJobId: entry.jobId,
+      conflictingJobIds: entry.conflictingJobIds,
+      reasons: uniqueStrings([...reviewerLaneReasons(entry), ...(deferralsByJob.get(entry.jobId) ?? [])])
+    }
+  }));
+  return {
+    kind: FRONTIER_SWARM_REVIEWER_LANE_PLAN_KIND,
+    version: FRONTIER_SWARM_REVIEWER_LANE_PLAN_VERSION,
+    id: input.id ?? 'swarm-reviewer-lane-plan:' + stableHash([input.index.id, assignments, generatedAt]),
+    mergeIndexId: input.index.id,
+    generatedAt,
+    reviewerLane,
+    assignments,
+    tasks,
+    summary: {
+      assignmentCount: assignments.length,
+      taskCount: tasks.length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmRunStoreShards(input: FrontierSwarmRunStoreShardsInput = {}): FrontierSwarmRunStoreShards {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const root = input.root ?? 'agent-runs/shards';
+  const shardSize = Math.max(1, Math.floor(input.shardSize ?? 100));
+  const groupBy = input.groupBy ?? 'lane';
+  const jobs = input.run?.jobs ?? input.plan?.jobs ?? [];
+  const groups = new Map<string, FrontierSwarmJob[]>();
+  for (const job of jobs) {
+    const key = groupBy === 'none' ? 'all' : groupBy === 'hash' ? String(hashBucket(job.id, shardSize)) : job.lane;
+    groups.set(key, [...(groups.get(key) ?? []), job]);
+  }
+  const shards: FrontierSwarmRunStoreShard[] = [];
+  for (const [group, groupJobs] of Array.from(groups.entries()).sort((left, right) => left[0].localeCompare(right[0]))) {
+    for (let index = 0; index < groupJobs.length; index += shardSize) {
+      const slice = groupJobs.slice(index, index + shardSize);
+      const suffix = `${slug(group)}-${Math.floor(index / shardSize)}`;
+      const shardRoot = joinPathParts(root, suffix);
+      shards.push({
+        id: 'swarm-run-store-shard:' + stableHash([input.run?.id, input.plan?.id, group, index, slice.map((job) => job.id)]),
+        ...(groupBy === 'lane' ? { lane: group } : {}),
+        path: shardRoot,
+        eventPath: joinPathParts(shardRoot, 'events.jsonl'),
+        resultPath: joinPathParts(shardRoot, 'results.jsonl'),
+        checkpointPath: joinPathParts(shardRoot, 'checkpoint.json'),
+        jobIds: slice.map((job) => job.id)
+      });
+    }
+  }
+  return {
+    kind: FRONTIER_SWARM_RUN_STORE_SHARDS_KIND,
+    version: FRONTIER_SWARM_RUN_STORE_SHARDS_VERSION,
+    id: input.id ?? 'swarm-run-store-shards:' + stableHash([input.run?.id, input.plan?.id, root, shardSize, groupBy, shards, generatedAt]),
+    ...(input.run ? { runId: input.run.id } : {}),
+    ...(input.plan ? { planId: input.plan.id } : {}),
+    root,
+    generatedAt,
+    groupBy,
+    shardSize,
+    shards,
+    summary: {
+      shardCount: shards.length,
+      jobCount: jobs.length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmMergeAdmission(input: FrontierSwarmMergeAdmissionInput): FrontierSwarmMergeAdmission {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const maxReady = Math.max(0, Math.floor(input.maxReady ?? input.index.entries.length));
+  const maxChangedPaths = input.maxChangedPaths === undefined ? undefined : Math.max(0, Math.floor(input.maxChangedPaths));
+  const maxChangedRegions = input.maxChangedRegions === undefined ? undefined : Math.max(0, Math.floor(input.maxChangedRegions));
+  const maxHighRisk = input.maxHighRisk === undefined ? undefined : Math.max(0, Math.floor(input.maxHighRisk));
+  const allowRisks = uniqueStrings(input.allowRisks ?? ['low', 'medium']);
+  const admitted: string[] = [];
+  const deferred: FrontierSwarmMergeAdmissionDeferral[] = [];
+  const usedPaths = new Set<string>();
+  const usedRegions = new Set<string>();
+  let highRiskCount = 0;
+  for (const entry of input.index.entries) {
+    const reasons: string[] = [];
+    if (entry.disposition !== 'auto-mergeable' || !entry.autoMergeable) reasons.push('not-auto-mergeable');
+    if (entry.staleAgainstHead) reasons.push('stale-against-head');
+    if (entry.conflictingJobIds.length) reasons.push('conflicting-changes');
+    if (!allowRisks.includes(entry.riskLevel)) reasons.push('risk-not-admitted');
+    if (admitted.length >= maxReady) reasons.push('max-ready');
+    const nextPaths = new Set([...usedPaths, ...entry.changedPaths]);
+    const nextRegions = new Set([...usedRegions, ...entry.changedRegions]);
+    const nextHighRiskCount = highRiskCount + (entry.riskLevel === 'high' ? 1 : 0);
+    if (maxChangedPaths !== undefined && nextPaths.size > maxChangedPaths) reasons.push('max-changed-paths');
+    if (maxChangedRegions !== undefined && nextRegions.size > maxChangedRegions) reasons.push('max-changed-regions');
+    if (maxHighRisk !== undefined && nextHighRiskCount > maxHighRisk) reasons.push('max-high-risk');
+    if (reasons.length) {
+      deferred.push({ jobId: entry.jobId, reasons: uniqueStrings(reasons) });
+      continue;
+    }
+    admitted.push(entry.jobId);
+    for (const file of entry.changedPaths) usedPaths.add(file);
+    for (const region of entry.changedRegions) usedRegions.add(region);
+    highRiskCount = nextHighRiskCount;
+  }
+  return {
+    kind: FRONTIER_SWARM_MERGE_ADMISSION_KIND,
+    version: FRONTIER_SWARM_MERGE_ADMISSION_VERSION,
+    id: input.id ?? 'swarm-merge-admission:' + stableHash([input.index.id, admitted, deferred, generatedAt]),
+    mergeIndexId: input.index.id,
+    generatedAt,
+    admitted,
+    deferred,
+    budget: {
+      maxReady,
+      ...(maxChangedPaths !== undefined ? { maxChangedPaths } : {}),
+      ...(maxChangedRegions !== undefined ? { maxChangedRegions } : {}),
+      ...(maxHighRisk !== undefined ? { maxHighRisk } : {}),
+      allowRisks
+    },
+    summary: {
+      admittedCount: admitted.length,
+      deferredCount: deferred.length,
+      changedPathCount: usedPaths.size,
+      changedRegionCount: usedRegions.size,
+      highRiskCount
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmContextPack(input: FrontierSwarmContextPackInput = {}): FrontierSwarmContextPack {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const task = input.job?.task ?? (input.task ? isSwarmTask(input.task) ? input.task : normalizeTask(input.task) : undefined);
+  const files = uniqueStrings([
+    ...(input.files ?? []),
+    ...(input.job?.task.sourceRefs ?? []),
+    ...(input.job?.task.targetRefs ?? []),
+    ...(task?.sourceRefs ?? []),
+    ...(task?.targetRefs ?? [])
+  ]);
+  const apiMap = Object.fromEntries(Object.entries(input.apiMap ?? {}).map(([key, values]) => [key, uniqueStrings(values)]));
+  const commands = normalizeCommands([
+    ...(input.commands ?? []),
+    ...(input.oracleCommands ?? []),
+    ...(input.job?.verification ?? [])
+  ]);
+  const expectedEvidence = uniqueStrings([
+    ...(input.expectedEvidence ?? []),
+    ...(input.job?.evidencePrefix ? [joinPathParts(input.job.evidencePrefix, 'evidence.json')] : [])
+  ]);
+  return {
+    kind: FRONTIER_SWARM_CONTEXT_PACK_KIND,
+    version: FRONTIER_SWARM_CONTEXT_PACK_VERSION,
+    id: input.id ?? 'swarm-context-pack:' + stableHash([input.job?.id, task?.id, files, apiMap, generatedAt]),
+    ...(input.job ? { jobId: input.job.id } : {}),
+    ...(task ? { taskId: task.id } : {}),
+    ...(input.job?.lane ?? task?.lane ? { lane: input.job?.lane ?? task?.lane } : {}),
+    title: input.title ?? input.job?.title ?? task?.title ?? 'Swarm Context Pack',
+    generatedAt,
+    files,
+    apiMap,
+    knownFailures: uniqueStrings(input.knownFailures ?? []),
+    commands,
+    oracleCommands: commands,
+    ...(input.evidenceSchema !== undefined ? { evidenceSchema: toJsonValue(input.evidenceSchema) } : {}),
+    expectedEvidence,
+    exclusions: uniqueStrings(input.exclusions ?? []),
+    avoidInvestigating: uniqueStrings(input.avoidInvestigating ?? []),
+    playbookIds: uniqueStrings(input.playbookIds ?? []),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmOracleCorpus(input: FrontierSwarmOracleCorpusInput = {}): FrontierSwarmOracleCorpus {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const artifacts = (input.artifacts ?? []).map(normalizeOracleArtifact).sort((left, right) => left.id.localeCompare(right.id));
+  const byKind = groupArtifactIdsBy(artifacts, (artifact) => [artifact.kind]);
+  const byTag = groupArtifactIdsBy(artifacts, (artifact) => artifact.tags);
+  return {
+    kind: FRONTIER_SWARM_ORACLE_CORPUS_KIND,
+    version: FRONTIER_SWARM_ORACLE_CORPUS_VERSION,
+    id: input.id ?? 'swarm-oracle-corpus:' + stableHash([artifacts, generatedAt]),
+    title: input.title ?? titleFromId(input.id ?? 'oracle corpus'),
+    generatedAt,
+    artifacts,
+    byKind,
+    byTag,
+    summary: {
+      artifactCount: artifacts.length,
+      kindCount: Object.keys(byKind).length,
+      tagCount: Object.keys(byTag).length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmLanePlaybook(input: FrontierSwarmLanePlaybookInput): FrontierSwarmLanePlaybook {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const successful = (input.successfulBundles ?? []).filter((bundle) => bundle.status === 'completed' || bundle.status === 'verified' || bundle.autoMergeable);
+  const hotPaths = createSwarmHotspotReport({ bundles: successful, threshold: 2, generatedAt }).entries
+    .filter((entry) => entry.touchCount >= 2)
+    .map((entry) => entry.path);
+  return {
+    kind: FRONTIER_SWARM_LANE_PLAYBOOK_KIND,
+    version: FRONTIER_SWARM_LANE_PLAYBOOK_VERSION,
+    id: input.id ?? 'swarm-lane-playbook:' + stableHash([input.lane, successful.map((bundle) => bundle.jobId), input.notes, generatedAt]),
+    lane: normalizeId(input.lane, 'playbook lane'),
+    title: input.title ?? `${titleFromId(input.lane)} Playbook`,
+    generatedAt,
+    notes: uniqueStrings(input.notes ?? []),
+    commands: normalizeCommands(input.commands ?? []),
+    avoidInvestigating: uniqueStrings(input.avoidInvestigating ?? []),
+    evidencePatterns: uniqueStrings(input.evidencePatterns ?? successful.flatMap((bundle) => bundle.evidencePaths)),
+    successfulJobIds: uniqueStrings(successful.map((bundle) => bundle.jobId)),
+    hotPaths,
+    changedRegions: uniqueStrings(successful.flatMap((bundle) => bundle.changedRegions)),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmPatchStackPlan(input: FrontierSwarmPatchStackPlanInput): FrontierSwarmPatchStackPlan {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const maxStackSize = Math.max(1, Math.floor(input.maxStackSize ?? 8));
+  const groups = new Map<string, FrontierSwarmMergeIndexEntry[]>();
+  for (const entry of input.index.entries) {
+    const key = patchStackKey(entry);
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+  const stacks: FrontierSwarmPatchStack[] = [];
+  for (const [key, entries] of Array.from(groups.entries()).sort((left, right) => left[0].localeCompare(right[0]))) {
+    const sorted = [...entries].sort((left, right) => riskRank(left.riskLevel) - riskRank(right.riskLevel) || left.jobId.localeCompare(right.jobId));
+    for (let index = 0; index < sorted.length; index += maxStackSize) {
+      const slice = sorted.slice(index, index + maxStackSize);
+      const jobIds = slice.map((entry) => entry.jobId);
+      const conflicts = input.index.conflicts.filter((conflict) => conflict.jobIds.some((jobId) => jobIds.includes(jobId)));
+      stacks.push({
+        id: 'swarm-patch-stack:' + stableHash([input.index.id, key, index, jobIds]),
+        title: titleFromId(key),
+        ...(slice[0]?.lane ? { lane: slice[0].lane } : {}),
+        jobIds,
+        changedPaths: uniqueStrings(slice.flatMap((entry) => entry.changedPaths)),
+        changedRegions: uniqueStrings(slice.flatMap((entry) => entry.changedRegions)),
+        riskLevels: uniqueStrings(slice.map((entry) => entry.riskLevel)),
+        dispositions: uniqueStrings(slice.map((entry) => entry.disposition)),
+        conflicts,
+        gateHints: uniqueStrings(slice.flatMap((entry) => entry.evidencePaths.filter((file) => file.endsWith('.json') || file.endsWith('.jsonl'))))
+      });
+    }
+  }
+  return {
+    kind: FRONTIER_SWARM_PATCH_STACK_PLAN_KIND,
+    version: FRONTIER_SWARM_PATCH_STACK_PLAN_VERSION,
+    id: input.id ?? 'swarm-patch-stack-plan:' + stableHash([input.index.id, stacks, generatedAt]),
+    mergeIndexId: input.index.id,
+    generatedAt,
+    stacks,
+    summary: {
+      stackCount: stacks.length,
+      jobCount: input.index.entries.length,
+      conflictedStackCount: stacks.filter((stack) => stack.conflicts.length > 0).length
+    },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
 }
@@ -2064,29 +3115,174 @@ function selectReviewers(pool: readonly string[], required: number, salt: string
 }
 
 function conflictMap(results: readonly FrontierSwarmJobResult[]): Map<string, Set<string>> {
-  const byPath = new Map<string, string[]>();
-  for (const result of results) {
-    const keys = result.changedRegions.length
-      ? result.changedRegions.map((region) => `region:${region}`)
-      : result.changedPaths.map((file) => `file:${file}`);
-    for (const key of keys) {
-      const list = byPath.get(key) ?? [];
-      list.push(result.jobId);
-      byPath.set(key, list);
-    }
-  }
   const conflicts = new Map<string, Set<string>>();
-  for (const jobIds of byPath.values()) {
-    if (jobIds.length < 2) continue;
-    for (const jobId of jobIds) {
-      const set = conflicts.get(jobId) ?? new Set<string>();
-      for (const other of jobIds) {
-        if (other !== jobId) set.add(other);
-      }
-      conflicts.set(jobId, set);
+  for (let leftIndex = 0; leftIndex < results.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < results.length; rightIndex += 1) {
+      const left = results[leftIndex];
+      const right = results[rightIndex];
+      if (!left || !right || pairConflictKeys(left, right).length === 0) continue;
+      const leftConflicts = conflicts.get(left.jobId) ?? new Set<string>();
+      const rightConflicts = conflicts.get(right.jobId) ?? new Set<string>();
+      leftConflicts.add(right.jobId);
+      rightConflicts.add(left.jobId);
+      conflicts.set(left.jobId, leftConflicts);
+      conflicts.set(right.jobId, rightConflicts);
     }
   }
   return conflicts;
+}
+
+function queueOverlayStatusFromBundle(bundle: FrontierSwarmMergeBundle): FrontierSwarmQueueOverlayStatus {
+  if (bundle.staleAgainstHead || bundle.disposition === 'stale-against-head') return 'stale-against-head';
+  if (bundle.disposition === 'rejected' || bundle.disposition === 'blocked' || bundle.status === 'failed' || bundle.commandsFailed.length > 0) {
+    return 'failed-evidence';
+  }
+  if (bundle.disposition === 'auto-mergeable' && bundle.autoMergeable) return 'ready-to-apply';
+  if (bundle.disposition === 'needs-port') return 'needs-human-port';
+  if (bundle.disposition === 'discovery-only') return 'discovery-only';
+  if (bundle.mergeReadiness === 'blocked') return 'blocked';
+  if (bundle.mergeReadiness === 'rejected') return 'rejected';
+  return 'unknown';
+}
+
+function queueOverlayStatusFromResult(result: FrontierSwarmJobResult): FrontierSwarmQueueOverlayStatus {
+  if (result.mergeDisposition === 'stale-against-head') return 'stale-against-head';
+  if (result.status === 'failed' || result.exitCode !== undefined && result.exitCode !== 0 || result.ownershipViolations.length > 0) return 'failed-evidence';
+  if (result.mergeDisposition === 'auto-mergeable') return 'ready-to-apply';
+  if (result.mergeDisposition === 'needs-port') return 'needs-human-port';
+  if (result.mergeDisposition === 'discovery-only') return 'discovery-only';
+  if (result.status === 'blocked') return 'blocked';
+  return 'unknown';
+}
+
+function queueJobStatusFromOverlay(entry: FrontierSwarmQueueOverlayEntry): FrontierSwarmQueueJobStatus {
+  if (entry.status === 'ready-to-apply' || entry.status === 'discovery-only') return 'completed';
+  if (entry.status === 'needs-human-port') return 'blocked';
+  if (entry.status === 'failed-evidence' || entry.status === 'rejected' || entry.status === 'stale-against-head') return 'failed';
+  if (entry.status === 'blocked') return 'blocked';
+  return 'completed';
+}
+
+function groupOverlayEntries(entries: readonly FrontierSwarmQueueOverlayEntry[]): Record<string, FrontierSwarmQueueOverlayEntry[]> {
+  const out: Record<string, FrontierSwarmQueueOverlayEntry[]> = {};
+  for (const entry of entries) out[entry.queueItemId] = [...(out[entry.queueItemId] ?? []), entry];
+  for (const key of Object.keys(out)) {
+    out[key] = [...(out[key] ?? [])].sort((left, right) => right.generatedAt - left.generatedAt || left.jobId.localeCompare(right.jobId));
+  }
+  return out;
+}
+
+function mergeIndexConflictKeys(bundle: FrontierSwarmMergeBundle): string[] {
+  return bundle.changedRegions.length
+    ? bundle.changedRegions.map((region) => `region:${region}`).sort()
+    : bundle.changedPaths.map((file) => `path:${file}`).sort();
+}
+
+function createMergeIndexConflicts(entries: readonly FrontierSwarmMergeIndexEntry[]): FrontierSwarmMergeConflict[] {
+  const conflicts: FrontierSwarmMergeConflict[] = [];
+  for (let leftIndex = 0; leftIndex < entries.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < entries.length; rightIndex += 1) {
+      const left = entries[leftIndex];
+      const right = entries[rightIndex];
+      if (!left || !right) continue;
+      const keys = pairConflictKeys(left, right);
+      for (const key of keys) {
+        const kind = key.startsWith('region:') ? 'region' as const : 'path' as const;
+        const value = key.slice(key.indexOf(':') + 1);
+        conflicts.push({
+          jobIds: [left.jobId, right.jobId].sort(),
+          key,
+          kind,
+          ...(kind === 'region' ? { region: value } : { path: value })
+        });
+      }
+    }
+  }
+  const deduped = new Map<string, FrontierSwarmMergeConflict>();
+  for (const conflict of conflicts) deduped.set(`${conflict.key}:${conflict.jobIds.join(',')}`, conflict);
+  return Array.from(deduped.values()).sort((left, right) => left.key.localeCompare(right.key) || left.jobIds.join(',').localeCompare(right.jobIds.join(',')));
+}
+
+function pairConflictKeys(
+  left: Pick<FrontierSwarmJobResult | FrontierSwarmMergeIndexEntry, 'changedPaths' | 'changedRegions'>,
+  right: Pick<FrontierSwarmJobResult | FrontierSwarmMergeIndexEntry, 'changedPaths' | 'changedRegions'>
+): string[] {
+  if (left.changedRegions.length > 0 && right.changedRegions.length > 0) {
+    const rightRegions = new Set(right.changedRegions);
+    return left.changedRegions.filter((region) => rightRegions.has(region)).map((region) => `region:${region}`).sort();
+  }
+  const rightPaths = new Set(right.changedPaths);
+  return left.changedPaths.filter((file) => rightPaths.has(file)).map((file) => `path:${file}`).sort();
+}
+
+function groupJobIdsBy<T extends { jobId: string }>(items: readonly T[], key: (item: T) => string): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const item of items) out[key(item)] = uniqueStrings([...(out[key(item)] ?? []), item.jobId]);
+  return out;
+}
+
+function groupJobIdsByMany<T extends { jobId: string }>(items: readonly T[], key: (item: T) => readonly string[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const item of items) {
+    for (const value of key(item)) out[value] = uniqueStrings([...(out[value] ?? []), item.jobId]);
+  }
+  return out;
+}
+
+function suggestedModuleId(file: string): string {
+  const base = file.split('/').pop()?.replace(/\.[^.]+$/, '') ?? file;
+  return slug(base).replace(/-/g, '.');
+}
+
+function reviewerLaneReasons(entry: FrontierSwarmMergeIndexEntry): string[] {
+  const reasons: string[] = [];
+  if (entry.conflictingJobIds.length) reasons.push('conflicting-changes');
+  if (entry.riskLevel === 'high') reasons.push('high-risk');
+  if (entry.disposition !== 'auto-mergeable') reasons.push(entry.disposition);
+  if (!entry.autoMergeable) reasons.push('not-auto-mergeable');
+  if (entry.staleAgainstHead) reasons.push('stale-against-head');
+  return uniqueStrings(reasons);
+}
+
+function hashBucket(value: string, buckets: number): number {
+  const hex = stableHash(value).split(':')[1] ?? '0';
+  return parseInt(hex, 16) % Math.max(1, buckets);
+}
+
+function normalizeOracleArtifact(input: FrontierSwarmOracleArtifactInput): FrontierSwarmOracleArtifact {
+  return {
+    id: normalizeId(input.id, 'oracle artifact id'),
+    path: normalizeId(input.path, 'oracle artifact path'),
+    kind: input.kind ?? 'oracle',
+    ...(input.command ? { command: typeof input.command === 'string' ? normalizeCommands([input.command])[0] : normalizeCommands([input.command])[0] } : {}),
+    ...(input.hash ? { hash: input.hash } : {}),
+    ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
+    tags: uniqueStrings(input.tags ?? []),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function groupArtifactIdsBy(artifacts: readonly FrontierSwarmOracleArtifact[], key: (artifact: FrontierSwarmOracleArtifact) => readonly string[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const artifact of artifacts) {
+    for (const value of key(artifact)) out[value] = uniqueStrings([...(out[value] ?? []), artifact.id]);
+  }
+  return out;
+}
+
+function patchStackKey(entry: FrontierSwarmMergeIndexEntry): string {
+  const lane = entry.lane ?? 'unassigned';
+  if (entry.changedRegions.length) return `${lane}:${entry.changedRegions[0]}`;
+  const firstPath = entry.changedPaths[0] ?? 'evidence-only';
+  return `${lane}:${firstPath.split('/').slice(0, 2).join('/') || firstPath}`;
+}
+
+function riskRank(risk: FrontierSwarmRiskLevel): number {
+  if (risk === 'low') return 0;
+  if (risk === 'medium') return 1;
+  if (risk === 'unknown') return 2;
+  if (risk === 'high') return 3;
+  return 4;
 }
 
 function groupMergeReadyJobs(ready: readonly string[], results: readonly FrontierSwarmJobResult[]): FrontierSwarmMergeGroup[] {
