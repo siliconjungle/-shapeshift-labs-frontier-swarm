@@ -15,6 +15,16 @@ import {
   createSwarmMergeIndex,
   createSwarmOracleCorpus,
   createSwarmPatchStackPlan,
+  createSwarmReplayBundle,
+  createSwarmParityOracle,
+  createSwarmDivergenceReport,
+  createSwarmWatchpointPlan,
+  createSwarmDebugHandoff,
+  createSwarmEvidenceIndex,
+  createSwarmBlackboard,
+  createSwarmBottleneckReport,
+  createSwarmFixtureCatalog,
+  createSwarmProgressModel,
   createSwarmPlan,
   createSwarmProof,
   createSwarmQueueOverlay,
@@ -117,6 +127,35 @@ const rows = [
       { id: 'snapshot-routing', path: 'oracles/routing-snapshot.json', kind: 'snapshot', tags: ['routing', 'reference'] }
     ]
   }).summary.artifactCount),
+  measure('replay-debug-evidence-' + taskCount, 16, () => {
+    const replay = createSwarmReplayBundle({
+      commands: ['node replay.mjs'],
+      artifacts: [{ path: 'agent-runs/bench/trace.jsonl', kind: 'trace' }],
+      expectedEvidence: ['trace.jsonl']
+    });
+    const parity = createSwarmParityOracle({
+      comparators: [{ status: 'failed', expected: 1, actual: 2, operationIndex: cursor++ }]
+    });
+    const divergence = createSwarmDivergenceReport({
+      replayBundleIds: [replay.id],
+      observabilityPoints: [{ operationIndex: cursor, path: '/value' }],
+      expected: 1,
+      actual: 2
+    });
+    const watch = createSwarmWatchpointPlan({ watchpoints: [{ path: '/value', operator: 'changes' }] });
+    const handoff = createSwarmDebugHandoff({
+      replayBundleIds: [replay.id],
+      divergenceReportIds: [divergence.id],
+      watchpointPlanIds: [watch.id],
+      comparisons: parity.comparators
+    });
+    const evidence = createSwarmEvidenceIndex({ entries: [{ topic: 'bench', path: 'agent-runs/bench/evidence.json' }] });
+    const blackboard = createSwarmBlackboard({ entries: [{ topic: 'bench', text: 'divergence found', sourceIds: [divergence.id] }] });
+    const bottleneck = createSwarmBottleneckReport({ sources: [{ text: 'merge review bottleneck', changedPaths: ['src/runtime.ts'] }] });
+    const fixtures = createSwarmFixtureCatalog({ fixtures: [{ id: 'logged-in', tags: ['auth'] }] });
+    const progress = createSwarmProgressModel({ items: [{ id: 'bench', status: 'accepted' }] });
+    return handoff.commands.length + evidence.summary.entryCount + blackboard.summary.entryCount + bottleneck.summary.kindCount + fixtures.summary.fixtureCount + progress.summary.acceptedCount;
+  }),
   measure('lane-playbook-' + taskCount, 16, () => createSwarmLanePlaybook({
     lane: 'runtime',
     successfulBundles: bundles,

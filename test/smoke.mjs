@@ -7,9 +7,20 @@ import {
   completeSwarmJob,
   compileSwarm,
   checkSwarmBudget,
+  checkSwarmInstrumentationBudget,
+  checkSwarmUsageGovernor,
   createSwarmArtifactIndex,
+  createSwarmArtifactRoutingPlan,
+  createSwarmAutoReviewReport,
+  createSwarmBlackboard,
+  createSwarmBottleneckReport,
   createSwarmContextPack,
+  createSwarmDebugHandoff,
+  createSwarmDivergenceReport,
   createSwarmEventStream,
+  createSwarmEvidenceIndex,
+  createSwarmFixtureCatalog,
+  createSwarmInstrumentationBudget,
   createSwarmLeases,
   createSwarmHotspotReport,
   createSwarmLanePlaybook,
@@ -19,6 +30,12 @@ import {
   createSwarmMergeIndex,
   createSwarmOracleCorpus,
   createSwarmPatchStackPlan,
+  createSwarmParityOracle,
+  createSwarmProgressModel,
+  createSwarmRebaseReport,
+  createSwarmReferenceOraclePlan,
+  createSwarmReferenceOracleResponse,
+  createSwarmReplayBundle,
   createSwarmMergePlan,
   createSwarmPlan,
   createSwarmProof,
@@ -30,7 +47,10 @@ import {
   createSwarmRunCheckpoint,
   createSwarmRun,
   createSwarmSchedule,
+  createSwarmSchedulerRecommendations,
   createSwarmTaskSelection,
+  createSwarmUsageGovernor,
+  createSwarmWatchpointPlan,
   decodeSwarmJsonl,
   decomposeSwarmFeature,
   defineSwarmManifest,
@@ -38,6 +58,8 @@ import {
   encodeSwarmJsonl,
   deriveSwarmQueueStatus,
   matchesGlob,
+  querySwarmBlackboard,
+  querySwarmEvidenceIndex,
   recordSwarmEvent,
   renewSwarmLease,
   resolveSwarmChangedRegions,
@@ -497,3 +519,202 @@ const decomposed = decomposeSwarmFeature({
 });
 assert.strictEqual(decomposed.length, 2);
 assert.ok(decomposed[0].verification?.length);
+
+const replayBundle = createSwarmReplayBundle({
+  id: 'replay-api-divergence',
+  subject: 'library-port',
+  commands: [{ name: 'replay', command: 'node', args: ['replay.mjs'] }],
+  inputs: [{ path: 'fixtures/request.json', kind: 'fixture' }],
+  artifacts: [{ path: 'agent-runs/replay/trace.jsonl', kind: 'trace' }],
+  sourceRefs: ['legacy/runtime.js'],
+  seeds: ['case-42'],
+  expectedEvidence: ['trace.jsonl'],
+  generatedAt: 7200
+});
+assert.strictEqual(replayBundle.summary.commandCount, 1);
+assert.strictEqual(replayBundle.seeds[0].kind, 'seed');
+
+const parityOracle = createSwarmParityOracle({
+  id: 'parity-library-port',
+  subject: 'library-port',
+  referenceCommands: ['node legacy.mjs'],
+  testCommands: ['node candidate.mjs'],
+  comparators: [
+    { id: 'state-match', status: 'failed', expected: { ok: true }, actual: { ok: false }, path: '/ok', operationIndex: 42 }
+  ],
+  replayBundleIds: [replayBundle.id],
+  generatedAt: 7300
+});
+assert.strictEqual(parityOracle.status, 'failed');
+assert.strictEqual(parityOracle.summary.failedCount, 1);
+
+const divergenceReport = createSwarmDivergenceReport({
+  id: 'divergence-state',
+  subject: 'library-port',
+  observabilityPoints: [
+    { id: 'point-late', operationIndex: 50, path: '/ok', after: false },
+    { id: 'point-early', operationIndex: 42, path: '/ok', before: true, after: false }
+  ],
+  expected: true,
+  actual: false,
+  traceRefs: [{ path: 'agent-runs/replay/trace.jsonl' }],
+  replayBundleIds: [replayBundle.id],
+  generatedAt: 7400
+});
+assert.strictEqual(divergenceReport.operationIndex, 42);
+assert.strictEqual(divergenceReport.divergesAt, '/ok');
+
+const watchpointPlan = createSwarmWatchpointPlan({
+  subject: 'library-port',
+  watchpoints: [{ path: '/ok', operator: 'changes', action: 'break' }],
+  commands: ['node inspect.mjs'],
+  replayBundleIds: [replayBundle.id],
+  divergenceReportIds: [divergenceReport.id],
+  generatedAt: 7500
+});
+assert.strictEqual(watchpointPlan.watchpoints[0].action, 'break');
+
+const debugHandoff = createSwarmDebugHandoff({
+  subject: 'library-port',
+  focus: divergenceReport.observabilityPoints[0],
+  replayBundleIds: [replayBundle.id],
+  divergenceReportIds: [divergenceReport.id],
+  watchpointPlanIds: [watchpointPlan.id],
+  files: [{ path: 'src/runtime.ts', kind: 'source' }],
+  comparisons: parityOracle.comparators,
+  generatedAt: 7600
+});
+assert.strictEqual(debugHandoff.status, 'ready');
+assert.strictEqual(debugHandoff.comparisons[0].path, '/ok');
+
+const instrumentationBudget = createSwarmInstrumentationBudget({
+  id: 'browser-evidence-budget',
+  lane: 'harness',
+  maxEvents: 10,
+  maxBytes: 1024,
+  maxOverheadRatio: 0.2,
+  captureKinds: ['trace', 'log'],
+  generatedAt: 7700
+});
+assert.strictEqual(checkSwarmInstrumentationBudget(instrumentationBudget, { events: 11, captureKinds: ['trace'] }).ok, false);
+
+const bottleneckReport = createSwarmBottleneckReport({
+  sources: [{
+    jobId: 'debug-job',
+    text: 'trace logging overhead made the harness slow',
+    evidencePaths: ['agent-runs/debug/evidence.json'],
+    changedPaths: ['src/runtime.ts']
+  }],
+  generatedAt: 7800
+});
+assert.strictEqual(bottleneckReport.classifications[0].kind, 'instrumentation-overhead');
+
+const evidenceRun = createSwarmRun({
+  plan,
+  results: [{
+    jobId: plan.jobs[0].id,
+    status: 'verified',
+    evidencePaths: ['agent-runs/runtime/evidence.json', 'agent-runs/runtime/trace.jsonl'],
+    queueItemIds: ['runtime-action-parity']
+  }]
+});
+const evidenceIndex = createSwarmEvidenceIndex({
+  run: evidenceRun,
+  entries: [{ topic: 'apu-port-timing', path: 'agent-runs/runtime/notes.md', tags: ['timing'], confidence: 0.9 }],
+  generatedAt: 7900
+});
+assert.strictEqual(querySwarmEvidenceIndex(evidenceIndex, { pathIncludes: 'trace' }).summary.entryCount, 1);
+assert.strictEqual(querySwarmEvidenceIndex(evidenceIndex, { topic: 'apu-port-timing', minConfidence: 0.8 }).summary.entryCount, 1);
+
+const blackboard = createSwarmBlackboard({
+  runId: evidenceRun.id,
+  entries: [
+    { kind: 'fact', topic: 'known-divergence', text: 'candidate diverges at operation 42', sourceIds: [divergenceReport.id], tags: ['timing'] },
+    { kind: 'ownership', topic: 'active-lease', text: 'runtime owns src/runtime.ts', owner: 'runtime-worker', paths: ['src/runtime.ts'] }
+  ],
+  generatedAt: 8000
+});
+assert.strictEqual(querySwarmBlackboard(blackboard, { kind: 'fact', tag: 'timing' }).summary.entryCount, 1);
+assert.strictEqual(querySwarmBlackboard(blackboard, { owner: 'runtime-worker' }).entries[0].topic, 'active-lease');
+
+const referencePlan = createSwarmReferenceOraclePlan({
+  serviceId: 'library-parity',
+  subject: 'parser-port',
+  fixtureId: 'logged-in-user',
+  targets: [
+    { id: 'legacy', role: 'reference', command: 'node legacy.mjs' },
+    { id: 'candidate', role: 'port', command: { command: 'node', args: ['candidate.mjs'] } }
+  ],
+  watchpoints: [{ path: '/result', operator: 'changes' }],
+  artifactKinds: ['trace'],
+  generatedAt: 8100
+});
+assert.strictEqual(referencePlan.targets[1].command.args[0], 'candidate.mjs');
+const referenceResponse = createSwarmReferenceOracleResponse({
+  planId: referencePlan.id,
+  targetResults: [{ targetId: 'candidate', status: 'failed', artifacts: [{ path: 'candidate.trace.jsonl' }] }],
+  divergence: { expected: 'legacy', actual: 'candidate', operationIndex: 7 },
+  generatedAt: 8200
+});
+assert.strictEqual(referenceResponse.status, 'failed');
+
+const routingPlan = createSwarmArtifactRoutingPlan({
+  bundles: [regionBundleA],
+  artifacts: [{ path: 'agent-runs/debug/changes.patch', kind: 'patch' }],
+  hints: [{ artifactKind: 'json', bucket: 'discovery-only', reason: 'status artifact' }],
+  generatedAt: 8300
+});
+assert.ok(routingPlan.summary.routeCount >= 1);
+assert.ok(routingPlan.byBucket['ready-to-apply'].includes('agent-runs/debug/changes.patch'));
+
+const resourcePlan = createSwarmPlan(manifest, [
+  { id: 'browser-a', lane: 'harness', targetRefs: ['inkwell/e2e.mjs'] },
+  { id: 'browser-b', lane: 'harness', targetRefs: ['inkwell/e2e.mjs'] }
+], { maxReadyJobs: 4, resourceQuotas: { browser: 1, 'browser-port': 1 } });
+const resourceSchedule = createSwarmSchedule(resourcePlan);
+assert.strictEqual(resourceSchedule.ready.length, 1);
+assert.ok(resourceSchedule.blocked[0].reasons.includes('resource-capacity:browser'));
+const schedulerRecommendations = createSwarmSchedulerRecommendations({ schedule: resourceSchedule, generatedAt: 8400 });
+assert.ok(schedulerRecommendations.recommendations.some((entry) => entry.reason === 'resource-capacity:browser'));
+
+const fixtureCatalog = createSwarmFixtureCatalog({
+  fixtures: [
+    { id: 'logged-in-creator', state: { user: 'creator' }, tags: ['auth', 'creator'], setupCommands: ['node fixture.mjs'] },
+    { id: 'admin-user', tags: ['auth', 'admin'] }
+  ],
+  generatedAt: 8500
+});
+assert.deepStrictEqual([...fixtureCatalog.byTag.auth].sort(), ['logged-in-creator', 'admin-user'].sort());
+
+const progressModel = createSwarmProgressModel({
+  items: [
+    { id: 'route-home', surface: 'route', status: 'implemented' },
+    { id: 'route-home-parity', surface: 'route', status: 'functional-verified', evidencePaths: ['evidence.json'] },
+    { id: 'route-home-accepted', surface: 'route', status: 'accepted' }
+  ],
+  generatedAt: 8600
+});
+assert.strictEqual(progressModel.summary.acceptedCount, 1);
+
+const autoReview = createSwarmAutoReviewReport({
+  bundles: [createSwarmMergeBundle({
+    job: plan.jobs[0],
+    result: { jobId: plan.jobs[0].id, status: 'completed', changedPaths: ['src/runtime.ts'] }
+  })],
+  generatedAt: 8700
+});
+assert.ok(autoReview.findings.some((finding) => finding.kind === 'missing-evidence'));
+
+const rebaseReport = createSwarmRebaseReport({ mergeIndex: pathFallbackIndex, currentHead: 'HEAD', generatedAt: 8800 });
+assert.ok(rebaseReport.summary.conflictCount >= 1);
+
+const usageGovernor = createSwarmUsageGovernor({
+  maxWorkers: 20,
+  maxTokensByLane: { browser: 1000 },
+  maxCostUsd: 5,
+  retryBudget: 2,
+  generatedAt: 8900
+});
+const usageDecision = checkSwarmUsageGovernor(usageGovernor, { activeWorkers: 21, tokensByLane: { browser: 2000 }, retriesUsed: 1 });
+assert.strictEqual(usageDecision.ok, false);
+assert.strictEqual(usageDecision.preferStatic, true);

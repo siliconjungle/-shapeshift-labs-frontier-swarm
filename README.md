@@ -260,6 +260,11 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmPatchStackPlan` clusters compatible bundles into candidate patch stacks by lane, path, region, disposition, and risk so reviewers can evaluate batches instead of individual worker directories,
 - `createSwarmContextPack` gives workers compact task context: relevant files, API maps, known failures, focused/oracle commands, expected evidence, exclusions, evidence schema, playbooks, and explicit dead ends to avoid,
 - `createSwarmOracleCorpus` indexes deterministic reference artifacts such as traces, snapshots, classifications, expected outputs, or fixtures without assuming a project domain,
+- `createSwarmReplayBundle`, `createSwarmParityOracle`, `createSwarmDivergenceReport`, `createSwarmObservabilityPoint`, `createSwarmWatchpointPlan`, and `createSwarmDebugHandoff` model the trace-to-debug workflow: replay finds the narrow window, watchpoints/debug handoff explain the state at that point,
+- `createSwarmReferenceOraclePlan` and `createSwarmReferenceOracleResponse` describe reusable reference services for ports, migrations, parity checks, and cross-implementation comparisons,
+- `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, and `createSwarmBottleneckReport` keep traces/logs useful without making instrumentation the bottleneck,
+- `createSwarmEvidenceIndex` / `querySwarmEvidenceIndex` and `createSwarmBlackboard` / `querySwarmBlackboard` provide storage-neutral status surfaces for coordinator dashboards, accepted facts, known divergences, rejected theories, and active ownership,
+- `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`, `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`, and `createSwarmUsageGovernor` cover the merge/review/scheduling tools needed to scale from feature swarms to larger migration and porting swarms,
 - `createSwarmLanePlaybook` turns successful prior bundles into persistent lane-specific guidance with commands, hot paths, evidence patterns, and avoid-investigating notes,
 - `decomposeSwarmFeature` creates an initial task queue for feature work across lanes.
 
@@ -294,6 +299,14 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `createSwarmHotspotReport`, `createSwarmRunStoreShards`
 - `createSwarmPatchStackPlan`
 - `createSwarmContextPack`, `createSwarmOracleCorpus`, `createSwarmLanePlaybook`
+- `createSwarmReplayBundle`, `createSwarmParityOracle`, `createSwarmDivergenceReport`, `createSwarmObservabilityPoint`
+- `createSwarmWatchpointPlan`, `createSwarmDebugHandoff`
+- `createSwarmReferenceOraclePlan`, `createSwarmReferenceOracleResponse`
+- `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, `createSwarmBottleneckReport`
+- `createSwarmEvidenceIndex`, `querySwarmEvidenceIndex`, `createSwarmBlackboard`, `querySwarmBlackboard`
+- `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`
+- `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`
+- `createSwarmUsageGovernor`, `checkSwarmUsageGovernor`
 - `classifySwarmMergeReadiness`, `classifySwarmMergeDisposition`
 - `resolveSwarmChangedRegions`, `checkSwarmRegionOwnership`
 - `decomposeSwarmFeature`
@@ -311,7 +324,7 @@ Run the package-local benchmark:
 npm run bench
 ```
 
-The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
+The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, replay/debug/evidence helper creation, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
 
 ## Source Repository
 
