@@ -1175,6 +1175,16 @@ export interface FrontierSwarmSourceProjectionSummaryInput {
   blocked?: number;
 }
 
+export interface FrontierSwarmNativeCompileSummaryInput {
+  total?: number;
+  emitted?: number;
+  preserved?: number;
+  targetStubs?: number;
+  ready?: number;
+  needsReview?: number;
+  blocked?: number;
+}
+
 export interface FrontierSwarmSemanticImportSummaryInput {
   total?: number;
   selected?: number;
@@ -1190,6 +1200,7 @@ export interface FrontierSwarmSemanticImportSummaryInput {
   semanticIndex?: FrontierSwarmSemanticIndexSummaryInput;
   semanticSidecars?: FrontierSwarmSemanticSidecarSummaryInput;
   sourceProjections?: FrontierSwarmSourceProjectionSummaryInput;
+  nativeCompiles?: FrontierSwarmNativeCompileSummaryInput;
   readiness?: FrontierSwarmSemanticImportCounterInput;
   metadata?: unknown;
 }
@@ -1219,6 +1230,16 @@ export interface FrontierSwarmSourceProjectionSummary {
   blocked: number;
 }
 
+export interface FrontierSwarmNativeCompileSummary {
+  total: number;
+  emitted: number;
+  preserved: number;
+  targetStubs: number;
+  ready: number;
+  needsReview: number;
+  blocked: number;
+}
+
 export interface FrontierSwarmSemanticImportSummary {
   total: number;
   selected: number;
@@ -1234,6 +1255,7 @@ export interface FrontierSwarmSemanticImportSummary {
   semanticIndex: FrontierSwarmSemanticIndexSummary;
   semanticSidecars: FrontierSwarmSemanticSidecarSummary;
   sourceProjections: FrontierSwarmSourceProjectionSummary;
+  nativeCompiles: FrontierSwarmNativeCompileSummary;
   readiness: Record<string, number>;
   metadata?: JsonObject;
 }
@@ -5804,6 +5826,7 @@ function normalizeSemanticImportSummary(input: unknown): FrontierSwarmSemanticIm
     semanticIndex: normalizeSemanticIndexSummary(object.semanticIndex),
     semanticSidecars: normalizeSemanticSidecarSummary(object.semanticSidecars),
     sourceProjections: normalizeSourceProjectionSummary(object.sourceProjections),
+    nativeCompiles: normalizeNativeCompileSummary(object.nativeCompiles),
     readiness: normalizeCounterRecord(object.readiness),
     ...(metadata ? { metadata } : {})
   };
@@ -5837,6 +5860,19 @@ function normalizeSourceProjectionSummary(input: unknown): FrontierSwarmSourcePr
     total: nonNegativeCount(object?.total),
     preserved: nonNegativeCount(object?.preserved),
     stubs: nonNegativeCount(object?.stubs),
+    ready: nonNegativeCount(object?.ready),
+    needsReview: nonNegativeCount(object?.needsReview),
+    blocked: nonNegativeCount(object?.blocked)
+  };
+}
+
+function normalizeNativeCompileSummary(input: unknown): FrontierSwarmNativeCompileSummary {
+  const object = toJsonObject(input);
+  return {
+    total: nonNegativeCount(object?.total),
+    emitted: nonNegativeCount(object?.emitted),
+    preserved: nonNegativeCount(object?.preserved),
+    targetStubs: nonNegativeCount(object?.targetStubs),
     ready: nonNegativeCount(object?.ready),
     needsReview: nonNegativeCount(object?.needsReview),
     blocked: nonNegativeCount(object?.blocked)

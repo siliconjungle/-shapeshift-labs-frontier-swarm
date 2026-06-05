@@ -310,6 +310,7 @@ scaleRun = completeSwarmJob(scaleRun, {
     semanticIndex: { symbols: 2, facts: 1 },
     semanticSidecars: { total: 1, ownershipRegions: 2, patchHints: 1 },
     sourceProjections: { total: 1, stubs: 1, needsReview: 1 },
+    nativeCompiles: { total: 1, emitted: 1, preserved: 1, needsReview: 1 },
     readiness: { 'ready-with-losses': 1 }
   }
 });
@@ -330,6 +331,7 @@ assert.strictEqual(mergeBundle.disposition, 'needs-port');
 assert.strictEqual(mergeBundle.patchPath, 'agent-runs/scale/changes.patch');
 assert.deepStrictEqual(mergeBundle.queueItemIds, [firstScaleJob.taskId]);
 assert.strictEqual(mergeBundle.semanticImport.semanticSidecars.ownershipRegions, 2);
+assert.strictEqual(mergeBundle.semanticImport.nativeCompiles.preserved, 1);
 const queueSnapshot = createSwarmQueueSnapshot({ plan: scalePlan, run: scaleRun, leases, generatedAt: 8000 });
 assert.strictEqual(queueSnapshot.summary.jobCount, 1000);
 assert.strictEqual(queueSnapshot.summary.leaseCount, 5);
@@ -338,9 +340,11 @@ assert.strictEqual(queueSnapshot.summary.completedCount, 1);
 const queueOverlay = createSwarmQueueOverlay({ runId: scaleRun.id, bundles: [mergeBundle], generatedAt: 8100 });
 assert.strictEqual(queueOverlay.summary.needsHumanPortCount, 1);
 assert.strictEqual(queueOverlay.entries[0].semanticImport.sourceProjections.needsReview, 1);
+assert.strictEqual(queueOverlay.entries[0].semanticImport.nativeCompiles.emitted, 1);
 const derivedQueue = deriveSwarmQueueStatus({ snapshot: queueSnapshot, overlays: [queueOverlay], generatedAt: 8200 });
 assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).status, 'blocked');
 assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).metadata.semanticImport.sourceProjections.stubs, 1);
+assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).metadata.semanticImport.nativeCompiles.preserved, 1);
 const checkpoint = createSwarmRunCheckpoint({ run: scaleRun, sequence: 1, savedAt: 9000 });
 assert.strictEqual(checkpoint.runId, scaleRun.id);
 assert.strictEqual(checkpoint.resultCount, 1);

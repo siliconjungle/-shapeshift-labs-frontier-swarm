@@ -115,7 +115,7 @@ const semanticSummary: FrontierSwarmSemanticImportSummary = createSwarmMergeBund
   result: {
     jobId: 'semantic',
     status: 'completed',
-    semanticImport: { total: 1, semanticSidecars: { ownershipRegions: 1 }, sourceProjections: { preserved: 1 } }
+    semanticImport: { total: 1, semanticSidecars: { ownershipRegions: 1 }, sourceProjections: { preserved: 1 }, nativeCompiles: { emitted: 1 } }
   }
 }).semanticImport!;
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
@@ -159,6 +159,7 @@ reviewPlan.assignments satisfies readonly { jobId: string }[];
 mergePlan.ready satisfies string[];
 mergeBundle.queueItemIds satisfies string[];
 semanticSummary.semanticSidecars.ownershipRegions satisfies number;
+semanticSummary.nativeCompiles.emitted satisfies number;
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
 admission.admitted satisfies string[];
