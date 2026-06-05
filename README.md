@@ -37,6 +37,17 @@ The published Frontier package family is generated from one shared package catal
 - [`@shapeshift-labs/frontier-worker`](https://www.npmjs.com/package/@shapeshift-labs/frontier-worker): Serializable worker and edge task descriptors for Frontier apps, including queues, idempotency keys, retry and timeout policy, declared reads/writes/effects, snapshots, patch outputs, produced assets, execution records, logs, trace links, proof hashes, dedupe indexes, and registry graph output.
 - [`@shapeshift-labs/frontier-queue`](https://www.npmjs.com/package/@shapeshift-labs/frontier-queue): Serializable durable queue state, leases, retries, dedupe keys, patch-carrying jobs, dead-letter records, replay evidence, and queue inspection for Frontier apps.
 - [`@shapeshift-labs/frontier-swarm-codex`](https://www.npmjs.com/package/@shapeshift-labs/frontier-swarm-codex): Node Codex CLI adapter for Frontier swarm plans, including prompt rendering, worktree and snapshot workspaces, Codex argument compatibility, browser resource allocation, JSONL capture, verification commands, pid-backed stop, collect/apply workflows, merge indexes, queue overlays, merge bundles, and result artifacts.
+- [`@shapeshift-labs/frontier-lang-kernel`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-kernel): Runtime-neutral semantic source graph, type/lattice/extern declarations, patch bundles, replay, hashing, evidence records, and merge-admission kernel for Frontier Lang.
+- [`@shapeshift-labs/frontier-lang-parser`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-parser): Dependency-light Frontier Lang parser for modules, entities, state, actions, effects, types, externs, targets, and lattice declarations.
+- [`@shapeshift-labs/frontier-lang-checker`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-checker): Checker and diagnostics for Frontier Lang semantic documents, including type symbols, effects, regions, lattice laws, CRDT metadata, and patch evidence.
+- [`@shapeshift-labs/frontier-lang-typescript`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-typescript): TypeScript projection adapter for Frontier Lang semantic documents, including type/entity/state/action/extern declarations and CRDT lattice descriptors.
+- [`@shapeshift-labs/frontier-lang-javascript`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-javascript): JavaScript projection adapter for Frontier Lang semantic documents, including ESM action stubs and schema/lattice descriptors.
+- [`@shapeshift-labs/frontier-lang-rust`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-rust): Rust projection adapter for Frontier Lang semantic documents, including structs, aliases, and action stubs.
+- [`@shapeshift-labs/frontier-lang-python`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-python): Python projection adapter for Frontier Lang semantic documents, including dataclasses, typed patch records, and action stubs.
+- [`@shapeshift-labs/frontier-lang-c`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-c): C header projection adapter for Frontier Lang semantic documents, including structs and action prototypes.
+- [`@shapeshift-labs/frontier-lang-compiler`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-compiler): Compiler facade for Frontier Lang source documents, including parse, check, hash, diagnostics, and projection to TypeScript, JavaScript, Rust, Python, and C.
+- [`@shapeshift-labs/frontier-lang-cli`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-cli): Command line interface for parsing, checking, hashing, and emitting Frontier Lang projects.
+- [`@shapeshift-labs/frontier-lang`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang): Umbrella package for Frontier Lang kernel, parser, checker, and projection adapters.
 - [`@shapeshift-labs/frontier-kv`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv): Serializable in-memory key/value state for Frontier apps, including TTL, versioned compare-and-set, batched patch mutations, scans, watchers, snapshots, JSONL event evidence, and replay verification.
 - [`@shapeshift-labs/frontier-kv-locks`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv-locks): Lease-style lock records on top of Frontier KV, including acquire, renew, release, fencing tokens, expiration, owner evidence, and replayable lock events.
 - [`@shapeshift-labs/frontier-kv-rate-limit`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv-rate-limit): Patch-native rate limit buckets for Frontier KV, including fixed windows, sliding windows, token buckets, deterministic refill, consume evidence, and reset records.
@@ -113,6 +124,17 @@ Package source repositories:
 - [`siliconjungle/-shapeshift-labs-frontier-queue`](https://github.com/siliconjungle/-shapeshift-labs-frontier-queue)
 - [`siliconjungle/-shapeshift-labs-frontier-swarm`](https://github.com/siliconjungle/-shapeshift-labs-frontier-swarm)
 - [`siliconjungle/-shapeshift-labs-frontier-swarm-codex`](https://github.com/siliconjungle/-shapeshift-labs-frontier-swarm-codex)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-kernel`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-kernel)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-parser`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-parser)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-checker`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-checker)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-typescript`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-typescript)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-javascript`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-javascript)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-rust`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-rust)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-python`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-python)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-c`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-c)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-compiler`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-compiler)
+- [`siliconjungle/-shapeshift-labs-frontier-lang-cli`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-cli)
+- [`siliconjungle/-shapeshift-labs-frontier-lang`](https://github.com/siliconjungle/-shapeshift-labs-frontier-lang)
 - [`siliconjungle/-shapeshift-labs-frontier-kv`](https://github.com/siliconjungle/-shapeshift-labs-frontier-kv)
 - [`siliconjungle/-shapeshift-labs-frontier-kv-locks`](https://github.com/siliconjungle/-shapeshift-labs-frontier-kv-locks)
 - [`siliconjungle/-shapeshift-labs-frontier-kv-rate-limit`](https://github.com/siliconjungle/-shapeshift-labs-frontier-kv-rate-limit)
@@ -260,6 +282,11 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmPatchStackPlan` clusters compatible bundles into candidate patch stacks by lane, path, region, disposition, and risk so reviewers can evaluate batches instead of individual worker directories,
 - `createSwarmContextPack` gives workers compact task context: relevant files, API maps, known failures, focused/oracle commands, expected evidence, exclusions, evidence schema, playbooks, and explicit dead ends to avoid,
 - `createSwarmOracleCorpus` indexes deterministic reference artifacts such as traces, snapshots, classifications, expected outputs, or fixtures without assuming a project domain,
+- `createSwarmReplayBundle`, `createSwarmParityOracle`, `createSwarmDivergenceReport`, `createSwarmObservabilityPoint`, `createSwarmWatchpointPlan`, and `createSwarmDebugHandoff` model the trace-to-debug workflow: replay finds the narrow window, watchpoints/debug handoff explain the state at that point,
+- `createSwarmReferenceOraclePlan` and `createSwarmReferenceOracleResponse` describe reusable reference services for ports, migrations, parity checks, and cross-implementation comparisons,
+- `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, and `createSwarmBottleneckReport` keep traces/logs useful without making instrumentation the bottleneck,
+- `createSwarmEvidenceIndex` / `querySwarmEvidenceIndex` and `createSwarmBlackboard` / `querySwarmBlackboard` provide storage-neutral status surfaces for coordinator dashboards, accepted facts, known divergences, rejected theories, and active ownership,
+- `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`, `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`, and `createSwarmUsageGovernor` cover the merge/review/scheduling tools needed to scale from feature swarms to larger migration and porting swarms,
 - `createSwarmLanePlaybook` turns successful prior bundles into persistent lane-specific guidance with commands, hot paths, evidence patterns, and avoid-investigating notes,
 - `decomposeSwarmFeature` creates an initial task queue for feature work across lanes.
 
@@ -294,6 +321,14 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `createSwarmHotspotReport`, `createSwarmRunStoreShards`
 - `createSwarmPatchStackPlan`
 - `createSwarmContextPack`, `createSwarmOracleCorpus`, `createSwarmLanePlaybook`
+- `createSwarmReplayBundle`, `createSwarmParityOracle`, `createSwarmDivergenceReport`, `createSwarmObservabilityPoint`
+- `createSwarmWatchpointPlan`, `createSwarmDebugHandoff`
+- `createSwarmReferenceOraclePlan`, `createSwarmReferenceOracleResponse`
+- `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, `createSwarmBottleneckReport`
+- `createSwarmEvidenceIndex`, `querySwarmEvidenceIndex`, `createSwarmBlackboard`, `querySwarmBlackboard`
+- `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`
+- `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`
+- `createSwarmUsageGovernor`, `checkSwarmUsageGovernor`
 - `classifySwarmMergeReadiness`, `classifySwarmMergeDisposition`
 - `resolveSwarmChangedRegions`, `checkSwarmRegionOwnership`
 - `decomposeSwarmFeature`
@@ -311,7 +346,7 @@ Run the package-local benchmark:
 npm run bench
 ```
 
-The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
+The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, replay/debug/evidence helper creation, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
 
 ## Source Repository
 
