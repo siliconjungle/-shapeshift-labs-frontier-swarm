@@ -303,9 +303,18 @@ scaleRun = completeSwarmJob(scaleRun, {
   jobId: firstScaleJob.id,
   status: 'completed',
   changedPaths: [firstScaleJob.task.targetRefs[0]],
-  evidencePaths: ['agent-runs/scale/evidence.json']
+  evidencePaths: ['agent-runs/scale/evidence.json'],
+  semanticImport: {
+    total: 1,
+    imported: 1,
+    semanticIndex: { symbols: 2, facts: 1 },
+    semanticSidecars: { total: 1, ownershipRegions: 2, patchHints: 1 },
+    sourceProjections: { total: 1, stubs: 1, needsReview: 1 },
+    readiness: { 'ready-with-losses': 1 }
+  }
 });
 assert.strictEqual(scaleRun.results[0].mergeReadiness, 'patch-candidate');
+assert.strictEqual(scaleRun.results[0].semanticImport.semanticIndex.symbols, 2);
 assert.strictEqual(classifySwarmMergeReadiness({ jobId: 'discovery', status: 'completed', changedPaths: [] }), 'discovery-only');
 assert.strictEqual(classifySwarmMergeDisposition({ jobId: 'verified', status: 'verified', changedPaths: ['src/runtime/a.ts'], verification: [{ status: 0 }] }), 'auto-mergeable');
 const mergeBundle = createSwarmMergeBundle({
@@ -320,6 +329,7 @@ const mergeBundle = createSwarmMergeBundle({
 assert.strictEqual(mergeBundle.disposition, 'needs-port');
 assert.strictEqual(mergeBundle.patchPath, 'agent-runs/scale/changes.patch');
 assert.deepStrictEqual(mergeBundle.queueItemIds, [firstScaleJob.taskId]);
+assert.strictEqual(mergeBundle.semanticImport.semanticSidecars.ownershipRegions, 2);
 const queueSnapshot = createSwarmQueueSnapshot({ plan: scalePlan, run: scaleRun, leases, generatedAt: 8000 });
 assert.strictEqual(queueSnapshot.summary.jobCount, 1000);
 assert.strictEqual(queueSnapshot.summary.leaseCount, 5);
@@ -327,8 +337,10 @@ assert.strictEqual(queueSnapshot.summary.leasedCount, 4);
 assert.strictEqual(queueSnapshot.summary.completedCount, 1);
 const queueOverlay = createSwarmQueueOverlay({ runId: scaleRun.id, bundles: [mergeBundle], generatedAt: 8100 });
 assert.strictEqual(queueOverlay.summary.needsHumanPortCount, 1);
+assert.strictEqual(queueOverlay.entries[0].semanticImport.sourceProjections.needsReview, 1);
 const derivedQueue = deriveSwarmQueueStatus({ snapshot: queueSnapshot, overlays: [queueOverlay], generatedAt: 8200 });
 assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).status, 'blocked');
+assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).metadata.semanticImport.sourceProjections.stubs, 1);
 const checkpoint = createSwarmRunCheckpoint({ run: scaleRun, sequence: 1, savedAt: 9000 });
 assert.strictEqual(checkpoint.runId, scaleRun.id);
 assert.strictEqual(checkpoint.resultCount, 1);

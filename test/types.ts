@@ -78,6 +78,7 @@ import {
   type FrontierSwarmReviewPlan,
   type FrontierSwarmSchedule,
   type FrontierSwarmSchedulerRecommendations,
+  type FrontierSwarmSemanticImportSummary,
   type FrontierSwarmEventStream,
   type FrontierSwarmTask,
   type FrontierSwarmUsageGovernor,
@@ -110,6 +111,13 @@ const checkpoint = createSwarmRunCheckpoint(run);
 const reviewPlan: FrontierSwarmReviewPlan = createSwarmReviewPlan({ plan, run, reviewers: ['reviewer'] });
 const mergePlan: FrontierSwarmMergePlan = createSwarmMergePlan({ plan, run, reviewPlan });
 const mergeBundle: FrontierSwarmMergeBundle = createSwarmMergeBundle({ job: plan.jobs[0], result: run.results[0] });
+const semanticSummary: FrontierSwarmSemanticImportSummary = createSwarmMergeBundle({
+  result: {
+    jobId: 'semantic',
+    status: 'completed',
+    semanticImport: { total: 1, semanticSidecars: { ownershipRegions: 1 }, sourceProjections: { preserved: 1 } }
+  }
+}).semanticImport!;
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
@@ -150,6 +158,7 @@ budget.ok satisfies boolean;
 reviewPlan.assignments satisfies readonly { jobId: string }[];
 mergePlan.ready satisfies string[];
 mergeBundle.queueItemIds satisfies string[];
+semanticSummary.semanticSidecars.ownershipRegions satisfies number;
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
 admission.admitted satisfies string[];

@@ -270,6 +270,7 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmReviewPlan` samples or requires reviewer assignments,
 - `createSwarmMergePlan` blocks jobs with failed checks, required reviews, ownership violations, or conflicting changed paths,
 - job results include merge-readiness classification: `discovery-only`, `patch-candidate`, `verified-patch`, `rejected`, or `blocked`,
+- job results, merge bundles, queue overlays, and merge indexes can carry `semanticImport` summaries for imported symbols, semantic ownership regions, source projection readiness, and empty sidecar detection,
 - `ownershipRegions` allow hot files to be split into semantic regions such as `content.docs.*` or `adminSettings.quota.*`; merge conflict detection compares explicit changed regions when both sides report them and falls back to path conflicts when either side omits regions,
 - `createSwarmMergeBundle` builds a compact worker `merge.json` shape with touched owned files, patch path, evidence, verification, queue items satisfied, risk, and disposition,
 - `createSwarmQueueOverlay` and `deriveSwarmQueueStatus` keep central queue files immutable while deriving status from worker result overlays,

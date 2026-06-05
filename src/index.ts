@@ -1146,6 +1146,98 @@ export interface FrontierSwarmEventStream {
   };
 }
 
+export interface FrontierSwarmSemanticImportCounterInput {
+  readonly [key: string]: number | undefined;
+}
+
+export interface FrontierSwarmSemanticIndexSummaryInput {
+  documents?: number;
+  symbols?: number;
+  occurrences?: number;
+  relations?: number;
+  facts?: number;
+}
+
+export interface FrontierSwarmSemanticSidecarSummaryInput {
+  total?: number;
+  symbols?: number;
+  ownershipRegions?: number;
+  patchHints?: number;
+  empty?: number;
+}
+
+export interface FrontierSwarmSourceProjectionSummaryInput {
+  total?: number;
+  preserved?: number;
+  stubs?: number;
+  ready?: number;
+  needsReview?: number;
+  blocked?: number;
+}
+
+export interface FrontierSwarmSemanticImportSummaryInput {
+  total?: number;
+  selected?: number;
+  eligible?: number;
+  omitted?: number;
+  imported?: number;
+  skipped?: number;
+  errors?: number;
+  sourceMapCount?: number;
+  sourceMapMappingCount?: number;
+  lossCount?: number;
+  lossesBySeverity?: FrontierSwarmSemanticImportCounterInput;
+  semanticIndex?: FrontierSwarmSemanticIndexSummaryInput;
+  semanticSidecars?: FrontierSwarmSemanticSidecarSummaryInput;
+  sourceProjections?: FrontierSwarmSourceProjectionSummaryInput;
+  readiness?: FrontierSwarmSemanticImportCounterInput;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmSemanticIndexSummary {
+  documents: number;
+  symbols: number;
+  occurrences: number;
+  relations: number;
+  facts: number;
+}
+
+export interface FrontierSwarmSemanticSidecarSummary {
+  total: number;
+  symbols: number;
+  ownershipRegions: number;
+  patchHints: number;
+  empty: number;
+}
+
+export interface FrontierSwarmSourceProjectionSummary {
+  total: number;
+  preserved: number;
+  stubs: number;
+  ready: number;
+  needsReview: number;
+  blocked: number;
+}
+
+export interface FrontierSwarmSemanticImportSummary {
+  total: number;
+  selected: number;
+  eligible: number;
+  omitted: number;
+  imported: number;
+  skipped: number;
+  errors: number;
+  sourceMapCount: number;
+  sourceMapMappingCount: number;
+  lossCount: number;
+  lossesBySeverity: Record<string, number>;
+  semanticIndex: FrontierSwarmSemanticIndexSummary;
+  semanticSidecars: FrontierSwarmSemanticSidecarSummary;
+  sourceProjections: FrontierSwarmSourceProjectionSummary;
+  readiness: Record<string, number>;
+  metadata?: JsonObject;
+}
+
 export interface FrontierSwarmJobResultInput {
   jobId: string;
   status?: FrontierSwarmJobStatus;
@@ -1163,6 +1255,7 @@ export interface FrontierSwarmJobResultInput {
   riskLevel?: FrontierSwarmRiskLevel;
   mergeDisposition?: FrontierSwarmMergeDisposition;
   verification?: readonly FrontierSwarmVerificationResultInput[];
+  semanticImport?: FrontierSwarmSemanticImportSummaryInput;
   lastMessage?: string;
   error?: unknown;
   metadata?: unknown;
@@ -1208,6 +1301,7 @@ export interface FrontierSwarmJobResult {
   riskLevel: FrontierSwarmRiskLevel;
   mergeDisposition: FrontierSwarmMergeDisposition;
   verification: FrontierSwarmVerificationResult[];
+  semanticImport?: FrontierSwarmSemanticImportSummary;
   lastMessage?: string;
   error?: string;
   metadata?: JsonObject;
@@ -1235,6 +1329,7 @@ export interface FrontierSwarmMergeBundleInput {
   staleAgainstHead?: boolean;
   branchName?: string;
   commit?: string;
+  semanticImport?: FrontierSwarmSemanticImportSummaryInput;
   metadata?: unknown;
   generatedAt?: number;
 }
@@ -1270,6 +1365,7 @@ export interface FrontierSwarmMergeBundle {
   commit?: string;
   staleAgainstHead: boolean;
   reasons: string[];
+  semanticImport?: FrontierSwarmSemanticImportSummary;
   metadata?: JsonObject;
 }
 
@@ -1314,6 +1410,7 @@ export interface FrontierSwarmQueueOverlayEntry {
   changedPaths: string[];
   changedRegions: string[];
   reasons: string[];
+  semanticImport?: FrontierSwarmSemanticImportSummary;
   generatedAt: number;
 }
 
@@ -1388,6 +1485,7 @@ export interface FrontierSwarmMergeIndexEntry {
   evidencePaths: string[];
   queueItemIds: string[];
   reasons: string[];
+  semanticImport?: FrontierSwarmSemanticImportSummary;
   generatedAt: number;
 }
 
@@ -2931,6 +3029,8 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
   const generatedAt = input.generatedAt ?? Date.now();
   const result = isSwarmJobResult(input.result) ? cloneJsonValue(input.result) as FrontierSwarmJobResult : normalizeResult(input.result);
   const job = input.job;
+  const inputMetadata = toJsonObject(input.metadata);
+  const semanticImport = normalizeSemanticImportSummary(input.semanticImport ?? result.semanticImport ?? inputMetadata?.semanticImport);
   const changedPaths = uniqueStrings(result.changedPaths);
   const changedRegions = uniqueStrings([
     ...result.changedRegions,
@@ -2972,7 +3072,8 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
     ...(input.commit ? { commit: input.commit } : {}),
     staleAgainstHead: input.staleAgainstHead ?? false,
     reasons,
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+    ...(semanticImport ? { semanticImport } : {}),
+    ...(inputMetadata ? { metadata: inputMetadata } : {})
   };
 }
 
@@ -2995,6 +3096,7 @@ export function createSwarmQueueOverlay(input: FrontierSwarmQueueOverlayInput = 
         changedPaths: [...bundle.changedPaths],
         changedRegions: [...bundle.changedRegions],
         reasons: [...bundle.reasons],
+        ...(bundle.semanticImport ? { semanticImport: cloneJsonValue(bundle.semanticImport) as FrontierSwarmSemanticImportSummary } : {}),
         generatedAt: bundle.generatedAt
       });
     }
@@ -3015,6 +3117,7 @@ export function createSwarmQueueOverlay(input: FrontierSwarmQueueOverlayInput = 
         changedPaths: [...result.changedPaths],
         changedRegions: [...result.changedRegions],
         reasons: result.error ? [result.error] : [],
+        ...(result.semanticImport ? { semanticImport: cloneJsonValue(result.semanticImport) as FrontierSwarmSemanticImportSummary } : {}),
         generatedAt
       });
     }
@@ -3062,6 +3165,7 @@ export function deriveSwarmQueueStatus(input: FrontierSwarmDerivedQueueStatusInp
         overlayStatus: overlay.status,
         mergeDisposition: overlay.disposition,
         mergeReadiness: overlay.mergeReadiness,
+        ...(overlay.semanticImport ? { semanticImport: overlay.semanticImport } : {}),
         evidencePaths: overlay.evidencePaths
       })
     };
@@ -3111,6 +3215,7 @@ export function createSwarmMergeIndex(input: FrontierSwarmMergeIndexInput): Fron
       evidencePaths: [...bundle.evidencePaths],
       queueItemIds: [...bundle.queueItemIds],
       reasons: uniqueStrings([...bundle.reasons, ...(staleAgainstHead ? ['stale-against-head'] : [])]),
+      ...(bundle.semanticImport ? { semanticImport: cloneJsonValue(bundle.semanticImport) as FrontierSwarmSemanticImportSummary } : {}),
       generatedAt: bundle.generatedAt
     };
   });
@@ -5680,10 +5785,85 @@ function queueJobsFromPlan(
   });
 }
 
+function normalizeSemanticImportSummary(input: unknown): FrontierSwarmSemanticImportSummary | undefined {
+  const object = toJsonObject(input);
+  if (!object) return undefined;
+  const metadata = toJsonObject(object.metadata);
+  return {
+    total: nonNegativeCount(object.total),
+    selected: nonNegativeCount(object.selected),
+    eligible: nonNegativeCount(object.eligible),
+    omitted: nonNegativeCount(object.omitted),
+    imported: nonNegativeCount(object.imported),
+    skipped: nonNegativeCount(object.skipped),
+    errors: nonNegativeCount(object.errors),
+    sourceMapCount: nonNegativeCount(object.sourceMapCount),
+    sourceMapMappingCount: nonNegativeCount(object.sourceMapMappingCount),
+    lossCount: nonNegativeCount(object.lossCount),
+    lossesBySeverity: normalizeCounterRecord(object.lossesBySeverity),
+    semanticIndex: normalizeSemanticIndexSummary(object.semanticIndex),
+    semanticSidecars: normalizeSemanticSidecarSummary(object.semanticSidecars),
+    sourceProjections: normalizeSourceProjectionSummary(object.sourceProjections),
+    readiness: normalizeCounterRecord(object.readiness),
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function normalizeSemanticIndexSummary(input: unknown): FrontierSwarmSemanticIndexSummary {
+  const object = toJsonObject(input);
+  return {
+    documents: nonNegativeCount(object?.documents),
+    symbols: nonNegativeCount(object?.symbols),
+    occurrences: nonNegativeCount(object?.occurrences),
+    relations: nonNegativeCount(object?.relations),
+    facts: nonNegativeCount(object?.facts)
+  };
+}
+
+function normalizeSemanticSidecarSummary(input: unknown): FrontierSwarmSemanticSidecarSummary {
+  const object = toJsonObject(input);
+  return {
+    total: nonNegativeCount(object?.total),
+    symbols: nonNegativeCount(object?.symbols),
+    ownershipRegions: nonNegativeCount(object?.ownershipRegions),
+    patchHints: nonNegativeCount(object?.patchHints),
+    empty: nonNegativeCount(object?.empty)
+  };
+}
+
+function normalizeSourceProjectionSummary(input: unknown): FrontierSwarmSourceProjectionSummary {
+  const object = toJsonObject(input);
+  return {
+    total: nonNegativeCount(object?.total),
+    preserved: nonNegativeCount(object?.preserved),
+    stubs: nonNegativeCount(object?.stubs),
+    ready: nonNegativeCount(object?.ready),
+    needsReview: nonNegativeCount(object?.needsReview),
+    blocked: nonNegativeCount(object?.blocked)
+  };
+}
+
+function normalizeCounterRecord(input: unknown): Record<string, number> {
+  const object = toJsonObject(input);
+  if (!object) return {};
+  const entries = Object.entries(object)
+    .map(([key, value]) => [key, nonNegativeCount(value)] as const)
+    .filter(([, value]) => value > 0)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return Object.fromEntries(entries);
+}
+
+function nonNegativeCount(value: unknown): number {
+  const number = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
+}
+
 function normalizeResult(input: FrontierSwarmJobResultInput): FrontierSwarmJobResult {
   const startedAt = input.startedAt;
   const finishedAt = input.finishedAt;
   const status = input.status ?? (input.exitCode === 0 || input.exitCode === undefined ? 'completed' : 'failed');
+  const inputMetadata = toJsonObject(input.metadata);
+  const semanticImport = normalizeSemanticImportSummary(input.semanticImport ?? inputMetadata?.semanticImport);
   return {
     jobId: input.jobId,
     status,
@@ -5702,9 +5882,10 @@ function normalizeResult(input: FrontierSwarmJobResultInput): FrontierSwarmJobRe
     riskLevel: input.riskLevel ?? 'unknown',
     mergeDisposition: input.mergeDisposition ?? classifySwarmMergeDisposition({ ...input, status }),
     verification: (input.verification ?? []).map(normalizeVerificationResult),
+    ...(semanticImport ? { semanticImport } : {}),
     ...(input.lastMessage ? { lastMessage: input.lastMessage } : {}),
     ...(input.error !== undefined ? { error: stringifyError(input.error) } : {}),
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+    ...(inputMetadata ? { metadata: inputMetadata } : {})
   };
 }
 
