@@ -11,6 +11,7 @@ import {
   checkSwarmUsageGovernor,
   createSwarmArtifactIndex,
   createSwarmArtifactRoutingPlan,
+  createSwarmAdaptiveLoadPlan,
   createSwarmAutoReviewReport,
   createSwarmBlackboard,
   createSwarmBottleneckReport,
@@ -48,6 +49,7 @@ import {
   createSwarmRunCheckpoint,
   createSwarmRun,
   createSwarmSchedule,
+  createSwarmScheduleInputFromAdaptiveLoadPlan,
   createSwarmSchedulerRecommendations,
   createSwarmTaskSelection,
   createSwarmUsageGovernor,
@@ -715,6 +717,35 @@ assert.strictEqual(resourceSchedule.ready.length, 1);
 assert.ok(resourceSchedule.blocked[0].reasons.includes('resource-capacity:browser'));
 const schedulerRecommendations = createSwarmSchedulerRecommendations({ schedule: resourceSchedule, generatedAt: 8400 });
 assert.ok(schedulerRecommendations.recommendations.some((entry) => entry.reason === 'resource-capacity:browser'));
+const adaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
+  plan: resourcePlan,
+  schedule: resourceSchedule,
+  mode: 'balanced',
+  maxLimits: { maxReadyJobs: 4, resourceQuotas: { browser: 2, 'browser-port': 2 } },
+  currentLimits: { maxReadyJobs: 4, resourceQuotas: { browser: 2, 'browser-port': 2 } },
+  observations: [
+    { kind: 'semantic-empty', jobId: resourcePlan.jobs[0].id, lane: 'harness', reason: 'semantic import expected but empty' },
+    { kind: 'log-noise', lane: 'harness', value: 250000, reason: 'worker log exceeded compact-review threshold' }
+  ],
+  generatedAt: 8450
+});
+assert.strictEqual(adaptiveLoadPlan.kind, 'frontier.swarm.adaptive-load-plan');
+assert.ok(adaptiveLoadPlan.summary.reducedCount >= 1);
+assert.ok(adaptiveLoadPlan.observations.some((entry) => entry.kind === 'resource-capacity'));
+assert.ok((adaptiveLoadPlan.effectiveLimits.maxReadyJobs ?? 4) < 4);
+const adaptiveSchedule = createSwarmSchedule(createSwarmScheduleInputFromAdaptiveLoadPlan(resourcePlan, adaptiveLoadPlan));
+assert.ok(adaptiveSchedule.ready.length <= resourceSchedule.ready.length);
+const observeOnlyAdaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
+  plan: resourcePlan,
+  schedule: resourceSchedule,
+  mode: 'observe',
+  maxLimits: { maxReadyJobs: 4 },
+  currentLimits: { maxReadyJobs: 4 },
+  observations: [{ kind: 'semantic-empty', jobId: resourcePlan.jobs[0].id }],
+  generatedAt: 8460
+});
+assert.strictEqual(observeOnlyAdaptiveLoadPlan.effectiveLimits.maxReadyJobs, 4);
+assert.ok(observeOnlyAdaptiveLoadPlan.decisions.every((entry) => entry.action === 'observe'));
 
 const fixtureCatalog = createSwarmFixtureCatalog({
   fixtures: [

@@ -4,6 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import {
   checkSwarmOwnership,
+  createSwarmAdaptiveLoadPlan,
   createSwarmContextPack,
   createSwarmHotspotReport,
   createSwarmLanePlaybook,
@@ -85,6 +86,18 @@ const rows = [
     leases = createSwarmLeases({ schedule, workerId: 'bench-worker', now: 1000 + cursor++, leaseMs: 60000, count: 16 });
     return schedule.ready.length + leases.length;
   }),
+  measure('adaptive-load-' + taskCount, 8, () => createSwarmAdaptiveLoadPlan({
+    plan,
+    schedule,
+    mode: 'balanced',
+    maxLimits: { maxReadyJobs: 128 },
+    currentLimits: { maxReadyJobs: 64 },
+    observations: [
+      { kind: 'semantic-empty', jobId: plan.jobs[cursor % plan.jobs.length].id, lane: plan.jobs[cursor % plan.jobs.length].lane },
+      { kind: 'log-noise', lane: 'runtime', value: 200000 }
+    ],
+    generatedAt: 1500 + cursor++
+  }).summary.decisionCount),
   measure('queue-snapshot-' + taskCount, 8, () => {
     const snapshot = createSwarmQueueSnapshot({ plan, run, leases, generatedAt: 2000 + cursor++ });
     return snapshot.summary.jobCount + snapshot.summary.leaseCount;

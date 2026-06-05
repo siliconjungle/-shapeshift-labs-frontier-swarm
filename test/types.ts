@@ -16,6 +16,8 @@ import {
   createSwarmBlackboard,
   querySwarmBlackboard,
   createSwarmCoordinatorDashboard,
+  createSwarmAdaptiveLoadPlan,
+  createSwarmScheduleInputFromAdaptiveLoadPlan,
   querySwarmCoordinatorDashboard,
   createSwarmReferenceOraclePlan,
   createSwarmReferenceOracleResponse,
@@ -53,6 +55,7 @@ import {
   type FrontierSwarmBudgetDecision,
   type FrontierSwarmCompute,
   type FrontierSwarmCoordinatorDashboard,
+  type FrontierSwarmAdaptiveLoadPlan,
   type FrontierSwarmContextPack,
   type FrontierSwarmDebugHandoff,
   type FrontierSwarmDivergenceReport,
@@ -150,6 +153,16 @@ const usageGovernor: FrontierSwarmUsageGovernor = createSwarmUsageGovernor({ max
 const usageDecision: FrontierSwarmUsageGovernorDecision = checkSwarmUsageGovernor(usageGovernor, { activeWorkers: 1 });
 const lanePlaybook: FrontierSwarmLanePlaybook = createSwarmLanePlaybook({ lane: 'runtime', successfulBundles: [mergeBundle] });
 const patchStackPlan: FrontierSwarmPatchStackPlan = createSwarmPatchStackPlan({ index: mergeIndex });
+const adaptiveLoadPlan: FrontierSwarmAdaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
+  plan,
+  run,
+  mergeIndex,
+  mode: 'balanced',
+  maxLimits: { maxReadyJobs: 4 },
+  currentLimits: { maxReadyJobs: 4 },
+  observations: [{ kind: 'semantic-empty', jobId: plan.jobs[0].id, lane: plan.jobs[0].lane }]
+});
+const adaptiveSchedule = createSwarmSchedule(createSwarmScheduleInputFromAdaptiveLoadPlan(plan, adaptiveLoadPlan, { run }));
 
 plan.jobs[0].allowedWrites satisfies string[];
 compute.model satisfies string | undefined;
@@ -196,4 +209,6 @@ rebaseReport.entries satisfies readonly { status: string }[];
 usageDecision.ok satisfies boolean;
 lanePlaybook.successfulJobIds satisfies string[];
 patchStackPlan.stacks satisfies readonly { jobIds: string[] }[];
+adaptiveLoadPlan.effectiveLimits.maxReadyJobs satisfies number | undefined;
+adaptiveSchedule.ready satisfies readonly { jobId: string }[];
 ({} as FrontierSwarmArtifactIndex).summary satisfies { artifactCount: number };

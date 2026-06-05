@@ -92,6 +92,8 @@ export const FRONTIER_SWARM_PATCH_STACK_PLAN_KIND = 'frontier.swarm.patch-stack-
 export const FRONTIER_SWARM_PATCH_STACK_PLAN_VERSION = 1;
 export const FRONTIER_SWARM_COORDINATOR_DASHBOARD_KIND = 'frontier.swarm.coordinator-dashboard';
 export const FRONTIER_SWARM_COORDINATOR_DASHBOARD_VERSION = 1;
+export const FRONTIER_SWARM_ADAPTIVE_LOAD_PLAN_KIND = 'frontier.swarm.adaptive-load-plan';
+export const FRONTIER_SWARM_ADAPTIVE_LOAD_PLAN_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
@@ -192,6 +194,35 @@ export type FrontierSwarmRebaseStatus =
   | string;
 export type FrontierSwarmCoordinatorLiveness = 'running' | 'finished' | 'missing' | 'unknown' | string;
 export type FrontierSwarmCoordinatorAdmissionStatus = 'admitted' | 'deferred' | 'not-admissible' | 'unknown' | string;
+export type FrontierSwarmAdaptiveMode = 'off' | 'observe' | 'conservative' | 'balanced' | 'aggressive' | string;
+export type FrontierSwarmAdaptiveObservationKind =
+  | 'resource-capacity'
+  | 'lane-capacity'
+  | 'concurrency-key-capacity'
+  | 'compute-capacity'
+  | 'ready-capacity'
+  | 'evidence-failure'
+  | 'merge-conflict'
+  | 'stale-patch'
+  | 'browser-contention'
+  | 'semantic-empty'
+  | 'semantic-weak'
+  | 'log-noise'
+  | 'discovery-only-output'
+  | 'duplicate-output'
+  | 'budget-pressure'
+  | 'slow-job'
+  | 'healthy-throughput'
+  | string;
+export type FrontierSwarmAdaptiveObservationSeverity = 'info' | 'warning' | 'error' | 'critical' | string;
+export type FrontierSwarmAdaptiveDecisionAction = 'observe' | 'decrease' | 'increase' | 'hold' | string;
+export type FrontierSwarmAdaptiveDecisionTarget =
+  | 'max-ready-jobs'
+  | 'lane'
+  | 'concurrency-key'
+  | 'compute'
+  | 'resource'
+  | string;
 
 export interface FrontierSwarmComputeInput {
   id: string;
@@ -2821,6 +2852,107 @@ export interface FrontierSwarmCoordinatorDashboardQueryResult {
   };
 }
 
+export interface FrontierSwarmAdaptiveScheduleLimitsInput {
+  maxReadyJobs?: number;
+  maxLaneConcurrency?: Record<string, number>;
+  maxConcurrencyKeyConcurrency?: Record<string, number>;
+  maxComputeConcurrency?: Record<string, number>;
+  resourceQuotas?: Record<string, number>;
+}
+
+export interface FrontierSwarmAdaptiveObservationInput {
+  id?: string;
+  kind: FrontierSwarmAdaptiveObservationKind;
+  severity?: FrontierSwarmAdaptiveObservationSeverity;
+  at?: number;
+  value?: number;
+  jobId?: string;
+  taskId?: string;
+  lane?: string;
+  compute?: string;
+  concurrencyKey?: string;
+  resource?: string;
+  path?: string;
+  region?: string;
+  reason?: string;
+  reasons?: readonly string[];
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmAdaptiveObservation {
+  id: string;
+  kind: FrontierSwarmAdaptiveObservationKind;
+  severity: FrontierSwarmAdaptiveObservationSeverity;
+  at: number;
+  value: number;
+  jobId?: string;
+  taskId?: string;
+  lane?: string;
+  compute?: string;
+  concurrencyKey?: string;
+  resource?: string;
+  path?: string;
+  region?: string;
+  reasons: string[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmAdaptiveLoadPlanInput {
+  id?: string;
+  plan?: FrontierSwarmPlan;
+  run?: FrontierSwarmRun;
+  schedule?: FrontierSwarmSchedule;
+  mergeIndex?: FrontierSwarmMergeIndex;
+  dashboard?: FrontierSwarmCoordinatorDashboard;
+  admission?: FrontierSwarmMergeAdmission;
+  mode?: FrontierSwarmAdaptiveMode;
+  maxLimits?: FrontierSwarmAdaptiveScheduleLimitsInput;
+  currentLimits?: FrontierSwarmAdaptiveScheduleLimitsInput;
+  minLimits?: FrontierSwarmAdaptiveScheduleLimitsInput;
+  observations?: readonly FrontierSwarmAdaptiveObservationInput[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmAdaptiveLoadDecision {
+  id: string;
+  action: FrontierSwarmAdaptiveDecisionAction;
+  target: FrontierSwarmAdaptiveDecisionTarget;
+  key?: string;
+  previous?: number;
+  next?: number;
+  max?: number;
+  min?: number;
+  reason: string;
+  observationIds: string[];
+}
+
+export interface FrontierSwarmAdaptiveLoadPlan {
+  kind: typeof FRONTIER_SWARM_ADAPTIVE_LOAD_PLAN_KIND;
+  version: typeof FRONTIER_SWARM_ADAPTIVE_LOAD_PLAN_VERSION;
+  id: string;
+  planId?: string;
+  runId?: string;
+  mode: FrontierSwarmAdaptiveMode;
+  generatedAt: number;
+  maxLimits: FrontierSwarmScheduleLimits;
+  currentLimits: FrontierSwarmScheduleLimits;
+  minLimits: FrontierSwarmScheduleLimits;
+  effectiveLimits: FrontierSwarmScheduleLimits;
+  observations: FrontierSwarmAdaptiveObservation[];
+  decisions: FrontierSwarmAdaptiveLoadDecision[];
+  summary: {
+    observationCount: number;
+    bottleneckCount: number;
+    decisionCount: number;
+    reducedCount: number;
+    increasedCount: number;
+    effectiveMaxReadyJobs?: number;
+    maxReadyJobs?: number;
+  };
+  metadata?: JsonObject;
+}
+
 export interface FrontierSwarmProof {
   kind: typeof FRONTIER_SWARM_PROOF_KIND;
   version: typeof FRONTIER_SWARM_PROOF_VERSION;
@@ -4533,6 +4665,94 @@ export function querySwarmCoordinatorDashboard(
   };
 }
 
+export function createSwarmAdaptiveLoadPlan(input: FrontierSwarmAdaptiveLoadPlanInput = {}): FrontierSwarmAdaptiveLoadPlan {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const mode = input.mode ?? 'balanced';
+  const maxLimits = createAdaptiveMaxLimits(input);
+  const minLimits = createAdaptiveMinLimits(input.minLimits, maxLimits);
+  const currentLimits = clampAdaptiveLimits(createAdaptiveCurrentLimits(input.currentLimits, maxLimits), minLimits, maxLimits);
+  const effectiveLimits = mode === 'off'
+    ? cloneJsonValue(maxLimits) as FrontierSwarmScheduleLimits
+    : cloneJsonValue(currentLimits) as FrontierSwarmScheduleLimits;
+  const schedule = input.schedule ?? (input.plan ? createSwarmSchedule({ plan: input.plan, run: input.run }) : undefined);
+  const observations = normalizeAdaptiveObservations([
+    ...deriveAdaptiveScheduleObservations(schedule, generatedAt),
+    ...deriveAdaptiveRunObservations(input.run, generatedAt),
+    ...deriveAdaptiveMergeIndexObservations(input.mergeIndex, generatedAt),
+    ...deriveAdaptiveDashboardObservations(input.dashboard, generatedAt),
+    ...deriveAdaptiveAdmissionObservations(input.admission, generatedAt),
+    ...(input.observations ?? [])
+  ], generatedAt);
+  const decisions: FrontierSwarmAdaptiveLoadDecision[] = [];
+  const bottlenecks = observations.filter((observation) => adaptiveObservationIsBottleneck(observation));
+
+  if (mode === 'observe') {
+    for (const observation of bottlenecks) {
+      decisions.push(createAdaptiveDecision({
+        action: 'observe',
+        target: adaptiveDecisionTargetForObservation(observation),
+        key: adaptiveDecisionKeyForObservation(observation),
+        reason: observation.reasons[0] ?? observation.kind,
+        observationIds: [observation.id]
+      }));
+    }
+  } else if (mode !== 'off') {
+    for (const observation of bottlenecks) {
+      applyAdaptiveObservation(effectiveLimits, minLimits, maxLimits, mode, observation, decisions);
+    }
+    const healthy = observations.filter((observation) => observation.kind === 'healthy-throughput');
+    if (bottlenecks.length === 0 && healthy.length > 0) {
+      for (const observation of healthy) {
+        applyAdaptiveRecovery(effectiveLimits, maxLimits, observation, decisions);
+      }
+    }
+  }
+
+  const summary = {
+    observationCount: observations.length,
+    bottleneckCount: bottlenecks.length,
+    decisionCount: decisions.length,
+    reducedCount: decisions.filter((decision) => decision.action === 'decrease').length,
+    increasedCount: decisions.filter((decision) => decision.action === 'increase').length,
+    ...(effectiveLimits.maxReadyJobs !== undefined ? { effectiveMaxReadyJobs: effectiveLimits.maxReadyJobs } : {}),
+    ...(maxLimits.maxReadyJobs !== undefined ? { maxReadyJobs: maxLimits.maxReadyJobs } : {})
+  };
+  return {
+    kind: FRONTIER_SWARM_ADAPTIVE_LOAD_PLAN_KIND,
+    version: FRONTIER_SWARM_ADAPTIVE_LOAD_PLAN_VERSION,
+    id: input.id ?? 'swarm-adaptive-load-plan:' + stableHash([input.plan?.id, input.run?.id, mode, observations, decisions, generatedAt]),
+    ...(input.plan?.id ? { planId: input.plan.id } : {}),
+    ...(input.run?.id ? { runId: input.run.id } : {}),
+    mode,
+    generatedAt,
+    maxLimits,
+    currentLimits,
+    minLimits,
+    effectiveLimits,
+    observations,
+    decisions,
+    summary,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmScheduleInputFromAdaptiveLoadPlan(
+  plan: FrontierSwarmPlan,
+  adaptive: FrontierSwarmAdaptiveLoadPlan,
+  input: { run?: FrontierSwarmRun; now?: number } = {}
+): FrontierSwarmScheduleInput {
+  return {
+    plan,
+    ...(input.run ? { run: input.run } : {}),
+    ...(input.now !== undefined ? { now: input.now } : {}),
+    ...(adaptive.effectiveLimits.maxReadyJobs !== undefined ? { maxReadyJobs: adaptive.effectiveLimits.maxReadyJobs } : {}),
+    maxLaneConcurrency: adaptive.effectiveLimits.maxLaneConcurrency,
+    maxConcurrencyKeyConcurrency: adaptive.effectiveLimits.maxConcurrencyKeyConcurrency,
+    maxComputeConcurrency: adaptive.effectiveLimits.maxComputeConcurrency,
+    resourceQuotas: adaptive.effectiveLimits.resourceQuotas
+  };
+}
+
 export function resolveSwarmCompute(
   manifestInput: FrontierSwarmManifest | FrontierSwarmManifestInput,
   taskInput: FrontierSwarmTask | FrontierSwarmTaskInput
@@ -5050,6 +5270,624 @@ function schedulerPriorityForReason(reason: string): number {
   if (reason === 'waiting-for-dependencies') return 20;
   if (reason === 'ready-capacity') return 25;
   return 30;
+}
+
+function createAdaptiveMaxLimits(input: FrontierSwarmAdaptiveLoadPlanInput): FrontierSwarmScheduleLimits {
+  const plan = input.plan;
+  const jobCount = Math.max(1, plan?.jobs.length ?? input.schedule?.summary.jobCount ?? input.dashboard?.summary.jobCount ?? 1);
+  const raw = mergeAdaptiveScheduleLimitInputs(plan?.limits, input.maxLimits);
+  const maxReadyJobs = positiveNumber(raw.maxReadyJobs) ? Math.floor(raw.maxReadyJobs as number) : jobCount;
+  const maxLaneConcurrency: Record<string, number> = { ...raw.maxLaneConcurrency };
+  const maxConcurrencyKeyConcurrency: Record<string, number> = { ...raw.maxConcurrencyKeyConcurrency };
+  const maxComputeConcurrency: Record<string, number> = { ...raw.maxComputeConcurrency };
+  const resourceQuotas: Record<string, number> = { ...raw.resourceQuotas };
+  for (const job of plan?.jobs ?? []) {
+    maxLaneConcurrency[job.lane] = adaptivePositiveLimit(maxLaneConcurrency[job.lane], job.compute.maxConcurrency ?? maxReadyJobs);
+    maxConcurrencyKeyConcurrency[job.concurrencyKey] = adaptivePositiveLimit(maxConcurrencyKeyConcurrency[job.concurrencyKey], maxReadyJobs);
+    maxComputeConcurrency[job.compute.id] = adaptivePositiveLimit(maxComputeConcurrency[job.compute.id], job.compute.maxConcurrency ?? maxReadyJobs);
+    for (const [resource, amount] of Object.entries(job.resourceRequirements?.resources ?? {})) {
+      resourceQuotas[resource] = adaptivePositiveLimit(resourceQuotas[resource], Math.max(1, Math.ceil(amount), maxReadyJobs));
+    }
+    if (job.resourceRequirements?.browser?.required) {
+      resourceQuotas.browser = adaptivePositiveLimit(resourceQuotas.browser, maxReadyJobs);
+      resourceQuotas['browser-port'] = adaptivePositiveLimit(resourceQuotas['browser-port'], maxReadyJobs);
+    }
+  }
+  return {
+    maxReadyJobs,
+    maxLaneConcurrency: normalizeAdaptiveLimitRecord(maxLaneConcurrency),
+    maxConcurrencyKeyConcurrency: normalizeAdaptiveLimitRecord(maxConcurrencyKeyConcurrency),
+    maxComputeConcurrency: normalizeAdaptiveLimitRecord(maxComputeConcurrency),
+    resourceQuotas: normalizeAdaptiveLimitRecord(resourceQuotas)
+  };
+}
+
+function createAdaptiveCurrentLimits(
+  input: FrontierSwarmAdaptiveScheduleLimitsInput | undefined,
+  maxLimits: FrontierSwarmScheduleLimits
+): FrontierSwarmScheduleLimits {
+  if (!input) return cloneJsonValue(maxLimits) as FrontierSwarmScheduleLimits;
+  const raw = mergeAdaptiveScheduleLimitInputs(maxLimits, input);
+  return {
+    ...(positiveNumber(raw.maxReadyJobs) ? { maxReadyJobs: Math.floor(raw.maxReadyJobs as number) } : {}),
+    maxLaneConcurrency: normalizeAdaptiveLimitRecord(raw.maxLaneConcurrency),
+    maxConcurrencyKeyConcurrency: normalizeAdaptiveLimitRecord(raw.maxConcurrencyKeyConcurrency),
+    maxComputeConcurrency: normalizeAdaptiveLimitRecord(raw.maxComputeConcurrency),
+    resourceQuotas: normalizeAdaptiveLimitRecord(raw.resourceQuotas)
+  };
+}
+
+function createAdaptiveMinLimits(
+  input: FrontierSwarmAdaptiveScheduleLimitsInput | undefined,
+  maxLimits: FrontierSwarmScheduleLimits
+): FrontierSwarmScheduleLimits {
+  const raw = mergeAdaptiveScheduleLimitInputs(undefined, input);
+  const laneMinimums = Object.fromEntries(Object.keys(maxLimits.maxLaneConcurrency).map((key) => [key, 1]));
+  const keyMinimums = Object.fromEntries(Object.keys(maxLimits.maxConcurrencyKeyConcurrency).map((key) => [key, 1]));
+  const computeMinimums = Object.fromEntries(Object.keys(maxLimits.maxComputeConcurrency).map((key) => [key, 1]));
+  const resourceMinimums = Object.fromEntries(Object.keys(maxLimits.resourceQuotas).map((key) => [key, 1]));
+  return {
+    maxReadyJobs: adaptivePositiveLimit(raw.maxReadyJobs, 1),
+    maxLaneConcurrency: normalizeAdaptiveLimitRecord({ ...laneMinimums, ...raw.maxLaneConcurrency }),
+    maxConcurrencyKeyConcurrency: normalizeAdaptiveLimitRecord({ ...keyMinimums, ...raw.maxConcurrencyKeyConcurrency }),
+    maxComputeConcurrency: normalizeAdaptiveLimitRecord({ ...computeMinimums, ...raw.maxComputeConcurrency }),
+    resourceQuotas: normalizeAdaptiveLimitRecord({ ...resourceMinimums, ...raw.resourceQuotas })
+  };
+}
+
+function mergeAdaptiveScheduleLimitInputs(
+  left?: FrontierSwarmScheduleLimits | FrontierSwarmAdaptiveScheduleLimitsInput,
+  right?: FrontierSwarmAdaptiveScheduleLimitsInput
+): FrontierSwarmScheduleLimits {
+  return {
+    ...(right?.maxReadyJobs !== undefined ? { maxReadyJobs: right.maxReadyJobs } : left?.maxReadyJobs !== undefined ? { maxReadyJobs: left.maxReadyJobs } : {}),
+    maxLaneConcurrency: { ...(left?.maxLaneConcurrency ?? {}), ...(right?.maxLaneConcurrency ?? {}) },
+    maxConcurrencyKeyConcurrency: { ...(left?.maxConcurrencyKeyConcurrency ?? {}), ...(right?.maxConcurrencyKeyConcurrency ?? {}) },
+    maxComputeConcurrency: { ...(left?.maxComputeConcurrency ?? {}), ...(right?.maxComputeConcurrency ?? {}) },
+    resourceQuotas: { ...(left?.resourceQuotas ?? {}), ...(right?.resourceQuotas ?? {}) }
+  };
+}
+
+function clampAdaptiveLimits(
+  value: FrontierSwarmScheduleLimits,
+  minLimits: FrontierSwarmScheduleLimits,
+  maxLimits: FrontierSwarmScheduleLimits
+): FrontierSwarmScheduleLimits {
+  return {
+    ...(value.maxReadyJobs !== undefined || maxLimits.maxReadyJobs !== undefined ? {
+      maxReadyJobs: clampAdaptiveLimit(value.maxReadyJobs ?? maxLimits.maxReadyJobs ?? 1, minLimits.maxReadyJobs ?? 1, maxLimits.maxReadyJobs ?? value.maxReadyJobs ?? 1)
+    } : {}),
+    maxLaneConcurrency: clampAdaptiveRecord(value.maxLaneConcurrency, minLimits.maxLaneConcurrency, maxLimits.maxLaneConcurrency),
+    maxConcurrencyKeyConcurrency: clampAdaptiveRecord(value.maxConcurrencyKeyConcurrency, minLimits.maxConcurrencyKeyConcurrency, maxLimits.maxConcurrencyKeyConcurrency),
+    maxComputeConcurrency: clampAdaptiveRecord(value.maxComputeConcurrency, minLimits.maxComputeConcurrency, maxLimits.maxComputeConcurrency),
+    resourceQuotas: clampAdaptiveRecord(value.resourceQuotas, minLimits.resourceQuotas, maxLimits.resourceQuotas)
+  };
+}
+
+function normalizeAdaptiveObservations(
+  input: readonly FrontierSwarmAdaptiveObservationInput[],
+  generatedAt: number
+): FrontierSwarmAdaptiveObservation[] {
+  const out: FrontierSwarmAdaptiveObservation[] = [];
+  input.forEach((entry, index) => {
+    const reasons = uniqueStrings([...(entry.reason ? [entry.reason] : []), ...(entry.reasons ?? [])]);
+    const at = entry.at ?? generatedAt;
+    const observation = {
+      id: entry.id ?? 'swarm-adaptive-observation:' + stableHash([entry.kind, entry.jobId, entry.lane, entry.resource, reasons, index, at]),
+      kind: entry.kind,
+      severity: entry.severity ?? adaptiveDefaultSeverity(entry.kind),
+      at,
+      value: Number.isFinite(entry.value) ? Number(entry.value) : 1,
+      ...(entry.jobId ? { jobId: entry.jobId } : {}),
+      ...(entry.taskId ? { taskId: entry.taskId } : {}),
+      ...(entry.lane ? { lane: entry.lane } : {}),
+      ...(entry.compute ? { compute: entry.compute } : {}),
+      ...(entry.concurrencyKey ? { concurrencyKey: entry.concurrencyKey } : {}),
+      ...(entry.resource ? { resource: entry.resource } : {}),
+      ...(entry.path ? { path: entry.path } : {}),
+      ...(entry.region ? { region: entry.region } : {}),
+      reasons: reasons.length ? reasons : [entry.kind],
+      ...(toJsonObject(entry.metadata) ? { metadata: toJsonObject(entry.metadata) } : {})
+    };
+    out.push(observation);
+  });
+  return dedupeAdaptiveObservations(out);
+}
+
+function deriveAdaptiveScheduleObservations(schedule: FrontierSwarmSchedule | undefined, at: number): FrontierSwarmAdaptiveObservationInput[] {
+  if (!schedule) return [];
+  const observations: FrontierSwarmAdaptiveObservationInput[] = [];
+  for (const blocked of schedule.blocked) {
+    for (const reason of blocked.reasons) {
+      if (reason === 'waiting-for-dependencies') continue;
+      const resource = reason.startsWith('resource-capacity:') ? reason.slice('resource-capacity:'.length) : undefined;
+      observations.push({
+        kind: resource ? 'resource-capacity' : reason as FrontierSwarmAdaptiveObservationKind,
+        severity: reason === 'ready-capacity' ? 'info' : 'warning',
+        at,
+        jobId: blocked.jobId,
+        taskId: blocked.taskId,
+        lane: blocked.lane,
+        compute: blocked.compute,
+        concurrencyKey: blocked.concurrencyKey,
+        ...(resource ? { resource } : {}),
+        reason
+      });
+    }
+  }
+  return observations;
+}
+
+function deriveAdaptiveRunObservations(run: FrontierSwarmRun | undefined, at: number): FrontierSwarmAdaptiveObservationInput[] {
+  if (!run) return [];
+  const observations: FrontierSwarmAdaptiveObservationInput[] = [];
+  for (const result of run.results) {
+    if (result.status === 'failed' || result.exitCode !== undefined && result.exitCode !== 0 || result.verification.some((entry) => entry.required !== false && entry.status !== undefined && entry.status !== 0)) {
+      observations.push({
+        kind: 'evidence-failure',
+        severity: 'error',
+        at,
+        jobId: result.jobId,
+        reason: 'worker failed or required evidence command failed'
+      });
+    }
+    if (result.mergeDisposition === 'discovery-only' || result.mergeReadiness === 'discovery-only') {
+      observations.push({
+        kind: 'discovery-only-output',
+        severity: 'info',
+        at,
+        jobId: result.jobId,
+        reason: 'worker produced discovery output instead of a mergeable patch'
+      });
+    }
+    if (semanticSummaryIsEmpty(result.semanticImport)) {
+      observations.push({
+        kind: 'semantic-empty',
+        severity: 'warning',
+        at,
+        jobId: result.jobId,
+        reason: 'semantic import emitted no selected/imported files or symbols'
+      });
+    } else if (semanticSummaryIsWeak(result.semanticImport)) {
+      observations.push({
+        kind: 'semantic-weak',
+        severity: 'info',
+        at,
+        jobId: result.jobId,
+        reason: 'semantic import has limited source maps, regions, or patch hints'
+      });
+    }
+    if (result.durationMs !== undefined && result.durationMs > 900000) {
+      observations.push({
+        kind: 'slow-job',
+        severity: 'warning',
+        at,
+        jobId: result.jobId,
+        value: result.durationMs,
+        reason: 'worker duration exceeded adaptive slow-job threshold'
+      });
+    }
+    if ((result.status === 'completed' || result.status === 'verified') && result.exitCode === 0 && result.changedPaths.length > 0 && result.mergeDisposition !== 'discovery-only') {
+      observations.push({
+        kind: 'healthy-throughput',
+        severity: 'info',
+        at,
+        jobId: result.jobId,
+        reason: 'worker completed with changed paths'
+      });
+    }
+  }
+  return observations;
+}
+
+function deriveAdaptiveMergeIndexObservations(index: FrontierSwarmMergeIndex | undefined, at: number): FrontierSwarmAdaptiveObservationInput[] {
+  if (!index) return [];
+  const observations: FrontierSwarmAdaptiveObservationInput[] = [];
+  for (const entry of index.entries) {
+    if (entry.staleAgainstHead || entry.disposition === 'stale-against-head') {
+      observations.push({
+        kind: 'stale-patch',
+        severity: 'warning',
+        at,
+        jobId: entry.jobId,
+        lane: entry.lane,
+        path: entry.changedPaths[0],
+        region: entry.changedRegions[0],
+        reason: 'patch is stale against coordinator head'
+      });
+    }
+    if (entry.conflictingJobIds.length) {
+      observations.push({
+        kind: 'merge-conflict',
+        severity: 'warning',
+        at,
+        jobId: entry.jobId,
+        lane: entry.lane,
+        path: entry.changedPaths[0],
+        region: entry.changedRegions[0],
+        value: entry.conflictingJobIds.length,
+        reason: 'merge index found conflicting changed paths or regions'
+      });
+    }
+    if (entry.disposition === 'discovery-only') {
+      observations.push({
+        kind: 'discovery-only-output',
+        severity: 'info',
+        at,
+        jobId: entry.jobId,
+        lane: entry.lane,
+        reason: 'merge index classified the bundle as discovery-only'
+      });
+    }
+    if (semanticSummaryIsEmpty(entry.semanticImport)) {
+      observations.push({
+        kind: 'semantic-empty',
+        severity: 'warning',
+        at,
+        jobId: entry.jobId,
+        lane: entry.lane,
+        reason: 'semantic sidecar is present but empty'
+      });
+    } else if (semanticSummaryIsWeak(entry.semanticImport)) {
+      observations.push({
+        kind: 'semantic-weak',
+        severity: 'info',
+        at,
+        jobId: entry.jobId,
+        lane: entry.lane,
+        reason: 'semantic sidecar lacks merge-useful structure'
+      });
+    }
+  }
+  return observations;
+}
+
+function deriveAdaptiveDashboardObservations(dashboard: FrontierSwarmCoordinatorDashboard | undefined, at: number): FrontierSwarmAdaptiveObservationInput[] {
+  if (!dashboard) return [];
+  const observations: FrontierSwarmAdaptiveObservationInput[] = [];
+  for (const job of dashboard.jobs) {
+    if (job.duplicateGroupId) {
+      observations.push({
+        kind: 'duplicate-output',
+        severity: 'info',
+        at,
+        jobId: job.jobId,
+        lane: job.lane,
+        path: job.changedPaths[0],
+        region: job.changedRegions[0],
+        reason: 'coordinator dashboard found duplicate worker output'
+      });
+    }
+    if (job.tests.requiredFailed > 0) {
+      observations.push({
+        kind: 'evidence-failure',
+        severity: 'error',
+        at,
+        jobId: job.jobId,
+        lane: job.lane,
+        reason: 'dashboard shows required evidence failures'
+      });
+    }
+    if (job.staleAgainstHead) {
+      observations.push({
+        kind: 'stale-patch',
+        severity: 'warning',
+        at,
+        jobId: job.jobId,
+        lane: job.lane,
+        path: job.changedPaths[0],
+        reason: 'dashboard marks patch stale against head'
+      });
+    }
+    if (semanticSummaryIsEmpty(job.semanticImport)) {
+      observations.push({
+        kind: 'semantic-empty',
+        severity: 'warning',
+        at,
+        jobId: job.jobId,
+        lane: job.lane,
+        reason: 'dashboard semantic import summary is empty'
+      });
+    }
+  }
+  return observations;
+}
+
+function deriveAdaptiveAdmissionObservations(admission: FrontierSwarmMergeAdmission | undefined, at: number): FrontierSwarmAdaptiveObservationInput[] {
+  if (!admission) return [];
+  const observations: FrontierSwarmAdaptiveObservationInput[] = [];
+  for (const deferral of admission.deferred) {
+    for (const reason of deferral.reasons) {
+      const kind: FrontierSwarmAdaptiveObservationKind = reason === 'stale-against-head'
+        ? 'stale-patch'
+        : reason === 'conflicting-changes'
+          ? 'merge-conflict'
+          : reason === 'not-auto-mergeable'
+            ? 'discovery-only-output'
+            : reason === 'max-ready'
+              ? 'ready-capacity'
+              : 'budget-pressure';
+      observations.push({
+        kind,
+        severity: kind === 'ready-capacity' ? 'info' : 'warning',
+        at,
+        jobId: deferral.jobId,
+        reason: `merge admission deferred: ${reason}`
+      });
+    }
+  }
+  return observations;
+}
+
+function applyAdaptiveObservation(
+  limits: FrontierSwarmScheduleLimits,
+  minLimits: FrontierSwarmScheduleLimits,
+  maxLimits: FrontierSwarmScheduleLimits,
+  mode: FrontierSwarmAdaptiveMode,
+  observation: FrontierSwarmAdaptiveObservation,
+  decisions: FrontierSwarmAdaptiveLoadDecision[]
+): void {
+  if (observation.kind === 'ready-capacity') {
+    decisions.push(createAdaptiveDecision({
+      action: 'hold',
+      target: 'max-ready-jobs',
+      previous: limits.maxReadyJobs,
+      next: limits.maxReadyJobs,
+      max: maxLimits.maxReadyJobs,
+      min: minLimits.maxReadyJobs,
+      reason: observation.reasons[0] ?? 'ready-capacity',
+      observationIds: [observation.id]
+    }));
+    return;
+  }
+  const target = adaptiveDecisionTargetForObservation(observation);
+  const key = adaptiveDecisionKeyForObservation(observation);
+  if (target === 'lane' && key) {
+    decreaseAdaptiveRecordLimit(limits.maxLaneConcurrency, minLimits.maxLaneConcurrency, maxLimits.maxLaneConcurrency, key, mode, observation, decisions, target);
+  } else if (target === 'concurrency-key' && key) {
+    decreaseAdaptiveRecordLimit(limits.maxConcurrencyKeyConcurrency, minLimits.maxConcurrencyKeyConcurrency, maxLimits.maxConcurrencyKeyConcurrency, key, mode, observation, decisions, target);
+  } else if (target === 'compute' && key) {
+    decreaseAdaptiveRecordLimit(limits.maxComputeConcurrency, minLimits.maxComputeConcurrency, maxLimits.maxComputeConcurrency, key, mode, observation, decisions, target);
+  } else if (target === 'resource' && key) {
+    decreaseAdaptiveRecordLimit(limits.resourceQuotas, minLimits.resourceQuotas, maxLimits.resourceQuotas, key, mode, observation, decisions, target);
+  }
+  if (adaptiveObservationShouldReduceReadyWindow(observation)) {
+    const previous = limits.maxReadyJobs ?? maxLimits.maxReadyJobs ?? 1;
+    const min = minLimits.maxReadyJobs ?? 1;
+    const max = maxLimits.maxReadyJobs ?? previous;
+    const next = adaptiveReducedValue(previous, min, mode, observation);
+    limits.maxReadyJobs = clampAdaptiveLimit(next, min, max);
+    decisions.push(createAdaptiveDecision({
+      action: limits.maxReadyJobs < previous ? 'decrease' : 'hold',
+      target: 'max-ready-jobs',
+      previous,
+      next: limits.maxReadyJobs,
+      max,
+      min,
+      reason: observation.reasons[0] ?? observation.kind,
+      observationIds: [observation.id]
+    }));
+  }
+}
+
+function applyAdaptiveRecovery(
+  limits: FrontierSwarmScheduleLimits,
+  maxLimits: FrontierSwarmScheduleLimits,
+  observation: FrontierSwarmAdaptiveObservation,
+  decisions: FrontierSwarmAdaptiveLoadDecision[]
+): void {
+  if (limits.maxReadyJobs !== undefined && maxLimits.maxReadyJobs !== undefined && limits.maxReadyJobs < maxLimits.maxReadyJobs) {
+    const previous = limits.maxReadyJobs;
+    limits.maxReadyJobs = Math.min(maxLimits.maxReadyJobs, previous + 1);
+    decisions.push(createAdaptiveDecision({
+      action: 'increase',
+      target: 'max-ready-jobs',
+      previous,
+      next: limits.maxReadyJobs,
+      max: maxLimits.maxReadyJobs,
+      reason: observation.reasons[0] ?? observation.kind,
+      observationIds: [observation.id]
+    }));
+  }
+  if (observation.lane) {
+    increaseAdaptiveRecordLimit(limits.maxLaneConcurrency, maxLimits.maxLaneConcurrency, observation.lane, observation, decisions, 'lane');
+  }
+  if (observation.compute) {
+    increaseAdaptiveRecordLimit(limits.maxComputeConcurrency, maxLimits.maxComputeConcurrency, observation.compute, observation, decisions, 'compute');
+  }
+}
+
+function decreaseAdaptiveRecordLimit(
+  record: Record<string, number>,
+  minRecord: Record<string, number>,
+  maxRecord: Record<string, number>,
+  key: string,
+  mode: FrontierSwarmAdaptiveMode,
+  observation: FrontierSwarmAdaptiveObservation,
+  decisions: FrontierSwarmAdaptiveLoadDecision[],
+  target: FrontierSwarmAdaptiveDecisionTarget
+): void {
+  const previous = record[key] ?? maxRecord[key];
+  if (!positiveNumber(previous)) return;
+  const min = minRecord[key] ?? 1;
+  const max = maxRecord[key] ?? previous;
+  const next = clampAdaptiveLimit(adaptiveReducedValue(previous as number, min, mode, observation), min, max);
+  record[key] = next;
+  decisions.push(createAdaptiveDecision({
+    action: next < previous ? 'decrease' : 'hold',
+    target,
+    key,
+    previous,
+    next,
+    max,
+    min,
+    reason: observation.reasons[0] ?? observation.kind,
+    observationIds: [observation.id]
+  }));
+}
+
+function increaseAdaptiveRecordLimit(
+  record: Record<string, number>,
+  maxRecord: Record<string, number>,
+  key: string,
+  observation: FrontierSwarmAdaptiveObservation,
+  decisions: FrontierSwarmAdaptiveLoadDecision[],
+  target: FrontierSwarmAdaptiveDecisionTarget
+): void {
+  const previous = record[key];
+  const max = maxRecord[key];
+  if (!positiveNumber(previous) || !positiveNumber(max) || previous >= max) return;
+  record[key] = Math.min(max, previous + 1);
+  decisions.push(createAdaptiveDecision({
+    action: 'increase',
+    target,
+    key,
+    previous,
+    next: record[key],
+    max,
+    reason: observation.reasons[0] ?? observation.kind,
+    observationIds: [observation.id]
+  }));
+}
+
+function adaptiveReducedValue(
+  previous: number,
+  min: number,
+  mode: FrontierSwarmAdaptiveMode,
+  observation: FrontierSwarmAdaptiveObservation
+): number {
+  if (observation.kind === 'merge-conflict' || observation.kind === 'duplicate-output' || observation.kind === 'concurrency-key-capacity') return min;
+  const severityFactor = observation.severity === 'critical' ? 0.45 : observation.severity === 'error' ? 0.55 : observation.severity === 'warning' ? 0.7 : 0.85;
+  const modeFactor = mode === 'conservative' ? 0.6 : mode === 'aggressive' ? 0.85 : 0.75;
+  return Math.max(min, Math.floor(previous * Math.min(severityFactor, modeFactor)));
+}
+
+function adaptiveObservationShouldReduceReadyWindow(observation: FrontierSwarmAdaptiveObservation): boolean {
+  return observation.kind === 'evidence-failure'
+    || observation.kind === 'stale-patch'
+    || observation.kind === 'browser-contention'
+    || observation.kind === 'semantic-empty'
+    || observation.kind === 'log-noise'
+    || observation.kind === 'discovery-only-output'
+    || observation.kind === 'budget-pressure'
+    || observation.kind === 'slow-job';
+}
+
+function adaptiveDecisionTargetForObservation(observation: FrontierSwarmAdaptiveObservation): FrontierSwarmAdaptiveDecisionTarget {
+  if (observation.kind === 'resource-capacity' || observation.kind === 'browser-contention') return 'resource';
+  if (observation.kind === 'lane-capacity') return 'lane';
+  if (observation.kind === 'concurrency-key-capacity' || observation.kind === 'merge-conflict' || observation.kind === 'duplicate-output') return 'concurrency-key';
+  if (observation.kind === 'compute-capacity') return 'compute';
+  if (observation.lane) return 'lane';
+  return 'max-ready-jobs';
+}
+
+function adaptiveDecisionKeyForObservation(observation: FrontierSwarmAdaptiveObservation): string | undefined {
+  const target = adaptiveDecisionTargetForObservation(observation);
+  if (target === 'resource') return observation.resource ?? (observation.kind === 'browser-contention' ? 'browser' : undefined);
+  if (target === 'lane') return observation.lane;
+  if (target === 'concurrency-key') return observation.concurrencyKey ?? observation.region ?? observation.path;
+  if (target === 'compute') return observation.compute;
+  return undefined;
+}
+
+function adaptiveObservationIsBottleneck(observation: FrontierSwarmAdaptiveObservation): boolean {
+  if (observation.kind === 'healthy-throughput' || observation.kind === 'ready-capacity') return false;
+  return observation.severity !== 'info'
+    || observation.kind === 'merge-conflict'
+    || observation.kind === 'stale-patch'
+    || observation.kind === 'semantic-empty'
+    || observation.kind === 'log-noise'
+    || observation.kind === 'duplicate-output';
+}
+
+function adaptiveDefaultSeverity(kind: FrontierSwarmAdaptiveObservationKind): FrontierSwarmAdaptiveObservationSeverity {
+  if (kind === 'evidence-failure' || kind === 'budget-pressure') return 'error';
+  if (kind === 'merge-conflict' || kind === 'stale-patch' || kind === 'semantic-empty' || kind === 'browser-contention' || kind.endsWith('-capacity')) return 'warning';
+  return 'info';
+}
+
+function createAdaptiveDecision(input: Omit<FrontierSwarmAdaptiveLoadDecision, 'id'>): FrontierSwarmAdaptiveLoadDecision {
+  return {
+    id: 'swarm-adaptive-decision:' + stableHash([input.action, input.target, input.key, input.previous, input.next, input.reason, input.observationIds]),
+    ...input
+  };
+}
+
+function semanticSummaryIsEmpty(summary: FrontierSwarmSemanticImportSummary | undefined): boolean {
+  if (!summary) return false;
+  return summary.total === 0
+    || summary.selected === 0 && summary.eligible === 0 && summary.imported === 0 && summary.semanticIndex.symbols === 0 && summary.semanticSidecars.symbols === 0;
+}
+
+function semanticSummaryIsWeak(summary: FrontierSwarmSemanticImportSummary | undefined): boolean {
+  if (!summary || semanticSummaryIsEmpty(summary)) return false;
+  return summary.imported === 0
+    || summary.semanticIndex.symbols === 0
+    || summary.semanticSidecars.ownershipRegions === 0
+    || summary.sourceMapMappingCount === 0;
+}
+
+function dedupeAdaptiveObservations(observations: readonly FrontierSwarmAdaptiveObservation[]): FrontierSwarmAdaptiveObservation[] {
+  const byKey = new Map<string, FrontierSwarmAdaptiveObservation>();
+  for (const observation of observations) {
+    const key = [
+      observation.kind,
+      observation.jobId ?? '',
+      observation.lane ?? '',
+      observation.compute ?? '',
+      observation.concurrencyKey ?? '',
+      observation.resource ?? '',
+      observation.path ?? '',
+      observation.region ?? '',
+      observation.reasons.join('|')
+    ].join('\0');
+    const existing = byKey.get(key);
+    if (!existing || adaptiveSeverityRank(observation.severity) > adaptiveSeverityRank(existing.severity)) byKey.set(key, observation);
+  }
+  return Array.from(byKey.values()).sort((left, right) => adaptiveSeverityRank(right.severity) - adaptiveSeverityRank(left.severity) || left.kind.localeCompare(right.kind) || (left.jobId ?? '').localeCompare(right.jobId ?? ''));
+}
+
+function adaptiveSeverityRank(severity: FrontierSwarmAdaptiveObservationSeverity): number {
+  if (severity === 'critical') return 4;
+  if (severity === 'error') return 3;
+  if (severity === 'warning') return 2;
+  if (severity === 'info') return 1;
+  return 0;
+}
+
+function normalizeAdaptiveLimitRecord(input: Record<string, number> = {}): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (positiveNumber(value)) out[key] = Math.max(1, Math.floor(value));
+  }
+  return out;
+}
+
+function clampAdaptiveRecord(
+  value: Record<string, number>,
+  minRecord: Record<string, number>,
+  maxRecord: Record<string, number>
+): Record<string, number> {
+  const keys = uniqueStrings([...Object.keys(value), ...Object.keys(minRecord), ...Object.keys(maxRecord)]);
+  const out: Record<string, number> = {};
+  for (const key of keys) {
+    const max = maxRecord[key];
+    if (!positiveNumber(max)) continue;
+    const min = minRecord[key] ?? 1;
+    out[key] = clampAdaptiveLimit(value[key] ?? max, min, max);
+  }
+  return out;
+}
+
+function clampAdaptiveLimit(value: number, min: number, max: number): number {
+  const upper = Math.max(1, Math.floor(max));
+  const lower = Math.min(upper, Math.max(1, Math.floor(min)));
+  return Math.min(upper, Math.max(lower, Math.floor(value)));
+}
+
+function adaptivePositiveLimit(value: unknown, fallback: number): number {
+  return positiveNumber(value) ? Math.max(1, Math.floor(value as number)) : Math.max(1, Math.floor(fallback));
 }
 
 function normalizeBudget(input: FrontierSwarmBudgetInput = {}): FrontierSwarmBudget {

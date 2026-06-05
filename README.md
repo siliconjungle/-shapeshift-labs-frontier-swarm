@@ -293,6 +293,7 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmRunStoreShards` describes sharded event/result/checkpoint paths for large run stores,
 - `createSwarmMergeAdmission` limits ready merges by count, touched paths/regions, and risk budget,
 - `createSwarmCoordinatorDashboard` and `querySwarmCoordinatorDashboard` combine merge index entries, queue overlays, evidence indexes, admission decisions, duplicate groups, semantic sidecar summaries, source citations, and worker liveness into one coordinator-query surface with a compact merge score per job,
+- `createSwarmAdaptiveLoadPlan` treats declared concurrency/resource values as maximums and derives lower effective caps from deterministic observations such as browser/resource contention, stale patches, merge conflicts, empty semantic sidecars, log noise, discovery-only overproduction, failed evidence, and healthy throughput,
 - `createSwarmPatchStackPlan` clusters compatible bundles into candidate patch stacks by lane, path, region, disposition, and risk so reviewers can evaluate batches instead of individual worker directories,
 - `createSwarmContextPack` gives workers compact task context: relevant files, API maps, known failures, focused/oracle commands, expected evidence, exclusions, evidence schema, playbooks, and explicit dead ends to avoid,
 - `createSwarmOracleCorpus` indexes deterministic reference artifacts such as traces, snapshots, classifications, expected outputs, or fixtures without assuming a project domain,
@@ -343,6 +344,7 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`
 - `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`
 - `createSwarmUsageGovernor`, `checkSwarmUsageGovernor`
+- `createSwarmAdaptiveLoadPlan`, `createSwarmScheduleInputFromAdaptiveLoadPlan`
 - `classifySwarmMergeReadiness`, `classifySwarmMergeDisposition`
 - `resolveSwarmChangedRegions`, `checkSwarmRegionOwnership`
 - `decomposeSwarmFeature`
@@ -360,7 +362,7 @@ Run the package-local benchmark:
 npm run bench
 ```
 
-The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, replay/debug/evidence helper creation, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
+The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, adaptive load planning, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, replay/debug/evidence helper creation, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
 
 ## Source Repository
 
