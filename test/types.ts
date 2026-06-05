@@ -15,6 +15,8 @@ import {
   querySwarmEvidenceIndex,
   createSwarmBlackboard,
   querySwarmBlackboard,
+  createSwarmCoordinatorDashboard,
+  querySwarmCoordinatorDashboard,
   createSwarmReferenceOraclePlan,
   createSwarmReferenceOracleResponse,
   createSwarmArtifactRoutingPlan,
@@ -50,6 +52,7 @@ import {
   type FrontierSwarmBottleneckReport,
   type FrontierSwarmBudgetDecision,
   type FrontierSwarmCompute,
+  type FrontierSwarmCoordinatorDashboard,
   type FrontierSwarmContextPack,
   type FrontierSwarmDebugHandoff,
   type FrontierSwarmDivergenceReport,
@@ -134,6 +137,7 @@ const instrumentationDecision: FrontierSwarmInstrumentationBudgetDecision = chec
 const bottleneckReport: FrontierSwarmBottleneckReport = createSwarmBottleneckReport({ sources: [{ text: 'merge conflict' }] });
 const evidenceIndex: FrontierSwarmEvidenceIndex = createSwarmEvidenceIndex({ entries: [{ topic: 'timing', path: 'evidence.json' }] });
 const blackboard: FrontierSwarmBlackboard = createSwarmBlackboard({ entries: [{ topic: 'fact', text: 'known divergence' }] });
+const coordinatorDashboard: FrontierSwarmCoordinatorDashboard = createSwarmCoordinatorDashboard({ plan, run, mergeIndex, evidenceIndex });
 const referencePlan: FrontierSwarmReferenceOraclePlan = createSwarmReferenceOraclePlan({ targets: [{ id: 'reference', role: 'reference' }] });
 const referenceResponse: FrontierSwarmReferenceOracleResponse = createSwarmReferenceOracleResponse({ planId: referencePlan.id });
 const artifactRoutingPlan: FrontierSwarmArtifactRoutingPlan = createSwarmArtifactRoutingPlan({ artifacts: [{ path: 'changes.patch' }] });
@@ -180,6 +184,7 @@ instrumentationDecision.ok satisfies boolean;
 bottleneckReport.classifications satisfies readonly { kind: string }[];
 querySwarmEvidenceIndex(evidenceIndex, { topic: 'timing' }).summary.entryCount satisfies number;
 querySwarmBlackboard(blackboard, { topic: 'fact' }).summary.entryCount satisfies number;
+querySwarmCoordinatorDashboard(coordinatorDashboard, { hasSemanticImport: false }).summary.jobCount satisfies number;
 referencePlan.targets satisfies readonly { id: string }[];
 referenceResponse.targetResults satisfies readonly { targetId: string }[];
 artifactRoutingPlan.routes satisfies readonly { bucket: string }[];

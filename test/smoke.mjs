@@ -14,6 +14,7 @@ import {
   createSwarmAutoReviewReport,
   createSwarmBlackboard,
   createSwarmBottleneckReport,
+  createSwarmCoordinatorDashboard,
   createSwarmContextPack,
   createSwarmDebugHandoff,
   createSwarmDivergenceReport,
@@ -59,6 +60,7 @@ import {
   deriveSwarmQueueStatus,
   matchesGlob,
   querySwarmBlackboard,
+  querySwarmCoordinatorDashboard,
   querySwarmEvidenceIndex,
   recordSwarmEvent,
   renewSwarmLease,
@@ -641,6 +643,27 @@ const evidenceIndex = createSwarmEvidenceIndex({
 });
 assert.strictEqual(querySwarmEvidenceIndex(evidenceIndex, { pathIncludes: 'trace' }).summary.entryCount, 1);
 assert.strictEqual(querySwarmEvidenceIndex(evidenceIndex, { topic: 'apu-port-timing', minConfidence: 0.8 }).summary.entryCount, 1);
+
+const coordinatorDashboard = createSwarmCoordinatorDashboard({
+  plan,
+  run: evidenceRun,
+  bundles: [regionBundleA, regionBundleB, unregionedBundle],
+  mergeIndex: pathFallbackIndex,
+  evidenceIndex,
+  admission,
+  processes: [
+    { pid: 101, role: 'codex', jobId: regionBundleA.jobId, status: 'missing', startedAt: 1 },
+    { pid: 102, role: 'codex', jobId: 'running-job', status: 'running', startedAt: 2 }
+  ],
+  generatedAt: 7950
+});
+assert.strictEqual(coordinatorDashboard.kind, 'frontier.swarm.coordinator-dashboard');
+assert.strictEqual(coordinatorDashboard.summary.duplicateGroupCount, 1);
+assert.ok(coordinatorDashboard.jobs.some((job) => job.jobId === regionBundleA.jobId && job.duplicateGroupId));
+assert.ok(coordinatorDashboard.jobs.some((job) => job.jobId === 'running-job' && job.liveness === 'running'));
+assert.ok(querySwarmCoordinatorDashboard(coordinatorDashboard, { pathIncludes: 'runtime-website-content' }).summary.jobCount >= 2);
+assert.ok(querySwarmCoordinatorDashboard(coordinatorDashboard, { duplicateOnly: true }).jobs.every((job) => job.duplicateGroupId));
+assert.ok(querySwarmCoordinatorDashboard(coordinatorDashboard, { maxMergeScore: 70 }).summary.jobCount >= 1);
 
 const blackboard = createSwarmBlackboard({
   runId: evidenceRun.id,
