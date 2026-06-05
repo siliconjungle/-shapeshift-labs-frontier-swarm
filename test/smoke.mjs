@@ -735,6 +735,23 @@ assert.ok(adaptiveLoadPlan.observations.some((entry) => entry.kind === 'resource
 assert.ok((adaptiveLoadPlan.effectiveLimits.maxReadyJobs ?? 4) < 4);
 const adaptiveSchedule = createSwarmSchedule(createSwarmScheduleInputFromAdaptiveLoadPlan(resourcePlan, adaptiveLoadPlan));
 assert.ok(adaptiveSchedule.ready.length <= resourceSchedule.ready.length);
+const laneCapacityPlan = createSwarmPlan(manifest, [
+  { id: 'runtime-a', lane: 'runtime', targetRefs: ['inkwell/apps/web/src/runtime/a.ts'] },
+  { id: 'runtime-b', lane: 'runtime', targetRefs: ['inkwell/apps/web/src/runtime/b.ts'] }
+], { maxReadyJobs: 4, maxLaneConcurrency: { runtime: 1 } });
+const laneCapacitySchedule = createSwarmSchedule(laneCapacityPlan);
+assert.ok(laneCapacitySchedule.blocked[0].reasons.includes('lane-capacity'));
+const laneCapacityAdaptive = createSwarmAdaptiveLoadPlan({
+  plan: laneCapacityPlan,
+  schedule: laneCapacitySchedule,
+  mode: 'balanced',
+  maxLimits: { maxReadyJobs: 4, maxLaneConcurrency: { runtime: 3 } },
+  currentLimits: { maxReadyJobs: 4, maxLaneConcurrency: { runtime: 3 } },
+  generatedAt: 8455
+});
+assert.ok(laneCapacityAdaptive.observations.some((entry) => entry.kind === 'lane-capacity'));
+assert.strictEqual(laneCapacityAdaptive.effectiveLimits.maxLaneConcurrency.runtime, 3);
+assert.ok(laneCapacityAdaptive.decisions.some((entry) => entry.action === 'hold' && entry.target === 'lane' && entry.key === 'runtime'));
 const observeOnlyAdaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
   plan: resourcePlan,
   schedule: resourceSchedule,

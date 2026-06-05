@@ -5642,6 +5642,16 @@ function applyAdaptiveObservation(
   }
   const target = adaptiveDecisionTargetForObservation(observation);
   const key = adaptiveDecisionKeyForObservation(observation);
+  if (adaptiveObservationIsCapacityBackpressure(observation)) {
+    decisions.push(createAdaptiveDecision({
+      action: 'hold',
+      target,
+      ...(key ? { key } : {}),
+      reason: observation.reasons[0] ?? observation.kind,
+      observationIds: [observation.id]
+    }));
+    return;
+  }
   if (target === 'lane' && key) {
     decreaseAdaptiveRecordLimit(limits.maxLaneConcurrency, minLimits.maxLaneConcurrency, maxLimits.maxLaneConcurrency, key, mode, observation, decisions, target);
   } else if (target === 'concurrency-key' && key) {
@@ -5771,6 +5781,13 @@ function adaptiveObservationShouldReduceReadyWindow(observation: FrontierSwarmAd
     || observation.kind === 'discovery-only-output'
     || observation.kind === 'budget-pressure'
     || observation.kind === 'slow-job';
+}
+
+function adaptiveObservationIsCapacityBackpressure(observation: FrontierSwarmAdaptiveObservation): boolean {
+  return observation.kind === 'resource-capacity'
+    || observation.kind === 'lane-capacity'
+    || observation.kind === 'concurrency-key-capacity'
+    || observation.kind === 'compute-capacity';
 }
 
 function adaptiveDecisionTargetForObservation(observation: FrontierSwarmAdaptiveObservation): FrontierSwarmAdaptiveDecisionTarget {
