@@ -1220,6 +1220,42 @@ export interface FrontierSwarmNativeCompileSummaryInput {
   blocked?: number;
 }
 
+export interface FrontierSwarmParadigmSemanticsSummaryInput {
+  total?: number;
+  ids?: readonly string[];
+  groups?: readonly string[];
+  kinds?: readonly string[];
+  evidence?: number;
+  bindingScopes?: number;
+  bindings?: number;
+  patterns?: number;
+  typeConstraints?: number;
+  evaluationModels?: number;
+  memoryLocations?: number;
+  effectRegions?: number;
+  controlRegions?: number;
+  logicPrograms?: number;
+  actorSystems?: number;
+  stackEffects?: number;
+  arrayShapes?: number;
+  numericKernels?: number;
+  dataflowNetworks?: number;
+  clockModels?: number;
+  objectModels?: number;
+  macroExpansions?: number;
+  reflectionBoundaries?: number;
+  loweringRecords?: number;
+  byGroup?: FrontierSwarmSemanticImportCounterInput;
+  byKind?: FrontierSwarmSemanticImportCounterInput;
+  hasRuntimeSemantics?: boolean;
+  hasLogicSemantics?: boolean;
+  hasStackSemantics?: boolean;
+  hasArraySemantics?: boolean;
+  hasMacroOrReflection?: boolean;
+  hasLowering?: boolean;
+  empty?: boolean;
+}
+
 export interface FrontierSwarmSemanticImportSummaryInput {
   total?: number;
   selected?: number;
@@ -1235,6 +1271,7 @@ export interface FrontierSwarmSemanticImportSummaryInput {
   semanticIndex?: FrontierSwarmSemanticIndexSummaryInput;
   semanticSidecars?: FrontierSwarmSemanticSidecarSummaryInput;
   proofSpec?: FrontierSwarmProofSpecSummaryInput;
+  paradigmSemantics?: FrontierSwarmParadigmSemanticsSummaryInput;
   sourceProjections?: FrontierSwarmSourceProjectionSummaryInput;
   nativeCompiles?: FrontierSwarmNativeCompileSummaryInput;
   readiness?: FrontierSwarmSemanticImportCounterInput;
@@ -1328,6 +1365,42 @@ export interface FrontierSwarmNativeCompileSummary {
   blocked: number;
 }
 
+export interface FrontierSwarmParadigmSemanticsSummary {
+  total: number;
+  ids: string[];
+  groups: string[];
+  kinds: string[];
+  evidence: number;
+  bindingScopes: number;
+  bindings: number;
+  patterns: number;
+  typeConstraints: number;
+  evaluationModels: number;
+  memoryLocations: number;
+  effectRegions: number;
+  controlRegions: number;
+  logicPrograms: number;
+  actorSystems: number;
+  stackEffects: number;
+  arrayShapes: number;
+  numericKernels: number;
+  dataflowNetworks: number;
+  clockModels: number;
+  objectModels: number;
+  macroExpansions: number;
+  reflectionBoundaries: number;
+  loweringRecords: number;
+  byGroup: Record<string, number>;
+  byKind: Record<string, number>;
+  hasRuntimeSemantics: boolean;
+  hasLogicSemantics: boolean;
+  hasStackSemantics: boolean;
+  hasArraySemantics: boolean;
+  hasMacroOrReflection: boolean;
+  hasLowering: boolean;
+  empty: boolean;
+}
+
 export interface FrontierSwarmSemanticImportSummary {
   total: number;
   selected: number;
@@ -1343,6 +1416,7 @@ export interface FrontierSwarmSemanticImportSummary {
   semanticIndex: FrontierSwarmSemanticIndexSummary;
   semanticSidecars: FrontierSwarmSemanticSidecarSummary;
   proofSpec: FrontierSwarmProofSpecSummary;
+  paradigmSemantics: FrontierSwarmParadigmSemanticsSummary;
   sourceProjections: FrontierSwarmSourceProjectionSummary;
   nativeCompiles: FrontierSwarmNativeCompileSummary;
   readiness: Record<string, number>;
@@ -7209,10 +7283,73 @@ function normalizeSemanticImportSummary(input: unknown): FrontierSwarmSemanticIm
     semanticIndex: normalizeSemanticIndexSummary(object.semanticIndex),
     semanticSidecars: normalizeSemanticSidecarSummary(object.semanticSidecars),
     proofSpec: normalizeProofSpecSummary(object.proofSpec),
+    paradigmSemantics: normalizeParadigmSemanticsSummary(object.paradigmSemantics),
     sourceProjections: normalizeSourceProjectionSummary(object.sourceProjections),
     nativeCompiles: normalizeNativeCompileSummary(object.nativeCompiles),
     readiness: normalizeCounterRecord(object.readiness),
     ...(metadata ? { metadata } : {})
+  };
+}
+
+const paradigmSemanticsSummaryGroups = [
+  'bindingScopes',
+  'bindings',
+  'patterns',
+  'typeConstraints',
+  'evaluationModels',
+  'memoryLocations',
+  'effectRegions',
+  'controlRegions',
+  'logicPrograms',
+  'actorSystems',
+  'stackEffects',
+  'arrayShapes',
+  'numericKernels',
+  'dataflowNetworks',
+  'clockModels',
+  'objectModels',
+  'macroExpansions',
+  'reflectionBoundaries',
+  'loweringRecords'
+] as const;
+
+function normalizeParadigmSemanticsSummary(input: unknown): FrontierSwarmParadigmSemanticsSummary {
+  const object = toJsonObject(input);
+  const counts = Object.fromEntries(paradigmSemanticsSummaryGroups.map((group) => [
+    group,
+    nonNegativeCount(object?.[group])
+  ])) as Record<typeof paradigmSemanticsSummaryGroups[number], number>;
+  const total = nonNegativeCount(object?.total) || Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const byGroup = normalizeCounterRecord(object?.byGroup);
+  const byKind = normalizeCounterRecord(object?.byKind);
+  const hasRuntimeSemantics = object?.hasRuntimeSemantics === true
+    || counts.evaluationModels > 0
+    || counts.memoryLocations > 0
+    || counts.effectRegions > 0
+    || counts.controlRegions > 0
+    || counts.actorSystems > 0
+    || counts.clockModels > 0;
+  const hasLogicSemantics = object?.hasLogicSemantics === true || counts.logicPrograms > 0;
+  const hasStackSemantics = object?.hasStackSemantics === true || counts.stackEffects > 0;
+  const hasArraySemantics = object?.hasArraySemantics === true || counts.arrayShapes > 0 || counts.numericKernels > 0;
+  const hasMacroOrReflection = object?.hasMacroOrReflection === true || counts.macroExpansions > 0 || counts.reflectionBoundaries > 0;
+  const hasLowering = object?.hasLowering === true || counts.loweringRecords > 0;
+  return {
+    total,
+    ids: uniqueStrings(stringArray(object?.ids)),
+    groups: uniqueStrings(stringArray(object?.groups)),
+    kinds: uniqueStrings(stringArray(object?.kinds)),
+    evidence: nonNegativeCount(object?.evidence),
+    ...counts,
+    byGroup,
+    byKind,
+    hasRuntimeSemantics,
+    hasLogicSemantics,
+    hasStackSemantics,
+    hasArraySemantics,
+    hasMacroOrReflection,
+    hasLowering,
+    empty: object?.empty === true || total === 0
   };
 }
 
