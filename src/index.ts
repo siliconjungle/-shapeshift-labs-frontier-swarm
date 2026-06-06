@@ -1234,10 +1234,37 @@ export interface FrontierSwarmSemanticImportSummaryInput {
   lossesBySeverity?: FrontierSwarmSemanticImportCounterInput;
   semanticIndex?: FrontierSwarmSemanticIndexSummaryInput;
   semanticSidecars?: FrontierSwarmSemanticSidecarSummaryInput;
+  proofSpec?: FrontierSwarmProofSpecSummaryInput;
   sourceProjections?: FrontierSwarmSourceProjectionSummaryInput;
   nativeCompiles?: FrontierSwarmNativeCompileSummaryInput;
   readiness?: FrontierSwarmSemanticImportCounterInput;
   metadata?: unknown;
+}
+
+export interface FrontierSwarmProofSpecSummaryInput {
+  total?: number;
+  ids?: readonly string[];
+  contracts?: number;
+  refinements?: number;
+  invariants?: number;
+  termination?: number;
+  temporal?: number;
+  obligations?: number;
+  artifacts?: number;
+  assumptions?: number;
+  evidence?: number;
+  discharged?: number;
+  failed?: number;
+  open?: number;
+  unknown?: number;
+  stale?: number;
+  assumed?: number;
+  contractKinds?: readonly string[];
+  artifactKinds?: readonly string[];
+  byStatus?: FrontierSwarmSemanticImportCounterInput;
+  byContractKind?: FrontierSwarmSemanticImportCounterInput;
+  byArtifactKind?: FrontierSwarmSemanticImportCounterInput;
+  empty?: boolean;
 }
 
 export interface FrontierSwarmSemanticIndexSummary {
@@ -1254,6 +1281,32 @@ export interface FrontierSwarmSemanticSidecarSummary {
   ownershipRegions: number;
   patchHints: number;
   empty: number;
+}
+
+export interface FrontierSwarmProofSpecSummary {
+  total: number;
+  ids: string[];
+  contracts: number;
+  refinements: number;
+  invariants: number;
+  termination: number;
+  temporal: number;
+  obligations: number;
+  artifacts: number;
+  assumptions: number;
+  evidence: number;
+  discharged: number;
+  failed: number;
+  open: number;
+  unknown: number;
+  stale: number;
+  assumed: number;
+  contractKinds: string[];
+  artifactKinds: string[];
+  byStatus: Record<string, number>;
+  byContractKind: Record<string, number>;
+  byArtifactKind: Record<string, number>;
+  empty: boolean;
 }
 
 export interface FrontierSwarmSourceProjectionSummary {
@@ -1289,6 +1342,7 @@ export interface FrontierSwarmSemanticImportSummary {
   lossesBySeverity: Record<string, number>;
   semanticIndex: FrontierSwarmSemanticIndexSummary;
   semanticSidecars: FrontierSwarmSemanticSidecarSummary;
+  proofSpec: FrontierSwarmProofSpecSummary;
   sourceProjections: FrontierSwarmSourceProjectionSummary;
   nativeCompiles: FrontierSwarmNativeCompileSummary;
   readiness: Record<string, number>;
@@ -5842,7 +5896,11 @@ function semanticSummaryIsWeak(summary: FrontierSwarmSemanticImportSummary | und
   return summary.imported === 0
     || summary.semanticIndex.symbols === 0
     || summary.semanticSidecars.ownershipRegions === 0
-    || summary.sourceMapMappingCount === 0;
+    || summary.sourceMapMappingCount === 0
+    || summary.proofSpec.failed > 0
+    || summary.proofSpec.stale > 0
+    || summary.proofSpec.open > 0
+    || summary.proofSpec.unknown > 0;
 }
 
 function dedupeAdaptiveObservations(observations: readonly FrontierSwarmAdaptiveObservation[]): FrontierSwarmAdaptiveObservation[] {
@@ -7150,10 +7208,41 @@ function normalizeSemanticImportSummary(input: unknown): FrontierSwarmSemanticIm
     lossesBySeverity: normalizeCounterRecord(object.lossesBySeverity),
     semanticIndex: normalizeSemanticIndexSummary(object.semanticIndex),
     semanticSidecars: normalizeSemanticSidecarSummary(object.semanticSidecars),
+    proofSpec: normalizeProofSpecSummary(object.proofSpec),
     sourceProjections: normalizeSourceProjectionSummary(object.sourceProjections),
     nativeCompiles: normalizeNativeCompileSummary(object.nativeCompiles),
     readiness: normalizeCounterRecord(object.readiness),
     ...(metadata ? { metadata } : {})
+  };
+}
+
+function normalizeProofSpecSummary(input: unknown): FrontierSwarmProofSpecSummary {
+  const object = toJsonObject(input);
+  const total = nonNegativeCount(object?.total);
+  return {
+    total,
+    ids: uniqueStrings(stringArray(object?.ids)),
+    contracts: nonNegativeCount(object?.contracts),
+    refinements: nonNegativeCount(object?.refinements),
+    invariants: nonNegativeCount(object?.invariants),
+    termination: nonNegativeCount(object?.termination),
+    temporal: nonNegativeCount(object?.temporal),
+    obligations: nonNegativeCount(object?.obligations),
+    artifacts: nonNegativeCount(object?.artifacts),
+    assumptions: nonNegativeCount(object?.assumptions),
+    evidence: nonNegativeCount(object?.evidence),
+    discharged: nonNegativeCount(object?.discharged),
+    failed: nonNegativeCount(object?.failed),
+    open: nonNegativeCount(object?.open),
+    unknown: nonNegativeCount(object?.unknown),
+    stale: nonNegativeCount(object?.stale),
+    assumed: nonNegativeCount(object?.assumed),
+    contractKinds: uniqueStrings(stringArray(object?.contractKinds)),
+    artifactKinds: uniqueStrings(stringArray(object?.artifactKinds)),
+    byStatus: normalizeCounterRecord(object?.byStatus),
+    byContractKind: normalizeCounterRecord(object?.byContractKind),
+    byArtifactKind: normalizeCounterRecord(object?.byArtifactKind),
+    empty: object?.empty === true || total === 0
   };
 }
 
@@ -7399,6 +7488,10 @@ function slug(value: string): string {
 
 function uniqueStrings(values: readonly (string | undefined | null)[]): string[] {
   return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)));
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((entry) => String(entry ?? '').trim()).filter(Boolean) : [];
 }
 
 function positiveNumber(value: unknown): value is number {

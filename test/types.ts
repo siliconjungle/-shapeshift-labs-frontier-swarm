@@ -121,9 +121,10 @@ const semanticSummary: FrontierSwarmSemanticImportSummary = createSwarmMergeBund
   result: {
     jobId: 'semantic',
     status: 'completed',
-    semanticImport: { total: 1, semanticSidecars: { ownershipRegions: 1 }, sourceProjections: { preserved: 1 }, nativeCompiles: { emitted: 1 } }
+    semanticImport: { total: 1, semanticSidecars: { ownershipRegions: 1 }, proofSpec: { obligations: 1, discharged: 1 }, sourceProjections: { preserved: 1 }, nativeCompiles: { emitted: 1 } }
   }
 }).semanticImport!;
+semanticSummary.proofSpec.obligations satisfies number;
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
