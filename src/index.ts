@@ -54,6 +54,10 @@ export const FRONTIER_SWARM_PARITY_ORACLE_KIND = 'frontier.swarm.parity-oracle';
 export const FRONTIER_SWARM_PARITY_ORACLE_VERSION = 1;
 export const FRONTIER_SWARM_DIVERGENCE_REPORT_KIND = 'frontier.swarm.divergence-report';
 export const FRONTIER_SWARM_DIVERGENCE_REPORT_VERSION = 1;
+export const FRONTIER_SWARM_TRACE_SHARD_KIND = 'frontier.swarm.trace-shard';
+export const FRONTIER_SWARM_TRACE_SHARD_VERSION = 1;
+export const FRONTIER_SWARM_TRACE_INDEX_KIND = 'frontier.swarm.trace-index';
+export const FRONTIER_SWARM_TRACE_INDEX_VERSION = 1;
 export const FRONTIER_SWARM_OBSERVABILITY_POINT_KIND = 'frontier.swarm.observability-point';
 export const FRONTIER_SWARM_OBSERVABILITY_POINT_VERSION = 1;
 export const FRONTIER_SWARM_WATCHPOINT_PLAN_KIND = 'frontier.swarm.watchpoint-plan';
@@ -150,6 +154,7 @@ export type FrontierSwarmQueueOverlayStatus =
   | string;
 export type FrontierSwarmParityOracleStatus = 'pending' | 'passed' | 'failed' | 'blocked' | 'skipped' | string;
 export type FrontierSwarmDivergenceSeverity = 'info' | 'warning' | 'error' | 'critical' | string;
+export type FrontierSwarmTraceShardStatus = 'passed' | 'failed' | 'blocked' | 'unknown' | string;
 export type FrontierSwarmWatchpointAction = 'break' | 'log' | 'capture' | 'handoff' | string;
 export type FrontierSwarmBottleneckKind =
   | 'correctness'
@@ -1515,6 +1520,7 @@ export interface FrontierSwarmMergeBundleInput {
   branchName?: string;
   commit?: string;
   semanticImport?: FrontierSwarmSemanticImportSummaryInput;
+  traceShards?: readonly (FrontierSwarmTraceShard | FrontierSwarmTraceShardInput)[];
   metadata?: unknown;
   generatedAt?: number;
 }
@@ -1551,6 +1557,7 @@ export interface FrontierSwarmMergeBundle {
   staleAgainstHead: boolean;
   reasons: string[];
   semanticImport?: FrontierSwarmSemanticImportSummary;
+  traceShards: FrontierSwarmTraceShard[];
   metadata?: JsonObject;
 }
 
@@ -2132,6 +2139,178 @@ export interface FrontierSwarmDivergenceReport {
   evidenceRefs: FrontierSwarmNamedRef[];
   generatedAt: number;
   metadata?: JsonObject;
+}
+
+export interface FrontierSwarmTraceRowWindowInput {
+  id?: string;
+  title?: string;
+  start?: number;
+  end?: number;
+  rowCount?: number;
+  firstDivergenceAt?: number;
+  deltaFields?: readonly string[];
+  evidenceRefs?: readonly (string | FrontierSwarmNamedRefInput)[];
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmTraceRowWindow {
+  id: string;
+  title: string;
+  start?: number;
+  end?: number;
+  rowCount?: number;
+  firstDivergenceAt?: number;
+  deltaFields: string[];
+  evidenceRefs: FrontierSwarmNamedRef[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmTraceHypothesisInput {
+  id?: string;
+  title?: string;
+  sourcePath?: string;
+  line?: number;
+  symbol?: string;
+  region?: string;
+  confidence?: FrontierSwarmConfidence;
+  reason?: string;
+  evidenceRefs?: readonly (string | FrontierSwarmNamedRefInput)[];
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmTraceHypothesis {
+  id: string;
+  title: string;
+  sourcePath?: string;
+  line?: number;
+  symbol?: string;
+  region?: string;
+  confidence: FrontierSwarmConfidence;
+  reason?: string;
+  evidenceRefs: FrontierSwarmNamedRef[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmExecutableOwnershipRegionInput {
+  id: string;
+  kind?: string;
+  sourcePath?: string;
+  symbol?: string;
+  selectors?: readonly string[];
+  affectedTests?: readonly (string | FrontierSwarmCommandInput)[];
+  conflictingAssumptions?: readonly string[];
+  traceRefs?: readonly (string | FrontierSwarmNamedRefInput)[];
+  riskLevel?: FrontierSwarmRiskLevel;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmExecutableOwnershipRegion {
+  id: string;
+  kind: string;
+  sourcePath?: string;
+  symbol?: string;
+  selectors: string[];
+  affectedTests: FrontierSwarmCommand[];
+  conflictingAssumptions: string[];
+  traceRefs: FrontierSwarmNamedRef[];
+  riskLevel: FrontierSwarmRiskLevel;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmTraceShardInput {
+  id?: string;
+  jobId?: string;
+  lane?: string;
+  subject?: string;
+  status?: FrontierSwarmTraceShardStatus;
+  traceRefs?: readonly (string | FrontierSwarmNamedRefInput)[];
+  divergence?: FrontierSwarmDivergenceReport | FrontierSwarmDivergenceReportInput;
+  rowWindows?: readonly FrontierSwarmTraceRowWindowInput[];
+  hypotheses?: readonly FrontierSwarmTraceHypothesisInput[];
+  executableOwnershipRegions?: readonly FrontierSwarmExecutableOwnershipRegionInput[];
+  focusedTests?: readonly (string | FrontierSwarmCommandInput)[];
+  referenceEvidence?: readonly (string | FrontierSwarmNamedRefInput)[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmTraceShard {
+  kind: typeof FRONTIER_SWARM_TRACE_SHARD_KIND;
+  version: typeof FRONTIER_SWARM_TRACE_SHARD_VERSION;
+  id: string;
+  jobId?: string;
+  lane?: string;
+  subject?: string;
+  status: FrontierSwarmTraceShardStatus;
+  traceRefs: FrontierSwarmNamedRef[];
+  divergence?: FrontierSwarmDivergenceReport;
+  rowWindows: FrontierSwarmTraceRowWindow[];
+  hypotheses: FrontierSwarmTraceHypothesis[];
+  executableOwnershipRegions: FrontierSwarmExecutableOwnershipRegion[];
+  focusedTests: FrontierSwarmCommand[];
+  referenceEvidence: FrontierSwarmNamedRef[];
+  generatedAt: number;
+  summary: {
+    rowWindowCount: number;
+    hypothesisCount: number;
+    executableOwnershipRegionCount: number;
+    focusedTestCount: number;
+    referenceEvidenceCount: number;
+    hasDivergence: boolean;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmTraceIndexInput {
+  id?: string;
+  shards?: readonly (FrontierSwarmTraceShard | FrontierSwarmTraceShardInput)[];
+  bundles?: readonly FrontierSwarmMergeBundle[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmTraceIndex {
+  kind: typeof FRONTIER_SWARM_TRACE_INDEX_KIND;
+  version: typeof FRONTIER_SWARM_TRACE_INDEX_VERSION;
+  id: string;
+  generatedAt: number;
+  shards: FrontierSwarmTraceShard[];
+  byJobId: Record<string, FrontierSwarmTraceShard[]>;
+  bySubject: Record<string, FrontierSwarmTraceShard[]>;
+  byRegion: Record<string, FrontierSwarmTraceShard[]>;
+  bySourcePath: Record<string, FrontierSwarmTraceShard[]>;
+  summary: {
+    shardCount: number;
+    rowWindowCount: number;
+    hypothesisCount: number;
+    executableOwnershipRegionCount: number;
+    focusedTestCount: number;
+    referenceEvidenceCount: number;
+    divergenceCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmTraceIndexQuery {
+  jobId?: string;
+  lane?: string;
+  subject?: string;
+  region?: string;
+  sourcePath?: string;
+  status?: FrontierSwarmTraceShardStatus;
+  minConfidence?: number;
+  hasDivergence?: boolean;
+  textIncludes?: string;
+}
+
+export interface FrontierSwarmTraceIndexQueryResult {
+  shards: FrontierSwarmTraceShard[];
+  summary: {
+    shardCount: number;
+    rowWindowCount: number;
+    hypothesisCount: number;
+    executableOwnershipRegionCount: number;
+  };
 }
 
 export interface FrontierSwarmWatchpointInput {
@@ -2878,6 +3057,7 @@ export interface FrontierSwarmCoordinatorDashboardInput {
   mergeIndex?: FrontierSwarmMergeIndex;
   queueOverlay?: FrontierSwarmQueueOverlay;
   evidenceIndex?: FrontierSwarmEvidenceIndex;
+  traceIndex?: FrontierSwarmTraceIndex;
   admission?: FrontierSwarmMergeAdmission;
   processes?: readonly FrontierSwarmCoordinatorProcessInput[];
   generatedAt?: number;
@@ -2900,6 +3080,7 @@ export interface FrontierSwarmCoordinatorDashboard {
   mergeIndex?: FrontierSwarmMergeIndex;
   queueOverlay?: FrontierSwarmQueueOverlay;
   evidenceIndex?: FrontierSwarmEvidenceIndex;
+  traceIndex?: FrontierSwarmTraceIndex;
   admission?: FrontierSwarmMergeAdmission;
   summary: {
     jobCount: number;
@@ -2910,9 +3091,23 @@ export interface FrontierSwarmCoordinatorDashboard {
     duplicateGroupCount: number;
     semanticSidecarCount: number;
     semanticRegionCount: number;
+    traceShardCount: number;
+    traceDivergenceCount: number;
+    executableOwnershipRegionCount: number;
     averageMergeScore: number;
   };
   metadata?: JsonObject;
+}
+
+export interface FrontierSwarmCoordinatorTraceSummary {
+  shardCount: number;
+  rowWindowCount: number;
+  hypothesisCount: number;
+  executableOwnershipRegionCount: number;
+  focusedTestCount: number;
+  referenceEvidenceCount: number;
+  divergenceCount: number;
+  openDivergenceCount: number;
 }
 
 export interface FrontierSwarmCoordinatorJob {
@@ -2946,6 +3141,7 @@ export interface FrontierSwarmCoordinatorJob {
     requiredFailed: number;
   };
   semanticImport?: FrontierSwarmSemanticImportSummary;
+  traceSummary?: FrontierSwarmCoordinatorTraceSummary;
   generatedAt: number;
 }
 
@@ -2966,6 +3162,9 @@ export interface FrontierSwarmCoordinatorDashboardQuery {
   region?: string;
   hasSemanticImport?: boolean;
   hasSemanticRegions?: boolean;
+  hasTraceShards?: boolean;
+  traceSubject?: string;
+  traceRegion?: string;
   staleAgainstHead?: boolean;
   duplicateOnly?: boolean;
   minMergeScore?: number;
@@ -3471,6 +3670,11 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
   const commandsPassed = result.verification.filter((entry) => entry.status === 0 || entry.required === false && entry.status === undefined);
   const commandsFailed = result.verification.filter((entry) => entry.status !== undefined && entry.status !== 0 && entry.required !== false);
   const ownedFilesTouched = job ? changedPaths.filter((file) => job.allowedWrites.some((glob) => matchesGlob(file, glob))) : changedPaths;
+  const traceShards = [
+    ...(input.traceShards ?? []),
+    ...traceShardInputsFromUnknown(result.metadata?.traceShards),
+    ...traceShardInputsFromUnknown(inputMetadata?.traceShards)
+  ].map((shard) => normalizeTraceShardForBundle(shard, result, job, generatedAt));
   const reasons = mergeBundleReasons(result, disposition, input.staleAgainstHead ?? false);
   return {
     kind: FRONTIER_SWARM_MERGE_BUNDLE_KIND,
@@ -3502,6 +3706,7 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
     staleAgainstHead: input.staleAgainstHead ?? false,
     reasons,
     ...(semanticImport ? { semanticImport } : {}),
+    traceShards,
     ...(inputMetadata ? { metadata: inputMetadata } : {})
   };
 }
@@ -4120,6 +4325,104 @@ export function createSwarmDivergenceReport(input: FrontierSwarmDivergenceReport
   };
 }
 
+export function createSwarmTraceShard(input: FrontierSwarmTraceShardInput = {}): FrontierSwarmTraceShard {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const divergence = input.divergence
+    ? isSwarmDivergenceReport(input.divergence)
+      ? cloneJsonValue(input.divergence) as FrontierSwarmDivergenceReport
+      : createSwarmDivergenceReport(input.divergence)
+    : undefined;
+  const rowWindows = (input.rowWindows ?? []).map((window) => normalizeTraceRowWindow(window, generatedAt));
+  const hypotheses = (input.hypotheses ?? []).map((hypothesis) => normalizeTraceHypothesis(hypothesis, generatedAt));
+  const executableOwnershipRegions = (input.executableOwnershipRegions ?? []).map(normalizeExecutableOwnershipRegion);
+  const focusedTests = normalizeCommands(input.focusedTests ?? []);
+  const referenceEvidence = normalizeNamedRefs(input.referenceEvidence ?? [], 'reference-evidence');
+  const traceRefs = normalizeNamedRefs(input.traceRefs ?? [], 'trace');
+  const status = input.status ?? (divergence && divergence.status === 'failed' ? 'failed' : focusedTests.length || rowWindows.length || hypotheses.length ? 'passed' : 'unknown');
+  const id = input.id ?? 'swarm-trace-shard:' + stableHash([
+    input.jobId,
+    input.lane,
+    input.subject ?? divergence?.subject,
+    status,
+    divergence?.id,
+    rowWindows,
+    hypotheses,
+    executableOwnershipRegions,
+    generatedAt
+  ]);
+  return {
+    kind: FRONTIER_SWARM_TRACE_SHARD_KIND,
+    version: FRONTIER_SWARM_TRACE_SHARD_VERSION,
+    id,
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.lane ? { lane: input.lane } : {}),
+    ...(input.subject ?? divergence?.subject ? { subject: input.subject ?? divergence?.subject } : {}),
+    status,
+    traceRefs,
+    ...(divergence ? { divergence } : {}),
+    rowWindows,
+    hypotheses,
+    executableOwnershipRegions,
+    focusedTests,
+    referenceEvidence,
+    generatedAt,
+    summary: summarizeTraceShards([{ rowWindows, hypotheses, executableOwnershipRegions, focusedTests, referenceEvidence, divergence }]),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmTraceIndex(input: FrontierSwarmTraceIndexInput = {}): FrontierSwarmTraceIndex {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const shards = [
+    ...(input.shards ?? []).map((shard) => isSwarmTraceShard(shard) ? cloneJsonValue(shard) as FrontierSwarmTraceShard : createSwarmTraceShard({ ...shard, generatedAt: shard.generatedAt ?? generatedAt })),
+    ...(input.bundles ?? []).flatMap((bundle) => bundle.traceShards)
+  ];
+  const uniqueById = new Map<string, FrontierSwarmTraceShard>();
+  for (const shard of shards) uniqueById.set(shard.id, shard);
+  const indexed = Array.from(uniqueById.values()).sort((left, right) => left.id.localeCompare(right.id));
+  return {
+    kind: FRONTIER_SWARM_TRACE_INDEX_KIND,
+    version: FRONTIER_SWARM_TRACE_INDEX_VERSION,
+    id: input.id ?? 'swarm-trace-index:' + stableHash([indexed.map((shard) => shard.id), generatedAt]),
+    generatedAt,
+    shards: indexed,
+    byJobId: groupObjects(indexed.filter((shard) => shard.jobId), (shard) => shard.jobId as string),
+    bySubject: groupObjects(indexed.filter((shard) => shard.subject), (shard) => shard.subject as string),
+    byRegion: groupTraceShardsByMany(indexed, traceShardRegions),
+    bySourcePath: groupTraceShardsByMany(indexed, traceShardSourcePaths),
+    summary: summarizeTraceShards(indexed),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function querySwarmTraceIndex(
+  index: FrontierSwarmTraceIndex,
+  query: FrontierSwarmTraceIndexQuery = {}
+): FrontierSwarmTraceIndexQueryResult {
+  const needles = query.textIncludes ? [query.textIncludes.toLowerCase()] : [];
+  const minConfidence = query.minConfidence ?? 0;
+  const shards = index.shards.filter((shard) => (
+    (query.jobId === undefined || shard.jobId === query.jobId)
+    && (query.lane === undefined || shard.lane === query.lane)
+    && (query.subject === undefined || shard.subject === query.subject)
+    && (query.status === undefined || shard.status === query.status)
+    && (query.region === undefined || traceShardRegions(shard).includes(query.region))
+    && (query.sourcePath === undefined || traceShardSourcePaths(shard).some((path) => path.includes(query.sourcePath as string)))
+    && (query.hasDivergence === undefined || Boolean(shard.divergence) === query.hasDivergence)
+    && (query.minConfidence === undefined || traceShardMaxConfidence(shard) >= minConfidence)
+    && (needles.length === 0 || needles.some((needle) => traceShardSearchText(shard).includes(needle)))
+  ));
+  return {
+    shards,
+    summary: {
+      shardCount: shards.length,
+      rowWindowCount: shards.reduce((total, shard) => total + shard.rowWindows.length, 0),
+      hypothesisCount: shards.reduce((total, shard) => total + shard.hypotheses.length, 0),
+      executableOwnershipRegionCount: shards.reduce((total, shard) => total + shard.executableOwnershipRegions.length, 0)
+    }
+  };
+}
+
 export function createSwarmWatchpointPlan(input: FrontierSwarmWatchpointPlanInput = {}): FrontierSwarmWatchpointPlan {
   const generatedAt = input.generatedAt ?? Date.now();
   const watchpoints = (input.watchpoints ?? []).map(normalizeWatchpoint);
@@ -4653,6 +4956,7 @@ export function createSwarmCoordinatorDashboard(input: FrontierSwarmCoordinatorD
   const mergeIndex = input.mergeIndex ?? (bundles.length ? createSwarmMergeIndex({ runId, planId, bundles, generatedAt }) : undefined);
   const queueOverlay = input.queueOverlay ?? (bundles.length ? createSwarmQueueOverlay({ runId, bundles, generatedAt }) : undefined);
   const evidenceIndex = input.evidenceIndex ?? (input.run ? createSwarmEvidenceIndex({ run: input.run, generatedAt }) : undefined);
+  const traceIndex = input.traceIndex ?? (bundles.some((bundle) => bundle.traceShards.length > 0) ? createSwarmTraceIndex({ bundles, generatedAt }) : undefined);
   const admission = input.admission;
   const jobsById = new Map((input.plan?.jobs ?? []).map((job) => [job.id, job]));
   const resultsById = new Map((input.run?.results ?? []).map((result) => [result.jobId, result]));
@@ -4678,6 +4982,7 @@ export function createSwarmCoordinatorDashboard(input: FrontierSwarmCoordinatorD
     const result = resultsById.get(jobId);
     const entry = entriesById.get(jobId);
     const bundle = bundlesById.get(jobId);
+    const traceShards = traceIndex?.byJobId[jobId] ?? bundle?.traceShards ?? [];
     const processList = processesByJob[jobId] ?? [];
     const duplicateGroup = duplicateByJob.get(jobId);
     const admissionReasons = admissionDeferred.get(jobId) ?? [];
@@ -4688,7 +4993,7 @@ export function createSwarmCoordinatorDashboard(input: FrontierSwarmCoordinatorD
         : entry?.autoMergeable
           ? 'not-admissible'
           : 'unknown';
-    const score = scoreCoordinatorMergeJob(entry, bundle, evidenceIndex?.byJobId[jobId]?.length ?? 0, duplicateGroup, admissionStatus, admissionReasons);
+    const score = scoreCoordinatorMergeJob(entry, bundle, evidenceIndex?.byJobId[jobId]?.length ?? 0, duplicateGroup, admissionStatus, admissionReasons, traceShards);
     const evidencePaths = uniqueStrings([
       ...(entry?.evidencePaths ?? []),
       ...(result?.evidencePaths ?? []),
@@ -4727,6 +5032,7 @@ export function createSwarmCoordinatorDashboard(input: FrontierSwarmCoordinatorD
       ...(entry?.semanticImport ?? result?.semanticImport ?? bundle?.semanticImport ? {
         semanticImport: cloneJsonValue(entry?.semanticImport ?? result?.semanticImport ?? bundle?.semanticImport) as FrontierSwarmSemanticImportSummary
       } : {}),
+      ...(traceShards.length ? { traceSummary: createCoordinatorTraceSummary(traceShards) } : {}),
       generatedAt
     };
   }).sort((left, right) => right.mergeScore - left.mergeScore || left.jobId.localeCompare(right.jobId));
@@ -4749,6 +5055,7 @@ export function createSwarmCoordinatorDashboard(input: FrontierSwarmCoordinatorD
     ...(mergeIndex ? { mergeIndex } : {}),
     ...(queueOverlay ? { queueOverlay } : {}),
     ...(evidenceIndex ? { evidenceIndex } : {}),
+    ...(traceIndex ? { traceIndex } : {}),
     ...(admission ? { admission } : {}),
     summary: {
       jobCount: jobs.length,
@@ -4759,6 +5066,9 @@ export function createSwarmCoordinatorDashboard(input: FrontierSwarmCoordinatorD
       duplicateGroupCount: duplicateGroups.length,
       semanticSidecarCount: jobs.filter((job) => job.semanticImport && job.semanticImport.total > 0).length,
       semanticRegionCount: jobs.reduce((total, job) => total + job.semanticRegions.length, 0),
+      traceShardCount: traceIndex?.summary.shardCount ?? 0,
+      traceDivergenceCount: traceIndex?.summary.divergenceCount ?? 0,
+      executableOwnershipRegionCount: traceIndex?.summary.executableOwnershipRegionCount ?? 0,
       averageMergeScore: averageScore(jobs.map((job) => job.mergeScore))
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
@@ -4779,6 +5089,9 @@ export function querySwarmCoordinatorDashboard(
     && (query.region === undefined || job.changedRegions.includes(query.region) || job.semanticRegions.includes(query.region))
     && (query.hasSemanticImport === undefined || Boolean(job.semanticImport && job.semanticImport.total > 0) === query.hasSemanticImport)
     && (query.hasSemanticRegions === undefined || (job.semanticRegions.length > 0) === query.hasSemanticRegions)
+    && (query.hasTraceShards === undefined || Boolean(job.traceSummary && job.traceSummary.shardCount > 0) === query.hasTraceShards)
+    && (query.traceSubject === undefined || (dashboard.traceIndex?.bySubject[query.traceSubject] ?? []).some((shard) => shard.jobId === job.jobId))
+    && (query.traceRegion === undefined || (dashboard.traceIndex?.byRegion[query.traceRegion] ?? []).some((shard) => shard.jobId === job.jobId))
     && (query.staleAgainstHead === undefined || job.staleAgainstHead === query.staleAgainstHead)
     && (query.duplicateOnly !== true || Boolean(job.duplicateGroupId))
     && (query.minMergeScore === undefined || job.mergeScore >= query.minMergeScore)
@@ -6515,6 +6828,14 @@ function isSwarmObservabilityPoint(value: unknown): value is FrontierSwarmObserv
   return !!value && typeof value === 'object' && (value as { kind?: unknown }).kind === FRONTIER_SWARM_OBSERVABILITY_POINT_KIND;
 }
 
+function isSwarmDivergenceReport(value: unknown): value is FrontierSwarmDivergenceReport {
+  return !!value && typeof value === 'object' && (value as { kind?: unknown }).kind === FRONTIER_SWARM_DIVERGENCE_REPORT_KIND;
+}
+
+function isSwarmTraceShard(value: unknown): value is FrontierSwarmTraceShard {
+  return !!value && typeof value === 'object' && (value as { kind?: unknown }).kind === FRONTIER_SWARM_TRACE_SHARD_KIND;
+}
+
 function isSwarmInstrumentationBudget(value: unknown): value is FrontierSwarmInstrumentationBudget {
   return !!value && typeof value === 'object' && (value as { kind?: unknown }).kind === FRONTIER_SWARM_INSTRUMENTATION_BUDGET_KIND;
 }
@@ -6534,6 +6855,182 @@ function groupObjects<T>(items: readonly T[], key: (item: T) => string): Record<
     out[group] = [...(out[group] ?? []), item];
   }
   return out;
+}
+
+function normalizeTraceRowWindow(input: FrontierSwarmTraceRowWindowInput, generatedAt: number): FrontierSwarmTraceRowWindow {
+  const start = Number.isFinite(input.start) ? Math.floor(input.start as number) : undefined;
+  const end = Number.isFinite(input.end) ? Math.floor(input.end as number) : undefined;
+  const rowCount = Number.isFinite(input.rowCount) ? Math.max(0, Math.floor(input.rowCount as number)) : undefined;
+  const firstDivergenceAt = Number.isFinite(input.firstDivergenceAt) ? Math.floor(input.firstDivergenceAt as number) : undefined;
+  const deltaFields = uniqueStrings(input.deltaFields ?? []);
+  const id = input.id ?? 'swarm-trace-window:' + stableHash([start, end, rowCount, firstDivergenceAt, deltaFields, generatedAt]);
+  return {
+    id,
+    title: input.title ?? titleFromId(id),
+    ...(start !== undefined ? { start } : {}),
+    ...(end !== undefined ? { end } : {}),
+    ...(rowCount !== undefined ? { rowCount } : {}),
+    ...(firstDivergenceAt !== undefined ? { firstDivergenceAt } : {}),
+    deltaFields,
+    evidenceRefs: normalizeNamedRefs(input.evidenceRefs ?? [], 'trace-window-evidence'),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function normalizeTraceHypothesis(input: FrontierSwarmTraceHypothesisInput, generatedAt: number): FrontierSwarmTraceHypothesis {
+  const line = Number.isFinite(input.line) ? Math.max(1, Math.floor(input.line as number)) : undefined;
+  const id = input.id ?? 'swarm-trace-hypothesis:' + stableHash([
+    input.sourcePath,
+    line,
+    input.symbol,
+    input.region,
+    input.reason,
+    generatedAt
+  ]);
+  return {
+    id,
+    title: input.title ?? titleFromId(input.symbol ?? input.region ?? id),
+    ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
+    ...(line !== undefined ? { line } : {}),
+    ...(input.symbol ? { symbol: input.symbol } : {}),
+    ...(input.region ? { region: input.region } : {}),
+    confidence: input.confidence ?? 'medium',
+    ...(input.reason ? { reason: input.reason } : {}),
+    evidenceRefs: normalizeNamedRefs(input.evidenceRefs ?? [], 'trace-hypothesis-evidence'),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function normalizeExecutableOwnershipRegion(input: FrontierSwarmExecutableOwnershipRegionInput): FrontierSwarmExecutableOwnershipRegion {
+  return {
+    id: normalizeId(input.id, 'executable ownership region id'),
+    kind: input.kind ?? 'semantic-region',
+    ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
+    ...(input.symbol ? { symbol: input.symbol } : {}),
+    selectors: uniqueStrings(input.selectors ?? []),
+    affectedTests: normalizeCommands(input.affectedTests ?? []),
+    conflictingAssumptions: uniqueStrings(input.conflictingAssumptions ?? []),
+    traceRefs: normalizeNamedRefs(input.traceRefs ?? [], 'trace'),
+    riskLevel: input.riskLevel ?? 'unknown',
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function traceShardInputsFromUnknown(value: unknown): (FrontierSwarmTraceShard | FrontierSwarmTraceShardInput)[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is FrontierSwarmTraceShard | FrontierSwarmTraceShardInput => !!entry && typeof entry === 'object');
+}
+
+function normalizeTraceShardForBundle(
+  shard: FrontierSwarmTraceShard | FrontierSwarmTraceShardInput,
+  result: FrontierSwarmJobResult,
+  job: FrontierSwarmJob | undefined,
+  generatedAt: number
+): FrontierSwarmTraceShard {
+  return createSwarmTraceShard({
+    ...cloneJsonValue(shard),
+    jobId: shard.jobId ?? result.jobId,
+    lane: shard.lane ?? job?.lane,
+    generatedAt: shard.generatedAt ?? generatedAt
+  });
+}
+
+function summarizeTraceShards(shards: readonly {
+  rowWindows: readonly unknown[];
+  hypotheses: readonly unknown[];
+  executableOwnershipRegions: readonly unknown[];
+  focusedTests: readonly unknown[];
+  referenceEvidence: readonly unknown[];
+  divergence?: unknown;
+}[]): FrontierSwarmTraceShard['summary'] & FrontierSwarmTraceIndex['summary'] {
+  const rowWindowCount = shards.reduce((total, shard) => total + shard.rowWindows.length, 0);
+  const hypothesisCount = shards.reduce((total, shard) => total + shard.hypotheses.length, 0);
+  const executableOwnershipRegionCount = shards.reduce((total, shard) => total + shard.executableOwnershipRegions.length, 0);
+  const focusedTestCount = shards.reduce((total, shard) => total + shard.focusedTests.length, 0);
+  const referenceEvidenceCount = shards.reduce((total, shard) => total + shard.referenceEvidence.length, 0);
+  const divergenceCount = shards.filter((shard) => Boolean(shard.divergence)).length;
+  return {
+    shardCount: shards.length,
+    rowWindowCount,
+    hypothesisCount,
+    executableOwnershipRegionCount,
+    focusedTestCount,
+    referenceEvidenceCount,
+    divergenceCount,
+    hasDivergence: divergenceCount > 0
+  };
+}
+
+function groupTraceShardsByMany(shards: readonly FrontierSwarmTraceShard[], key: (shard: FrontierSwarmTraceShard) => readonly string[]): Record<string, FrontierSwarmTraceShard[]> {
+  const out: Record<string, FrontierSwarmTraceShard[]> = {};
+  for (const shard of shards) {
+    for (const value of key(shard)) out[value] = [...(out[value] ?? []), shard];
+  }
+  return out;
+}
+
+function traceShardRegions(shard: FrontierSwarmTraceShard): string[] {
+  return uniqueStrings([
+    ...shard.hypotheses.map((hypothesis) => hypothesis.region),
+    ...shard.executableOwnershipRegions.flatMap((region) => [region.id, ...region.selectors])
+  ]);
+}
+
+function traceShardSourcePaths(shard: FrontierSwarmTraceShard): string[] {
+  return uniqueStrings([
+    ...shard.hypotheses.map((hypothesis) => hypothesis.sourcePath),
+    ...shard.executableOwnershipRegions.map((region) => region.sourcePath)
+  ]);
+}
+
+function traceShardMaxConfidence(shard: FrontierSwarmTraceShard): number {
+  return Math.max(
+    ...[
+      shard.divergence ? confidenceWeight(shard.divergence.confidence) : 0,
+      ...shard.hypotheses.map((hypothesis) => confidenceWeight(hypothesis.confidence))
+    ]
+  );
+}
+
+function traceShardSearchText(shard: FrontierSwarmTraceShard): string {
+  return stableStringify({
+    id: shard.id,
+    jobId: shard.jobId,
+    lane: shard.lane,
+    subject: shard.subject,
+    status: shard.status,
+    divergence: shard.divergence,
+    rowWindows: shard.rowWindows,
+    hypotheses: shard.hypotheses,
+    executableOwnershipRegions: shard.executableOwnershipRegions
+  }).toLowerCase();
+}
+
+function confidenceWeight(confidence: FrontierSwarmConfidence): number {
+  if (confidence === 'high') return 1;
+  if (confidence === 'medium') return 0.65;
+  if (confidence === 'low') return 0.35;
+  return 0.5;
+}
+
+function createCoordinatorTraceSummary(shards: readonly FrontierSwarmTraceShard[]): FrontierSwarmCoordinatorTraceSummary {
+  const summary = summarizeTraceShards(shards);
+  const openDivergenceCount = shards.filter((shard) => (
+    shard.status === 'failed'
+    || shard.divergence?.status === 'failed'
+    || shard.divergence?.severity === 'error'
+    || shard.divergence?.severity === 'critical'
+  )).length;
+  return {
+    shardCount: summary.shardCount,
+    rowWindowCount: summary.rowWindowCount,
+    hypothesisCount: summary.hypothesisCount,
+    executableOwnershipRegionCount: summary.executableOwnershipRegionCount,
+    focusedTestCount: summary.focusedTestCount,
+    referenceEvidenceCount: summary.referenceEvidenceCount,
+    divergenceCount: summary.divergenceCount,
+    openDivergenceCount
+  };
 }
 
 function clamp01(value: number): number {
@@ -6603,7 +7100,8 @@ function scoreCoordinatorMergeJob(
   evidenceEntryCount: number,
   duplicateGroup: FrontierSwarmCoordinatorDuplicateGroup | undefined,
   admissionStatus: FrontierSwarmCoordinatorAdmissionStatus,
-  admissionReasons: readonly string[]
+  admissionReasons: readonly string[],
+  traceShards: readonly FrontierSwarmTraceShard[] = []
 ): { score: number; reasons: string[] } {
   if (!entry) return { score: 10, reasons: ['no-merge-index-entry'] };
   let score = entry.disposition === 'auto-mergeable' && entry.autoMergeable ? 85 : entry.disposition === 'needs-port' ? 60 : entry.disposition === 'discovery-only' ? 35 : 15;
@@ -6666,6 +7164,32 @@ function scoreCoordinatorMergeJob(
   } else if (entry.changedPaths.length > 0) {
     score -= 5;
     reasons.push('missing-semantic-sidecar');
+  }
+  const traceSummary = createCoordinatorTraceSummary(traceShards);
+  if (traceSummary.shardCount > 0) {
+    score += Math.min(6, traceSummary.shardCount * 2);
+    reasons.push('trace-shard-evidence');
+  }
+  if (traceSummary.referenceEvidenceCount > 0) {
+    score += Math.min(6, traceSummary.referenceEvidenceCount * 2);
+    reasons.push('reference-evidence-attached');
+  }
+  if (traceSummary.focusedTestCount > 0) {
+    score += Math.min(6, traceSummary.focusedTestCount * 2);
+    reasons.push('focused-tests-attached');
+  }
+  if (traceSummary.executableOwnershipRegionCount > 0) {
+    score += Math.min(6, traceSummary.executableOwnershipRegionCount * 2);
+    reasons.push('executable-ownership-regions');
+  }
+  if (traceSummary.openDivergenceCount > 0) {
+    score -= Math.min(20, traceSummary.openDivergenceCount * 10);
+    reasons.push('trace-divergence-open');
+  }
+  const conflictingAssumptionCount = traceShards.reduce((total, shard) => total + shard.executableOwnershipRegions.reduce((inner, region) => inner + region.conflictingAssumptions.length, 0), 0);
+  if (conflictingAssumptionCount > 0) {
+    score -= Math.min(16, conflictingAssumptionCount * 4);
+    reasons.push('conflicting-trace-assumptions');
   }
   if (bundle?.commandsPassed.length) score += Math.min(8, bundle.commandsPassed.length * 2);
   return { score: clampScore(score), reasons: uniqueStrings(reasons) };

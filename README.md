@@ -45,7 +45,7 @@ The published Frontier package family is generated from one shared package catal
 - [`@shapeshift-labs/frontier-lang-rust`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-rust): Rust projection adapter for Frontier Lang semantic documents, including structs, aliases, and action stubs.
 - [`@shapeshift-labs/frontier-lang-python`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-python): Python projection adapter for Frontier Lang semantic documents, including dataclasses, typed patch records, and action stubs.
 - [`@shapeshift-labs/frontier-lang-c`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-c): C header projection adapter for Frontier Lang semantic documents, including structs and action prototypes.
-- [`@shapeshift-labs/frontier-lang-compiler`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-compiler): Compiler facade for Frontier Lang source documents, including parse, check, hash, diagnostics, projection to TypeScript, JavaScript, Rust, Python, and C, and native source-import adapters for semantic merge evidence.
+- [`@shapeshift-labs/frontier-lang-compiler`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-compiler): Compiler facade for Frontier Lang source documents, including parse, check, hash, diagnostics, universal AST envelopes, proof/paradigm semantic summaries, projection to TypeScript, JavaScript, Rust, Python, and C, and native source-import adapters for semantic merge evidence.
 - [`@shapeshift-labs/frontier-lang-swift`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-swift): Swift source-language importer package for Frontier Lang semantic documents, including package-level metadata, SwiftSyntax adapter helpers, native import results, and semantic sidecar generation for SwiftSyntax/SwiftParser-shaped syntax trees.
 - [`@shapeshift-labs/frontier-lang-kotlin`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-kotlin): Kotlin PSI source-language importer package for Frontier Lang semantic documents, including package-level metadata, Kotlin PSI adapter helpers, native import results, and semantic sidecar generation for Kotlin PSI/KtFile-shaped syntax trees.
 - [`@shapeshift-labs/frontier-lang-java`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-java): Java source-language importer package for Frontier Lang semantic documents, including package-level metadata, Java AST adapter helpers, native import results, and semantic sidecar generation for javac/JDT/JavaParser-shaped ASTs.
@@ -53,7 +53,7 @@ The published Frontier package family is generated from one shared package catal
 - [`@shapeshift-labs/frontier-lang-csharp`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-csharp): C# Roslyn source-language importer package for Frontier Lang semantic documents, including package-level metadata, Roslyn adapter helpers, native import results, and semantic sidecar generation for SyntaxTree/SyntaxNode-shaped ASTs.
 - [`@shapeshift-labs/frontier-lang-clang`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-clang): Clang AST source-language importer package for Frontier Lang semantic documents, including package-level metadata, Clang AST JSON adapter helpers, native import results, and semantic sidecar generation for C/C++ translation units.
 - [`@shapeshift-labs/frontier-lang-cli`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-cli): Command line interface for parsing, checking, hashing, and emitting Frontier Lang projects.
-- [`@shapeshift-labs/frontier-lang`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang): Umbrella package for Frontier Lang kernel, parser, checker, and projection adapters.
+- [`@shapeshift-labs/frontier-lang`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang): Umbrella package for Frontier Lang kernel, parser, checker, compiler facade, universal AST helpers, and projection adapters.
 - [`@shapeshift-labs/frontier-kv`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv): Serializable in-memory key/value state for Frontier apps, including TTL, versioned compare-and-set, batched patch mutations, scans, watchers, snapshots, JSONL event evidence, and replay verification.
 - [`@shapeshift-labs/frontier-kv-locks`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv-locks): Lease-style lock records on top of Frontier KV, including acquire, renew, release, fencing tokens, expiration, owner evidence, and replayable lock events.
 - [`@shapeshift-labs/frontier-kv-rate-limit`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv-rate-limit): Patch-native rate limit buckets for Frontier KV, including fixed windows, sliding windows, token buckets, deterministic refill, consume evidence, and reset records.
@@ -298,12 +298,70 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmContextPack` gives workers compact task context: relevant files, API maps, known failures, focused/oracle commands, expected evidence, exclusions, evidence schema, playbooks, and explicit dead ends to avoid,
 - `createSwarmOracleCorpus` indexes deterministic reference artifacts such as traces, snapshots, classifications, expected outputs, or fixtures without assuming a project domain,
 - `createSwarmReplayBundle`, `createSwarmParityOracle`, `createSwarmDivergenceReport`, `createSwarmObservabilityPoint`, `createSwarmWatchpointPlan`, and `createSwarmDebugHandoff` model the trace-to-debug workflow: replay finds the narrow window, watchpoints/debug handoff explain the state at that point,
+- `createSwarmTraceShard`, `createSwarmTraceIndex`, and `querySwarmTraceIndex` turn worker trace findings into sortable evidence: row windows, source hypotheses, executable ownership regions, focused tests, reference evidence, and unresolved divergence signals,
 - `createSwarmReferenceOraclePlan` and `createSwarmReferenceOracleResponse` describe reusable reference services for ports, migrations, parity checks, and cross-implementation comparisons,
 - `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, and `createSwarmBottleneckReport` keep traces/logs useful without making instrumentation the bottleneck,
 - `createSwarmEvidenceIndex` / `querySwarmEvidenceIndex` and `createSwarmBlackboard` / `querySwarmBlackboard` provide storage-neutral status surfaces for coordinator dashboards, accepted facts, known divergences, rejected theories, and active ownership,
 - `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`, `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`, and `createSwarmUsageGovernor` cover the merge/review/scheduling tools needed to scale from feature swarms to larger migration and porting swarms,
 - `createSwarmLanePlaybook` turns successful prior bundles into persistent lane-specific guidance with commands, hot paths, evidence patterns, and avoid-investigating notes,
 - `decomposeSwarmFeature` creates an initial task queue for feature work across lanes.
+
+## Trace Shards
+
+Trace shards are the generic form of “the worker found the narrow window.” They are not emulator-specific: a row window can be CPU cycles, log rows, replay steps, API events, migration records, or UI interaction frames. The important part is that the shard connects evidence to source hypotheses and executable ownership regions.
+
+```ts
+import {
+  createSwarmCoordinatorDashboard,
+  createSwarmMergeBundle,
+  createSwarmTraceIndex,
+  createSwarmTraceShard,
+  querySwarmTraceIndex
+} from '@shapeshift-labs/frontier-swarm';
+
+const traceShard = createSwarmTraceShard({
+  jobId: 'runtime-worker-12',
+  lane: 'runtime',
+  subject: 'parser-port',
+  rowWindows: [{ start: 6240, end: 6250, firstDivergenceAt: 6243, deltaFields: ['result.value'] }],
+  hypotheses: [{
+    sourcePath: 'src/parser.ts',
+    symbol: 'parseExpression',
+    region: 'parser.expression',
+    confidence: 'high',
+    reason: 'reference trace diverges immediately after expression precedence handling'
+  }],
+  executableOwnershipRegions: [{
+    id: 'parser.expression',
+    sourcePath: 'src/parser.ts',
+    symbol: 'parseExpression',
+    affectedTests: ['npm run test:parser -- --case precedence'],
+    conflictingAssumptions: ['operators are parsed left-to-right']
+  }],
+  focusedTests: ['npm run test:parser -- --case precedence'],
+  referenceEvidence: [{ path: 'agent-runs/runtime-worker-12/reference-trace.jsonl', kind: 'trace' }]
+});
+
+const bundle = createSwarmMergeBundle({
+  result: {
+    jobId: 'runtime-worker-12',
+    status: 'verified',
+    changedPaths: ['src/parser.ts'],
+    changedRegions: ['parser.expression'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/runtime-worker-12/changes.patch',
+  traceShards: [traceShard]
+});
+
+const traceIndex = createSwarmTraceIndex({ bundles: [bundle] });
+const expressionFindings = querySwarmTraceIndex(traceIndex, { region: 'parser.expression', minConfidence: 0.9 });
+
+const dashboard = createSwarmCoordinatorDashboard({ bundles: [bundle] });
+const traceReadyJobs = dashboard.jobs.filter((job) => job.traceSummary?.shardCount);
+```
+
+Merge scoring uses trace shards as review evidence, not automatic correctness. Focused tests, reference evidence, and executable regions raise confidence; unresolved divergences and conflicting assumptions lower the score until a coordinator or review worker resolves them.
 
 ## Hierarchical Compute
 
@@ -337,6 +395,7 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `createSwarmPatchStackPlan`
 - `createSwarmContextPack`, `createSwarmOracleCorpus`, `createSwarmLanePlaybook`
 - `createSwarmReplayBundle`, `createSwarmParityOracle`, `createSwarmDivergenceReport`, `createSwarmObservabilityPoint`
+- `createSwarmTraceShard`, `createSwarmTraceIndex`, `querySwarmTraceIndex`
 - `createSwarmWatchpointPlan`, `createSwarmDebugHandoff`
 - `createSwarmReferenceOraclePlan`, `createSwarmReferenceOracleResponse`
 - `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, `createSwarmBottleneckReport`
@@ -362,7 +421,7 @@ Run the package-local benchmark:
 npm run bench
 ```
 
-The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, adaptive load planning, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, replay/debug/evidence helper creation, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
+The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, adaptive load planning, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, replay/debug/evidence helper creation, trace index/query creation, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
 
 ## Source Repository
 

@@ -33,9 +33,12 @@ import {
   createSwarmRun,
   createSwarmRunCheckpoint,
   createSwarmSchedule,
+  createSwarmTraceIndex,
+  createSwarmTraceShard,
   decodeSwarmJsonl,
   defineSwarmTasks,
   encodeSwarmJsonl,
+  querySwarmTraceIndex,
   routeSwarmEventToMailboxes,
   resolveSwarmCompute,
   validateSwarmManifest
@@ -169,6 +172,12 @@ const rows = [
     const progress = createSwarmProgressModel({ items: [{ id: 'bench', status: 'accepted' }] });
     return handoff.commands.length + evidence.summary.entryCount + blackboard.summary.entryCount + bottleneck.summary.kindCount + fixtures.summary.fixtureCount + progress.summary.acceptedCount;
   }),
+  measure('trace-index-' + taskCount, 16, () => {
+    const traceBundles = makeTraceBundles(plan, 24, cursor++);
+    const traceIndex = createSwarmTraceIndex({ bundles: traceBundles, generatedAt: 7000 + cursor++ });
+    const query = querySwarmTraceIndex(traceIndex, { region: 'region.2', textIncludes: 'benchSymbol' });
+    return traceIndex.summary.shardCount + traceIndex.summary.executableOwnershipRegionCount + query.summary.shardCount;
+  }),
   measure('lane-playbook-' + taskCount, 16, () => createSwarmLanePlaybook({
     lane: 'runtime',
     successfulBundles: bundles,
@@ -261,6 +270,44 @@ function makeBundles(plan, count) {
         verification: [{ status: 0 }]
       },
       patchPath: `agent-runs/bench/${job.id}/changes.patch`
+    }));
+  }
+  return bundles;
+}
+
+function makeTraceBundles(plan, count, offset = 0) {
+  const bundles = [];
+  for (let i = 0; i < Math.min(count, plan.jobs.length); i += 1) {
+    const job = plan.jobs[(i + offset) % plan.jobs.length];
+    const region = `region.${i % 8}`;
+    const traceShard = createSwarmTraceShard({
+      jobId: job.id,
+      lane: job.lane,
+      subject: 'bench-trace',
+      rowWindows: [{ start: i * 10, end: i * 10 + 4, rowCount: 5, firstDivergenceAt: i % 5 === 0 ? i * 10 + 2 : undefined, deltaFields: ['state.value'] }],
+      hypotheses: [{ sourcePath: job.task.targetRefs[0], symbol: `benchSymbol${i}`, region, confidence: i % 5 === 0 ? 'high' : 'medium' }],
+      executableOwnershipRegions: [{
+        id: region,
+        sourcePath: job.task.targetRefs[0],
+        symbol: `benchSymbol${i}`,
+        selectors: [`${region}.*`],
+        affectedTests: ['node trace-gate.mjs'],
+        riskLevel: i % 5 === 0 ? 'medium' : 'low'
+      }],
+      focusedTests: ['node trace-gate.mjs'],
+      referenceEvidence: [{ path: `agent-runs/bench/${job.id}/reference-trace.jsonl`, kind: 'trace' }]
+    });
+    bundles.push(createSwarmMergeBundle({
+      job,
+      result: {
+        jobId: job.id,
+        status: 'verified',
+        changedPaths: [job.task.targetRefs[0] ?? `src/runtime/file-${i}.ts`],
+        changedRegions: [region],
+        verification: [{ status: 0 }]
+      },
+      patchPath: `agent-runs/bench/${job.id}/changes.patch`,
+      traceShards: [traceShard]
     }));
   }
   return bundles;

@@ -52,6 +52,8 @@ import {
   createSwarmScheduleInputFromAdaptiveLoadPlan,
   createSwarmSchedulerRecommendations,
   createSwarmTaskSelection,
+  createSwarmTraceIndex,
+  createSwarmTraceShard,
   createSwarmUsageGovernor,
   createSwarmWatchpointPlan,
   decodeSwarmJsonl,
@@ -64,6 +66,7 @@ import {
   querySwarmBlackboard,
   querySwarmCoordinatorDashboard,
   querySwarmEvidenceIndex,
+  querySwarmTraceIndex,
   recordSwarmEvent,
   renewSwarmLease,
   resolveSwarmChangedRegions,
@@ -657,10 +660,59 @@ const evidenceIndex = createSwarmEvidenceIndex({
 assert.strictEqual(querySwarmEvidenceIndex(evidenceIndex, { pathIncludes: 'trace' }).summary.entryCount, 1);
 assert.strictEqual(querySwarmEvidenceIndex(evidenceIndex, { topic: 'apu-port-timing', minConfidence: 0.8 }).summary.entryCount, 1);
 
+const traceShard = createSwarmTraceShard({
+  jobId: regionBundleA.jobId,
+  lane: regionBundleA.lane,
+  subject: 'library-port',
+  divergence: divergenceReport,
+  rowWindows: [{ start: 40, end: 44, rowCount: 5, firstDivergenceAt: 42, deltaFields: ['state.ok'] }],
+  hypotheses: [{
+    sourcePath: 'src/hot/runtime-website-content.ts',
+    line: 12,
+    symbol: 'computeRuntimeState',
+    region: 'content.docs',
+    confidence: 'high',
+    reason: 'trace diverges immediately after docs state projection'
+  }],
+  executableOwnershipRegions: [{
+    id: 'content.docs',
+    sourcePath: 'src/hot/runtime-website-content.ts',
+    symbol: 'computeRuntimeState',
+    selectors: ['content.docs.*'],
+    affectedTests: ['node parity.mjs --selector content.docs'],
+    conflictingAssumptions: ['runtime state projection is synchronous'],
+    riskLevel: 'medium'
+  }],
+  focusedTests: [{ command: 'node', args: ['parity.mjs', '--selector', 'content.docs'] }],
+  referenceEvidence: [{ path: 'agent-runs/replay/reference-trace.jsonl', kind: 'trace' }],
+  generatedAt: 7910
+});
+assert.strictEqual(traceShard.summary.hasDivergence, true);
+assert.strictEqual(traceShard.summary.executableOwnershipRegionCount, 1);
+const tracedRegionBundle = createSwarmMergeBundle({
+  job: scalePlan.jobs[2],
+  result: {
+    jobId: scalePlan.jobs[2].id,
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-website-content.ts'],
+    changedRegions: ['content.docs'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/a/changes.patch',
+  riskLevel: 'low',
+  traceShards: [traceShard]
+});
+assert.strictEqual(tracedRegionBundle.traceShards[0].jobId, regionBundleA.jobId);
+const traceIndex = createSwarmTraceIndex({ bundles: [tracedRegionBundle], generatedAt: 7920 });
+assert.strictEqual(traceIndex.summary.shardCount, 1);
+assert.strictEqual(traceIndex.byRegion['content.docs'].length, 1);
+assert.strictEqual(querySwarmTraceIndex(traceIndex, { region: 'content.docs', minConfidence: 0.9 }).summary.shardCount, 1);
+assert.strictEqual(querySwarmTraceIndex(traceIndex, { textIncludes: 'computeRuntimeState' }).summary.hypothesisCount, 1);
+
 const coordinatorDashboard = createSwarmCoordinatorDashboard({
   plan,
   run: evidenceRun,
-  bundles: [regionBundleA, regionBundleB, unregionedBundle],
+  bundles: [tracedRegionBundle, regionBundleB, unregionedBundle],
   mergeIndex: pathFallbackIndex,
   evidenceIndex,
   admission,
@@ -672,8 +724,12 @@ const coordinatorDashboard = createSwarmCoordinatorDashboard({
 });
 assert.strictEqual(coordinatorDashboard.kind, 'frontier.swarm.coordinator-dashboard');
 assert.strictEqual(coordinatorDashboard.summary.duplicateGroupCount, 1);
+assert.strictEqual(coordinatorDashboard.summary.traceShardCount, 1);
+assert.strictEqual(coordinatorDashboard.summary.executableOwnershipRegionCount, 1);
 assert.ok(coordinatorDashboard.jobs.some((job) => job.jobId === regionBundleA.jobId && job.duplicateGroupId));
 assert.ok(coordinatorDashboard.jobs.some((job) => job.jobId === 'running-job' && job.liveness === 'running'));
+assert.strictEqual(querySwarmCoordinatorDashboard(coordinatorDashboard, { hasTraceShards: true }).summary.jobCount, 1);
+assert.strictEqual(querySwarmCoordinatorDashboard(coordinatorDashboard, { traceRegion: 'content.docs' }).jobs[0].jobId, regionBundleA.jobId);
 assert.ok(querySwarmCoordinatorDashboard(coordinatorDashboard, { pathIncludes: 'runtime-website-content' }).summary.jobCount >= 2);
 assert.ok(querySwarmCoordinatorDashboard(coordinatorDashboard, { duplicateOnly: true }).jobs.every((job) => job.duplicateGroupId));
 assert.ok(querySwarmCoordinatorDashboard(coordinatorDashboard, { maxMergeScore: 70 }).summary.jobCount >= 1);

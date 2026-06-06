@@ -1,6 +1,6 @@
 {
   "name": "@shapeshift-labs/frontier-swarm",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "description": "Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and proofs for Frontier agent work.",
   "type": "module",
   "license": "MIT",
@@ -35,13 +35,14 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "npm run build && npm run typecheck && node test/smoke.mjs && node test/fuzz.mjs --cases 700",
-    "prepack": "npm run readme:packages:check && npm run test",
+    "prepack": "npm run lint && npm run readme:packages:check && npm run test",
     "typecheck": "node build.mjs --typecheck",
     "fuzz": "npm run build && node test/fuzz.mjs",
     "bench": "npm run build && node --expose-gc benchmarks/package-bench.mjs --out benchmarks/results/frontier-swarm-package-bench-latest.json",
     "pack:dry": "npm pack --dry-run",
     "readme:packages": "node benchmarks/package-readme-sections.mjs",
-    "readme:packages:check": "node benchmarks/package-readme-sections.mjs --check"
+    "readme:packages:check": "node benchmarks/package-readme-sections.mjs --check",
+    "lint": "node scripts/strict-source-policy.mjs"
   },
   "keywords": [
     "frontier",
