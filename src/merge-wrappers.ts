@@ -5,7 +5,7 @@ import { createSwarmTraceShard } from './trace-runtime.js';
 import { toJsonObject, uniqueStrings } from './internal.js';
 import { normalizeResult } from './run-normalization.js';
 import { resolveSwarmChangedRegions } from './ownership-runtime.js';
-import type { FrontierSwarmHotspotReport, FrontierSwarmHotspotReportInput, FrontierSwarmMergeBundle, FrontierSwarmMergeBundleInput, FrontierSwarmNativeCompileSummary, FrontierSwarmParadigmSemanticsSummary, FrontierSwarmProofSpecSummary, FrontierSwarmQueueOverlay, FrontierSwarmQueueOverlayInput, FrontierSwarmSemanticImportSummary, FrontierSwarmSemanticIndexSummary, FrontierSwarmSemanticSidecarSummary, FrontierSwarmSourceProjectionSummary } from './types.js';
+import type { FrontierSwarmHotspotReport, FrontierSwarmHotspotReportInput, FrontierSwarmMergeBundle, FrontierSwarmMergeBundleInput, FrontierSwarmNativeCompileSummary, FrontierSwarmParadigmSemanticsSummary, FrontierSwarmProofSpecSummary, FrontierSwarmQueueOverlay, FrontierSwarmQueueOverlayInput, FrontierSwarmSemanticDependencySummary, FrontierSwarmSemanticImportSummary, FrontierSwarmSemanticIndexSummary, FrontierSwarmSemanticSidecarSummary, FrontierSwarmSourceProjectionSummary } from './types.js';
 
 const paradigmSemanticsSummaryGroups = [
   'bindingScopes',
@@ -59,6 +59,7 @@ function normalizeSemanticImportSummary(input: unknown): FrontierSwarmSemanticIm
     lossCount: nonNegativeCount(object.lossCount),
     lossesBySeverity: normalizeCounterRecord(object.lossesBySeverity),
     semanticIndex: normalizeSemanticIndexSummary(object.semanticIndex),
+    dependencies: normalizeSemanticDependencySummary(object.dependencies),
     semanticSidecars: normalizeSemanticSidecarSummary(object.semanticSidecars),
     proofSpec: normalizeProofSpecSummary(object.proofSpec),
     paradigmSemantics: normalizeParadigmSemanticsSummary(object.paradigmSemantics),
@@ -89,6 +90,38 @@ function normalizeSemanticIndexSummary(input: unknown): FrontierSwarmSemanticInd
     occurrences: nonNegativeCount(object?.occurrences),
     relations: nonNegativeCount(object?.relations),
     facts: nonNegativeCount(object?.facts)
+  };
+}
+function normalizeSemanticDependencySummary(input: unknown): FrontierSwarmSemanticDependencySummary {
+  const object = toJsonObject(input);
+  const byPredicate = normalizeCounterRecord(object?.byPredicate);
+  const namedTotal = [
+    'calls',
+    'uses',
+    'references',
+    'imports',
+    'depends',
+    'extends',
+    'implements',
+    'includes',
+    'requires'
+  ].reduce((sum, key) => sum + nonNegativeCount(object?.[key]), 0);
+  return {
+    total: nonNegativeCount(object?.total) || Object.values(byPredicate).reduce((sum, count) => sum + count, 0) || namedTotal,
+    calls: nonNegativeCount(object?.calls),
+    uses: nonNegativeCount(object?.uses),
+    references: nonNegativeCount(object?.references),
+    imports: nonNegativeCount(object?.imports),
+    depends: nonNegativeCount(object?.depends),
+    extends: nonNegativeCount(object?.extends),
+    implements: nonNegativeCount(object?.implements),
+    includes: nonNegativeCount(object?.includes),
+    requires: nonNegativeCount(object?.requires),
+    byPredicate,
+    predicates: uniqueStrings(stringArray(object?.predicates)),
+    ids: uniqueStrings(stringArray(object?.ids)),
+    sourceSymbolIds: uniqueStrings(stringArray(object?.sourceSymbolIds)),
+    targetSymbolIds: uniqueStrings(stringArray(object?.targetSymbolIds))
   };
 }
 function normalizeSemanticSidecarSummary(input: unknown): FrontierSwarmSemanticSidecarSummary {

@@ -96,6 +96,7 @@ export interface FrontierSwarmCoordinatorDashboard {
     duplicateGroupCount: number;
     semanticSidecarCount: number;
     semanticRegionCount: number;
+    semanticDependencyRelationCount: number;
     traceShardCount: number;
     traceDivergenceCount: number;
     executableOwnershipRegionCount: number;
@@ -163,6 +164,7 @@ export interface FrontierSwarmCoordinatorDashboardQuery {
   region?: string;
   hasSemanticImport?: boolean;
   hasSemanticRegions?: boolean;
+  hasSemanticDependencies?: boolean;
   hasTraceShards?: boolean;
   traceSubject?: string;
   traceRegion?: string;

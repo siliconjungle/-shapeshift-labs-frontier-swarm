@@ -14,6 +14,24 @@ export interface FrontierSwarmSemanticIndexSummaryInput {
   facts?: number;
 }
 
+export interface FrontierSwarmSemanticDependencySummaryInput {
+  total?: number;
+  calls?: number;
+  uses?: number;
+  references?: number;
+  imports?: number;
+  depends?: number;
+  extends?: number;
+  implements?: number;
+  includes?: number;
+  requires?: number;
+  byPredicate?: FrontierSwarmSemanticImportCounterInput;
+  predicates?: readonly string[];
+  ids?: readonly string[];
+  sourceSymbolIds?: readonly string[];
+  targetSymbolIds?: readonly string[];
+}
+
 export interface FrontierSwarmSemanticSidecarSummaryInput {
   total?: number;
   symbols?: number;
@@ -90,6 +108,7 @@ export interface FrontierSwarmSemanticImportSummaryInput {
   lossCount?: number;
   lossesBySeverity?: FrontierSwarmSemanticImportCounterInput;
   semanticIndex?: FrontierSwarmSemanticIndexSummaryInput;
+  dependencies?: FrontierSwarmSemanticDependencySummaryInput;
   semanticSidecars?: FrontierSwarmSemanticSidecarSummaryInput;
   proofSpec?: FrontierSwarmProofSpecSummaryInput;
   paradigmSemantics?: FrontierSwarmParadigmSemanticsSummaryInput;
@@ -131,6 +150,24 @@ export interface FrontierSwarmSemanticIndexSummary {
   occurrences: number;
   relations: number;
   facts: number;
+}
+
+export interface FrontierSwarmSemanticDependencySummary {
+  total: number;
+  calls: number;
+  uses: number;
+  references: number;
+  imports: number;
+  depends: number;
+  extends: number;
+  implements: number;
+  includes: number;
+  requires: number;
+  byPredicate: Record<string, number>;
+  predicates: string[];
+  ids: string[];
+  sourceSymbolIds: string[];
+  targetSymbolIds: string[];
 }
 
 export interface FrontierSwarmSemanticSidecarSummary {
@@ -235,6 +272,7 @@ export interface FrontierSwarmSemanticImportSummary {
   lossCount: number;
   lossesBySeverity: Record<string, number>;
   semanticIndex: FrontierSwarmSemanticIndexSummary;
+  dependencies: FrontierSwarmSemanticDependencySummary;
   semanticSidecars: FrontierSwarmSemanticSidecarSummary;
   proofSpec: FrontierSwarmProofSpecSummary;
   paradigmSemantics: FrontierSwarmParadigmSemanticsSummary;

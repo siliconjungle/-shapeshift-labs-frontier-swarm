@@ -80,10 +80,18 @@ export function scoreCoordinatorMergeJob(
   if (entry.semanticImport && entry.changedPaths.length > 0) {
     const symbols = entry.semanticImport.semanticIndex.symbols;
     const regions = entry.semanticImport.semanticSidecars.ownershipRegions;
+    const dependencies = entry.semanticImport.dependencies?.total ?? 0;
     const errors = entry.semanticImport.errors;
     if (symbols > 0 && regions > 0) {
       score += 8;
       reasons.push('semantic-sidecar-usable');
+    }
+    if (dependencies > 0) {
+      score += Math.min(6, dependencies);
+      reasons.push('semantic-dependencies-indexed');
+    } else if (symbols > 1) {
+      score -= 3;
+      reasons.push('semantic-dependencies-missing');
     }
     if (entry.semanticImport.semanticSidecars.empty > 0 || symbols === 0) {
       score -= 8;

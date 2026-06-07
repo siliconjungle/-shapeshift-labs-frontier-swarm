@@ -135,6 +135,7 @@ export function querySwarmCoordinatorDashboard(
     && (query.region === undefined || job.changedRegions.includes(query.region) || job.semanticRegions.includes(query.region))
     && (query.hasSemanticImport === undefined || Boolean(job.semanticImport && job.semanticImport.total > 0) === query.hasSemanticImport)
     && (query.hasSemanticRegions === undefined || (job.semanticRegions.length > 0) === query.hasSemanticRegions)
+    && (query.hasSemanticDependencies === undefined || Boolean((job.semanticImport?.dependencies?.total ?? 0) > 0) === query.hasSemanticDependencies)
     && (query.hasTraceShards === undefined || Boolean(job.traceSummary && job.traceSummary.shardCount > 0) === query.hasTraceShards)
     && (query.traceSubject === undefined || (dashboard.traceIndex?.bySubject[query.traceSubject] ?? []).some((shard) => shard.jobId === job.jobId))
     && (query.traceRegion === undefined || (dashboard.traceIndex?.byRegion[query.traceRegion] ?? []).some((shard) => shard.jobId === job.jobId))
@@ -188,6 +189,7 @@ function createDashboardResult(
       duplicateGroupCount: state.duplicateGroups.length,
       semanticSidecarCount: state.jobs.filter((job) => job.semanticImport && job.semanticImport.total > 0).length,
       semanticRegionCount: state.jobs.reduce((total, job) => total + job.semanticRegions.length, 0),
+      semanticDependencyRelationCount: state.jobs.reduce((total, job) => total + (job.semanticImport?.dependencies?.total ?? 0), 0),
       traceShardCount: state.traceIndex?.summary.shardCount ?? 0,
       traceDivergenceCount: state.traceIndex?.summary.divergenceCount ?? 0,
       executableOwnershipRegionCount: state.traceIndex?.summary.executableOwnershipRegionCount ?? 0,

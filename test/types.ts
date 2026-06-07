@@ -121,10 +121,11 @@ const semanticSummary: FrontierSwarmSemanticImportSummary = createSwarmMergeBund
   result: {
     jobId: 'semantic',
     status: 'completed',
-    semanticImport: { total: 1, semanticSidecars: { ownershipRegions: 1 }, proofSpec: { obligations: 1, discharged: 1 }, paradigmSemantics: { loweringRecords: 1, hasLowering: true }, sourceProjections: { preserved: 1 }, nativeCompiles: { emitted: 1 } }
+    semanticImport: { total: 1, dependencies: { total: 1, calls: 1, predicates: ['calls'] }, semanticSidecars: { ownershipRegions: 1 }, proofSpec: { obligations: 1, discharged: 1 }, paradigmSemantics: { loweringRecords: 1, hasLowering: true }, sourceProjections: { preserved: 1 }, nativeCompiles: { emitted: 1 } }
   }
 }).semanticImport!;
 semanticSummary.proofSpec.obligations satisfies number;
+semanticSummary.dependencies.calls satisfies number;
 semanticSummary.paradigmSemantics.hasLowering satisfies boolean;
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
@@ -178,6 +179,7 @@ reviewPlan.assignments satisfies readonly { jobId: string }[];
 mergePlan.ready satisfies string[];
 mergeBundle.queueItemIds satisfies string[];
 semanticSummary.semanticSidecars.ownershipRegions satisfies number;
+semanticSummary.dependencies.total satisfies number;
 semanticSummary.nativeCompiles.emitted satisfies number;
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];

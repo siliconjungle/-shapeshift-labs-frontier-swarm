@@ -49,6 +49,7 @@ completedScaleRun = completeSwarmJob(completedScaleRun, {
     total: 1,
     imported: 1,
     semanticIndex: { symbols: 2, facts: 1 },
+    dependencies: { total: 2, calls: 1, uses: 1, byPredicate: { calls: 1, uses: 1 }, predicates: ['calls', 'uses'], sourceSymbolIds: ['symbol:action'], targetSymbolIds: ['symbol:helper'] },
     semanticSidecars: { total: 1, ownershipRegions: 2, patchHints: 1 },
     proofSpec: { total: 2, obligations: 1, discharged: 1, contractKinds: ['postcondition'], byStatus: { discharged: 1 } },
     paradigmSemantics: { total: 3, groups: ['logicPrograms', 'stackEffects', 'loweringRecords'], kinds: ['hornClause', 'concatenativeStackEffect', 'frontierToTarget'], logicPrograms: 1, stackEffects: 1, loweringRecords: 1, hasLogicSemantics: true, hasStackSemantics: true, hasLowering: true },
