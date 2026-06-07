@@ -16,3 +16,4 @@ export type * from './reference-types.js';
 export type * from './governance-types.js';
 export type * from './coordinator-types.js';
 export type * from './adaptive-types.js';
+export type * from './tournament-types.js';

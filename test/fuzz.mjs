@@ -3,7 +3,9 @@ import {
   checkSwarmOwnership,
   createSwarmManifest,
   createSwarmPlan,
+  createSwarmPayoffVector,
   createSwarmProof,
+  createSwarmStrategyTournament,
   decodeSwarmJsonl,
   defineSwarmTasks,
   encodeSwarmJsonl,
@@ -34,6 +36,26 @@ for (let i = 0; i < cases; i += 1) {
   }
   const jsonl = encodeSwarmJsonl([plan, createSwarmProof(plan)]);
   assert.strictEqual(decodeSwarmJsonl(jsonl).length, 2);
+  const tournament = createSwarmStrategyTournament({
+    strategies: [{ id: 'strategy-a' }, { id: 'strategy-b' }],
+    games: [{ id: 'merge-game' }],
+    matches: [
+      { payoff: makePayoff('strategy-a', 'merge-game') },
+      { payoff: makePayoff('strategy-b', 'merge-game') }
+    ],
+    generatedAt: i
+  });
+  assert.strictEqual(tournament.standings.length, 2);
+  assert.ok(tournament.standings.every((standing) => standing.score >= 0 && standing.score <= 100));
+  assert.deepStrictEqual(
+    tournament.standings.map((standing) => standing.strategyId),
+    createSwarmStrategyTournament({
+      strategies: [{ id: 'strategy-a' }, { id: 'strategy-b' }],
+      games: [{ id: 'merge-game' }],
+      matches: tournament.matches,
+      generatedAt: i
+    }).standings.map((standing) => standing.strategyId)
+  );
   checked += 1;
 }
 
@@ -75,6 +97,24 @@ function makeTasks(index) {
     });
   }
   return tasks;
+}
+
+function makePayoff(strategyId, gameId) {
+  const outcome = maybe() ? 'verified' : maybe() ? 'candidate' : 'undefined';
+  return createSwarmPayoffVector({
+    strategyId,
+    gameId,
+    outcome,
+    components: {
+      correctness: nextInt(101) / 100,
+      evidence: nextInt(101) / 100,
+      reviewCost: { value: nextInt(101) / 100, direction: 'minimize', weight: 0.5 }
+    },
+    penalties: maybe() ? { stale: nextInt(30) / 100 } : {},
+    costs: { review: nextInt(100) / 10, resource: nextInt(100) / 20 },
+    search: { attempts: nextInt(50), durationMs: nextInt(60000), tokens: nextInt(100000) },
+    certificate: maybe() ? { commands: ['npm test'], durationMs: nextInt(30000) } : undefined
+  });
 }
 
 function maybe() {

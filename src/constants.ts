@@ -88,6 +88,10 @@ export const FRONTIER_SWARM_COORDINATOR_DASHBOARD_KIND = 'frontier.swarm.coordin
 export const FRONTIER_SWARM_COORDINATOR_DASHBOARD_VERSION = 1;
 export const FRONTIER_SWARM_ADAPTIVE_LOAD_PLAN_KIND = 'frontier.swarm.adaptive-load-plan';
 export const FRONTIER_SWARM_ADAPTIVE_LOAD_PLAN_VERSION = 1;
+export const FRONTIER_SWARM_STRATEGY_CERTIFICATE_KIND = 'frontier.swarm.strategy-certificate';
+export const FRONTIER_SWARM_STRATEGY_CERTIFICATE_VERSION = 1;
+export const FRONTIER_SWARM_STRATEGY_TOURNAMENT_KIND = 'frontier.swarm.strategy-tournament';
+export const FRONTIER_SWARM_STRATEGY_TOURNAMENT_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';

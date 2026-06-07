@@ -237,6 +237,41 @@ const tasks = defineSwarmTasks([{
 const plan = createSwarmPlan(manifest, tasks, { limit: 4 });
 ```
 
+## Strategy Tournaments
+
+Use strategy tournaments when several workers, merge policies, proof searches, or projection routes need to be compared by more than raw completion status. The records are runtime-neutral JSON: discovery/search cost is separate from the verification certificate, undefined outcomes stay explicit, and standings are deterministic.
+
+```ts
+import {
+  createSwarmPayoffVector,
+  createSwarmStrategyTournament
+} from '@shapeshift-labs/frontier-swarm';
+
+const tournament = createSwarmStrategyTournament({
+  strategies: [
+    { id: 'trace-first', family: 'oracle-search' },
+    { id: 'patch-first', family: 'implementation' }
+  ],
+  games: [
+    { id: 'merge-admission', objective: 'prefer replayable verified patches' }
+  ],
+  matches: [{
+    payoff: createSwarmPayoffVector({
+      strategyId: 'trace-first',
+      gameId: 'merge-admission',
+      outcome: 'verified',
+      components: {
+        correctness: 1,
+        evidence: 0.9,
+        reviewCost: { value: 0.2, direction: 'minimize', weight: 0.5 }
+      },
+      search: { attempts: 8, durationMs: 12000, tokens: 24000 },
+      certificate: { commands: ['npm test'], durationMs: 1500 }
+    })
+  }]
+});
+```
+
 ## 1000-Agent Control Plane
 
 Large swarms need a control plane, not just a flat worker loop. `frontier-swarm` now exports deterministic data helpers for that layer:

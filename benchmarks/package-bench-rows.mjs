@@ -12,6 +12,7 @@ import {
   createSwarmMergeIndex,
   createSwarmOracleCorpus,
   createSwarmPatchStackPlan,
+  createSwarmPayoffVector,
   createSwarmReplayBundle,
   createSwarmParityOracle,
   createSwarmDivergenceReport,
@@ -29,6 +30,7 @@ import {
   createSwarmRun,
   createSwarmRunCheckpoint,
   createSwarmSchedule,
+  createSwarmStrategyTournament,
   createSwarmTraceIndex,
   decodeSwarmJsonl,
   defineSwarmTasks,
@@ -182,6 +184,25 @@ export function createPackageBenchRows({ taskCount, measure }) {
       index: mergeIndex,
       maxStackSize: 8
     }).summary.stackCount),
+    measure('strategy-tournament-' + taskCount, 16, () => createSwarmStrategyTournament({
+      strategies: [{ id: 'search' }, { id: 'verify' }, { id: 'review' }],
+      games: [{ id: 'merge-admission' }, { id: 'projection-route' }],
+      matches: Array.from({ length: 24 }, (_, index) => ({
+        payoff: createSwarmPayoffVector({
+          strategyId: ['search', 'verify', 'review'][index % 3],
+          gameId: index % 2 === 0 ? 'merge-admission' : 'projection-route',
+          outcome: index % 5 === 0 ? 'undefined' : index % 3 === 0 ? 'candidate' : 'verified',
+          components: {
+            correctness: (index % 10) / 10,
+            evidence: ((index + 3) % 10) / 10,
+            reviewCost: { value: ((index + 5) % 10) / 10, direction: 'minimize', weight: 0.5 }
+          },
+          search: { attempts: index + 1, durationMs: 1000 + index * 10, tokens: 2000 + index * 100 },
+          certificate: { commands: ['npm test'], durationMs: 500 + index }
+        })
+      })),
+      generatedAt: 9000 + cursor++
+    }).standings.length),
     measure('event-route-' + taskCount, 64, () => {
       eventStream = createSwarmEventStream({ runId: 'bench', root: 'agent-runs/bench/streams', lanes: manifest.lanes });
       return routeSwarmEventToMailboxes(eventStream, { type: 'agent.evidence', jobId: plan.jobs[cursor++ % plan.jobs.length].id, lane: 'runtime' }).length;
