@@ -9,6 +9,7 @@ import type {
   FrontierSwarmStrategyTournamentComparison,
   FrontierSwarmStrategyTournamentHistory
 } from './tournament-history-types.js';
+import { tournamentSampleQualityObservations } from './tournament-sample-observations.js';
 
 export interface FrontierSwarmStrategyContext {
   strategyId: string;
@@ -35,6 +36,7 @@ export function createTournamentAdaptiveObservations(input: {
 }): FrontierSwarmAdaptiveObservationInput[] {
   const tournamentContext = strategyContextById(input.tournament);
   return [
+    ...tournamentSampleQualityObservations(input.tournament, input.generatedAt),
     ...tournamentObservations(input.tournament, input.generatedAt, input.scoreFloor),
     ...historyObservations(input.history, input.generatedAt, input.scoreFloor),
     ...comparisonObservations(input.comparison, input.generatedAt, input.regressionThreshold, tournamentContext)

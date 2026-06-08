@@ -29,6 +29,7 @@ import {
   rankSwarmStrategyStandings,
   validateSwarmExistingPayoff
 } from './tournament-runtime-helpers.js';
+import { createTournamentSampleQuality } from './tournament-sample-quality.js';
 import type {
   FrontierSwarmPayoffComponent,
   FrontierSwarmPayoffComponentPolicy,
@@ -127,6 +128,7 @@ export function createSwarmStrategyTournament(input: FrontierSwarmStrategyTourna
   const byStrategy = groupSwarmTournamentMatchIds(matches, (match) => match.strategyId, strategyIds);
   const byGame = groupSwarmTournamentMatchIds(matches, (match) => match.gameId ?? 'unscoped', uniqueStrings([...gameIds, 'unscoped']));
   const outcomeCounts = countSwarmTournamentOutcomes(matches);
+  const sampleQuality = createTournamentSampleQuality({ strategyCount: strategies.length, matches, standings });
   const top = standings[0];
   return {
     kind: FRONTIER_SWARM_STRATEGY_TOURNAMENT_KIND,
@@ -141,6 +143,7 @@ export function createSwarmStrategyTournament(input: FrontierSwarmStrategyTourna
     byStrategy,
     byGame,
     scoringPolicy,
+    sampleQuality,
     summary: {
       strategyCount: strategies.length,
       gameCount: games.length,
@@ -149,6 +152,8 @@ export function createSwarmStrategyTournament(input: FrontierSwarmStrategyTourna
       rejectedCount: matches.filter((match) => isRejectedOutcome(match.payoff.outcome)).length,
       undefinedCount: matches.filter((match) => isUndefinedOutcome(match.payoff.outcome)).length,
       outcomeCounts,
+      sampleConfidence: sampleQuality.confidence,
+      decisionGrade: sampleQuality.decisionGrade,
       ...(top ? { topStrategyId: top.strategyId, topScore: top.score } : {})
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})

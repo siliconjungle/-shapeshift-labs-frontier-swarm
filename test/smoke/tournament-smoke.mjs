@@ -96,6 +96,8 @@ assert.strictEqual(tournament.kind, 'frontier.swarm.strategy-tournament');
 assert.strictEqual(tournament.summary.topStrategyId, 'patch-with-trace');
 assert.strictEqual(tournament.standings[0].rank, 1);
 assert.strictEqual(tournament.summary.outcomeCounts.undefined, 1);
+assert.strictEqual(tournament.summary.sampleConfidence, 'limited');
+assert.strictEqual(tournament.summary.decisionGrade, false);
 assert.strictEqual(tournament.byStrategy['declared-only'].length, 0);
 assert.strictEqual(tournament.standings.find((standing) => standing.strategyId === 'declared-only').matchCount, 0);
 assert.ok(tournament.standings[0].searchCost > tournament.standings[0].certificateCost);

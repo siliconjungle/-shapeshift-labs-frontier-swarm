@@ -23,6 +23,7 @@ export type FrontierSwarmAdaptiveObservationKind =
   | 'log-noise'
   | 'discovery-only-output'
   | 'duplicate-output'
+  | 'thin-tournament-sample'
   | 'budget-pressure'
   | 'slow-job'
   | 'healthy-throughput'

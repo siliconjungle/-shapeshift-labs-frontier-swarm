@@ -59,6 +59,7 @@ export {
   createSwarmStrategyTournament,
   createSwarmStrategyTournamentHistory,
   createSwarmTournamentAdaptiveFeedback,
+  createTournamentSampleQuality,
   createSwarmTraceIndex,
   createSwarmTraceShard,
   createSwarmUsageGovernor,

@@ -9,6 +9,7 @@ import type {
   FrontierSwarmMergeBundle,
   FrontierSwarmMergeIndex
 } from './merge-types.js';
+import type { FrontierSwarmTournamentSampleQuality } from './tournament-sample-quality-types.js';
 
 export type FrontierSwarmPayoffDirection = 'maximize' | 'minimize' | string;
 export type FrontierSwarmTournamentOutcome =
@@ -268,6 +269,7 @@ export interface FrontierSwarmStrategyTournament {
   byStrategy: Record<string, string[]>;
   byGame: Record<string, string[]>;
   scoringPolicy: FrontierSwarmPayoffScoringPolicy;
+  sampleQuality: FrontierSwarmTournamentSampleQuality;
   summary: {
     strategyCount: number;
     gameCount: number;
@@ -276,6 +278,8 @@ export interface FrontierSwarmStrategyTournament {
     rejectedCount: number;
     undefinedCount: number;
     outcomeCounts: Record<string, number>;
+    sampleConfidence: FrontierSwarmTournamentSampleQuality['confidence'];
+    decisionGrade: boolean;
     topStrategyId?: string;
     topScore?: number;
   };
