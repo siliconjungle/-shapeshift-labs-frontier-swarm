@@ -49,6 +49,19 @@ export function scoreCoordinatorMergeJob(
   if (entry.ownershipViolations.length) {
     score -= 40;
     reasons.push('ownership-violations');
+  } else if (entry.changedPaths.length > 0 && entry.ownedFilesTouched.length >= entry.changedPaths.length) {
+    score += 5;
+    reasons.push('owned-paths-only');
+  }
+  if (entry.patchStatus === 'applies') {
+    score += 6;
+    reasons.push('patch-applies-cleanly');
+  } else if (entry.patchStatus === 'missing') {
+    score -= 12;
+    reasons.push('missing-patch');
+  } else if (entry.patchStatus === 'failed-check') {
+    score -= 25;
+    reasons.push('patch-apply-failed');
   }
   if (bundle?.commandsFailed.length) {
     score -= Math.min(35, 15 + bundle.commandsFailed.length * 10);
@@ -66,6 +79,14 @@ export function scoreCoordinatorMergeJob(
     reasons.push('unknown-risk');
   } else if (entry.riskLevel === 'medium') {
     score -= 5;
+  }
+  if (entry.changedPaths.length > 12) {
+    score -= Math.min(14, entry.changedPaths.length - 12);
+    reasons.push('large-path-surface');
+  }
+  if (entry.changedRegions.length > 0 && entry.conflictingJobIds.length === 0) {
+    score += Math.min(5, entry.changedRegions.length);
+    reasons.push('semantic-region-owned');
   }
   if (entry.disposition === 'needs-port') reasons.push('needs-human-port');
   if (entry.disposition === 'discovery-only') reasons.push('discovery-only');

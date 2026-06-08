@@ -186,6 +186,9 @@ export function adaptiveObservationShouldReduceReadyWindow(observation: Frontier
     || observation.kind === 'semantic-empty'
     || observation.kind === 'log-noise'
     || observation.kind === 'discovery-only-output'
+    || observation.kind === 'disk-pressure'
+    || observation.kind === 'api-rate-limit'
+    || observation.kind === 'review-backlog'
     || observation.kind === 'budget-pressure'
     || observation.kind === 'slow-job'
     || observation.kind === 'strategy-regression'
@@ -200,7 +203,7 @@ export function adaptiveObservationIsCapacityBackpressure(observation: FrontierS
 }
 
 export function adaptiveDecisionTargetForObservation(observation: FrontierSwarmAdaptiveObservation): FrontierSwarmAdaptiveDecisionTarget {
-  if (observation.kind === 'resource-capacity' || observation.kind === 'browser-contention') return 'resource';
+  if (observation.kind === 'resource-capacity' || observation.kind === 'browser-contention' || observation.kind === 'disk-pressure' || observation.kind === 'api-rate-limit') return 'resource';
   if (observation.kind === 'lane-capacity') return 'lane';
   if (observation.kind === 'concurrency-key-capacity' || observation.kind === 'merge-conflict' || observation.kind === 'duplicate-output') return 'concurrency-key';
   if (observation.kind === 'compute-capacity') return 'compute';
@@ -232,8 +235,8 @@ export function adaptiveObservationIsBottleneck(observation: FrontierSwarmAdapti
 }
 
 function adaptiveDefaultSeverity(kind: FrontierSwarmAdaptiveObservationKind): FrontierSwarmAdaptiveObservationSeverity {
-  if (kind === 'evidence-failure' || kind === 'budget-pressure') return 'error';
-  if (kind === 'merge-conflict' || kind === 'stale-patch' || kind === 'semantic-empty' || kind === 'browser-contention' || kind === 'strategy-regression' || kind === 'strategy-underperforming' || kind.endsWith('-capacity')) return 'warning';
+  if (kind === 'evidence-failure' || kind === 'budget-pressure' || kind === 'disk-pressure' || kind === 'api-rate-limit') return 'error';
+  if (kind === 'merge-conflict' || kind === 'stale-patch' || kind === 'semantic-empty' || kind === 'browser-contention' || kind === 'review-backlog' || kind === 'strategy-regression' || kind === 'strategy-underperforming' || kind.endsWith('-capacity')) return 'warning';
   return 'info';
 }
 
@@ -242,6 +245,7 @@ function adaptiveObservationCanTargetConcurrencyKey(kind: FrontierSwarmAdaptiveO
     || kind === 'stale-patch'
     || kind === 'log-noise'
     || kind === 'discovery-only-output'
+    || kind === 'review-backlog'
     || kind === 'budget-pressure'
     || kind === 'slow-job'
     || kind === 'strategy-regression'
