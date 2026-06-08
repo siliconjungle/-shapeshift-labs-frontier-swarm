@@ -8,13 +8,20 @@ import type {
 import { stableHash, toJsonObject } from './internal.js';
 
 export const DEFAULT_OUTCOME_MULTIPLIER: Record<string, number> = {
+  landed: 1,
+  'accepted-clean': 1,
   verified: 1,
   accepted: 0.98,
+  'accepted-needs-port': 0.78,
   candidate: 0.82,
+  'needs-port': 0.72,
   discovery: 0.55,
+  'discovery-only': 0.45,
   blocked: 0.35,
+  noisy: 0.2,
   timeout: 0.25,
   error: 0.2,
+  stale: 0,
   rejected: 0.1,
   undefined: 0
 };
@@ -84,11 +91,11 @@ export function normalizeNumberRecord(input: Record<string, number> | undefined)
 }
 
 export function isVerifiedOutcome(outcome: string): boolean {
-  return outcome === 'verified' || outcome === 'accepted';
+  return outcome === 'verified' || outcome === 'accepted' || outcome === 'accepted-clean' || outcome === 'landed';
 }
 
 export function isRejectedOutcome(outcome: string): boolean {
-  return outcome === 'rejected' || outcome === 'error';
+  return outcome === 'rejected' || outcome === 'error' || outcome === 'stale' || outcome === 'noisy';
 }
 
 export function isUndefinedOutcome(outcome: string): boolean {

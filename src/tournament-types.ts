@@ -298,6 +298,7 @@ export interface FrontierSwarmMergeTournamentInput {
   id?: string;
   title?: string;
   gameId?: string;
+  strategyMode?: 'bundle' | 'style' | string;
   bundles: readonly FrontierSwarmMergeBundle[];
   mergeIndex?: FrontierSwarmMergeIndex;
   generatedAt?: number;

@@ -37,6 +37,7 @@ import {
   createSwarmQueueOverlay,
   createSwarmReviewPlan,
   createSwarmMergeIndex,
+  createSwarmMergeTournament,
   createSwarmMergeAdmission,
   createSwarmMergePlan,
   createSwarmMergeBundle,
@@ -75,6 +76,7 @@ import {
   type FrontierSwarmPatchStackPlan,
   type FrontierSwarmMergeBundle,
   type FrontierSwarmMergeIndex,
+  type FrontierSwarmStrategyTournament,
   type FrontierSwarmMergeAdmission,
   type FrontierSwarmMergePlan,
   type FrontierSwarmPlan,
@@ -129,6 +131,7 @@ semanticSummary.dependencies.calls satisfies number;
 semanticSummary.paradigmSemantics.hasLowering satisfies boolean;
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
+const styleTournament: FrontierSwarmStrategyTournament = createSwarmMergeTournament({ bundles: [mergeBundle], strategyMode: 'style' });
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
 const runStoreShards: FrontierSwarmRunStoreShards = createSwarmRunStoreShards({ plan });
 const contextPack: FrontierSwarmContextPack = createSwarmContextPack({ job: plan.jobs[0] });
@@ -183,6 +186,7 @@ semanticSummary.dependencies.total satisfies number;
 semanticSummary.nativeCompiles.emitted satisfies number;
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
+styleTournament.summary.strategyCount satisfies number;
 admission.admitted satisfies string[];
 runStoreShards.shards satisfies readonly { path: string }[];
 contextPack.files satisfies string[];

@@ -153,6 +153,24 @@ const mergeTournament = createSwarmMergeTournament({
 });
 assert.strictEqual(mergeTournament.summary.matchCount, 2);
 assert.strictEqual(mergeTournament.standings[0].strategyId, verifiedBundle.jobId);
+const styleTournament = createSwarmMergeTournament({
+  bundles: [
+    {
+      ...verifiedBundle,
+      metadata: { tournamentStrategy: { promptStyle: 'focused', workspaceStyle: 'copy', evidenceStyle: 'verified-evidence' } }
+    },
+    {
+      ...staleBundle,
+      metadata: { tournamentStrategy: { promptStyle: 'focused', workspaceStyle: 'copy', evidenceStyle: 'verified-evidence' } }
+    }
+  ],
+  mergeIndex,
+  strategyMode: 'style',
+  generatedAt: 3
+});
+assert.strictEqual(styleTournament.summary.strategyCount, 1);
+assert.strictEqual(styleTournament.standings[0].matchCount, 2);
+assert.ok(styleTournament.matches.every((match) => match.strategyId === 'style:focused:copy:verified-evidence'));
 
 const worseTournament = createSwarmStrategyTournament({
   id: 'merge-tournament-worse',
