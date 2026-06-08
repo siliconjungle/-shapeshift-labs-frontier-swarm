@@ -21,6 +21,7 @@ export { createSwarmCoordinatorDashboard, querySwarmCoordinatorDashboard } from 
 export { normalizeScoringPolicy, scoreSwarmPayoffVector } from './tournament-scoring.js';
 export { createSwarmPayoffVector, createSwarmStrategyCertificate, createSwarmStrategyTournament, querySwarmStrategyTournament } from './tournament-runtime.js';
 export { createSwarmMergePayoffVector, createSwarmMergeTournament } from './tournament-merge.js';
+export { compareSwarmStrategyTournaments, createSwarmStrategyTournamentHistory, createSwarmTournamentAdaptiveFeedback } from './tournament-history.js';
 export * from './ownership-runtime.js';
 export * from './run-store-shards-runtime.js';
 export * from './merge-wrappers.js';

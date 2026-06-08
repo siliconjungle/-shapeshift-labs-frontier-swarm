@@ -244,7 +244,10 @@ Use strategy tournaments when several workers, merge policies, proof searches, o
 ```ts
 import {
   createSwarmPayoffVector,
-  createSwarmStrategyTournament
+  createSwarmStrategyTournament,
+  createSwarmStrategyTournamentHistory,
+  compareSwarmStrategyTournaments,
+  createSwarmTournamentAdaptiveFeedback
 } from '@shapeshift-labs/frontier-swarm';
 
 const tournament = createSwarmStrategyTournament({
@@ -270,7 +273,26 @@ const tournament = createSwarmStrategyTournament({
     })
   }]
 });
+
+const history = createSwarmStrategyTournamentHistory({
+  tournaments: [tournament]
+});
+
+const comparison = compareSwarmStrategyTournaments({
+  baseline: tournament,
+  current: tournament,
+  scoreThreshold: 5
+});
+
+const feedback = createSwarmTournamentAdaptiveFeedback({
+  tournament,
+  history,
+  comparison,
+  scoreFloor: 40
+});
 ```
+
+`history` tracks strategy performance across runs, `comparison` highlights regressions and improvements between two tournaments, and `feedback.observations` can be passed into an adaptive scheduler. This makes prompt styles, workspace modes, evidence requirements, and merge policies comparable as strategies instead of treating every worker bundle as a one-off result.
 
 ## 1000-Agent Control Plane
 

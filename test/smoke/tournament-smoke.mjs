@@ -7,6 +7,9 @@ import {
   createSwarmPayoffVector,
   createSwarmStrategyCertificate,
   createSwarmStrategyTournament,
+  compareSwarmStrategyTournaments,
+  createSwarmStrategyTournamentHistory,
+  createSwarmTournamentAdaptiveFeedback,
   normalizeScoringPolicy,
   querySwarmStrategyTournament,
   scoreSwarmPayoffVector
@@ -150,3 +153,46 @@ const mergeTournament = createSwarmMergeTournament({
 });
 assert.strictEqual(mergeTournament.summary.matchCount, 2);
 assert.strictEqual(mergeTournament.standings[0].strategyId, verifiedBundle.jobId);
+
+const worseTournament = createSwarmStrategyTournament({
+  id: 'merge-tournament-worse',
+  strategies: tournament.strategies,
+  games: tournament.games,
+  matches: [
+    {
+      payoff: createSwarmPayoffVector({
+        strategyId: 'patch-with-trace',
+        gameId: 'merge-admission',
+        outcome: 'rejected',
+        components: { correctness: 0, evidence: 0.4 },
+        costs: { review: 1 }
+      })
+    },
+    tournament.matches[1]
+  ],
+  generatedAt: 4
+});
+const history = createSwarmStrategyTournamentHistory({ tournaments: [tournament, worseTournament], generatedAt: 5 });
+assert.strictEqual(history.kind, 'frontier.swarm.strategy-tournament-history');
+assert.strictEqual(history.summary.tournamentCount, 2);
+assert.ok(history.byStrategy['patch-with-trace'].scoreDelta < 0);
+
+const comparison = compareSwarmStrategyTournaments({
+  baseline: tournament,
+  current: worseTournament,
+  generatedAt: 6,
+  scoreThreshold: 5
+});
+assert.strictEqual(comparison.kind, 'frontier.swarm.strategy-tournament-comparison');
+assert.ok(comparison.entries.some((entry) => entry.strategyId === 'patch-with-trace' && entry.status === 'regressed'));
+
+const feedback = createSwarmTournamentAdaptiveFeedback({
+  tournament: worseTournament,
+  history,
+  comparison,
+  scoreFloor: 40,
+  generatedAt: 7
+});
+assert.strictEqual(feedback.kind, 'frontier.swarm.tournament-adaptive-feedback');
+assert.ok(feedback.observations.some((entry) => entry.kind === 'strategy-regression'));
+assert.ok(feedback.recommendations.some((entry) => entry.action === 'decrease'));

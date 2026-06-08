@@ -92,6 +92,12 @@ export const FRONTIER_SWARM_STRATEGY_CERTIFICATE_KIND = 'frontier.swarm.strategy
 export const FRONTIER_SWARM_STRATEGY_CERTIFICATE_VERSION = 1;
 export const FRONTIER_SWARM_STRATEGY_TOURNAMENT_KIND = 'frontier.swarm.strategy-tournament';
 export const FRONTIER_SWARM_STRATEGY_TOURNAMENT_VERSION = 1;
+export const FRONTIER_SWARM_STRATEGY_TOURNAMENT_HISTORY_KIND = 'frontier.swarm.strategy-tournament-history';
+export const FRONTIER_SWARM_STRATEGY_TOURNAMENT_HISTORY_VERSION = 1;
+export const FRONTIER_SWARM_STRATEGY_TOURNAMENT_COMPARISON_KIND = 'frontier.swarm.strategy-tournament-comparison';
+export const FRONTIER_SWARM_STRATEGY_TOURNAMENT_COMPARISON_VERSION = 1;
+export const FRONTIER_SWARM_TOURNAMENT_ADAPTIVE_FEEDBACK_KIND = 'frontier.swarm.tournament-adaptive-feedback';
+export const FRONTIER_SWARM_TOURNAMENT_ADAPTIVE_FEEDBACK_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
