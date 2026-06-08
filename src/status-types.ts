@@ -113,6 +113,8 @@ export type FrontierSwarmAdaptiveObservationKind =
   | 'budget-pressure'
   | 'slow-job'
   | 'healthy-throughput'
+  | 'strategy-regression'
+  | 'strategy-underperforming'
   | string;
 export type FrontierSwarmAdaptiveObservationSeverity = 'info' | 'warning' | 'error' | 'critical' | string;
 export type FrontierSwarmAdaptiveDecisionAction = 'observe' | 'decrease' | 'increase' | 'hold' | string;

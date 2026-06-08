@@ -38,6 +38,7 @@ import {
   createSwarmReviewPlan,
   createSwarmMergeIndex,
   createSwarmMergeTournament,
+  createSwarmTournamentAdaptiveFeedback,
   createSwarmMergeAdmission,
   createSwarmMergePlan,
   createSwarmMergeBundle,
@@ -57,6 +58,7 @@ import {
   type FrontierSwarmCompute,
   type FrontierSwarmCoordinatorDashboard,
   type FrontierSwarmAdaptiveLoadPlan,
+  type FrontierSwarmAdaptiveTournamentFeedbackInput,
   type FrontierSwarmContextPack,
   type FrontierSwarmDebugHandoff,
   type FrontierSwarmDivergenceReport,
@@ -77,6 +79,7 @@ import {
   type FrontierSwarmMergeBundle,
   type FrontierSwarmMergeIndex,
   type FrontierSwarmStrategyTournament,
+  type FrontierSwarmTournamentAdaptiveFeedback,
   type FrontierSwarmMergeAdmission,
   type FrontierSwarmMergePlan,
   type FrontierSwarmPlan,
@@ -132,6 +135,8 @@ semanticSummary.paradigmSemantics.hasLowering satisfies boolean;
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
 const styleTournament: FrontierSwarmStrategyTournament = createSwarmMergeTournament({ bundles: [mergeBundle], strategyMode: 'style' });
+const tournamentFeedback: FrontierSwarmTournamentAdaptiveFeedback = createSwarmTournamentAdaptiveFeedback({ tournament: styleTournament });
+const structuralTournamentFeedback: FrontierSwarmAdaptiveTournamentFeedbackInput = tournamentFeedback;
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
 const runStoreShards: FrontierSwarmRunStoreShards = createSwarmRunStoreShards({ plan });
 const contextPack: FrontierSwarmContextPack = createSwarmContextPack({ job: plan.jobs[0] });
@@ -163,6 +168,7 @@ const adaptiveLoadPlan: FrontierSwarmAdaptiveLoadPlan = createSwarmAdaptiveLoadP
   plan,
   run,
   mergeIndex,
+  tournamentFeedback: structuralTournamentFeedback,
   mode: 'balanced',
   maxLimits: { maxReadyJobs: 4 },
   currentLimits: { maxReadyJobs: 4 },
@@ -187,6 +193,8 @@ semanticSummary.nativeCompiles.emitted satisfies number;
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
 styleTournament.summary.strategyCount satisfies number;
+tournamentFeedback.observations satisfies readonly { kind: string }[];
+structuralTournamentFeedback.generatedAt satisfies number | undefined;
 admission.admitted satisfies string[];
 runStoreShards.shards satisfies readonly { path: string }[];
 contextPack.files satisfies string[];

@@ -85,6 +85,15 @@ export interface FrontierSwarmAdaptiveObservation {
   metadata?: JsonObject;
 }
 
+export interface FrontierSwarmAdaptiveTournamentFeedbackInput {
+  id?: string;
+  tournamentId?: string;
+  historyId?: string;
+  comparisonId?: string;
+  generatedAt?: number;
+  observations?: readonly FrontierSwarmAdaptiveObservationInput[];
+}
+
 export interface FrontierSwarmAdaptiveLoadPlanInput {
   id?: string;
   plan?: FrontierSwarmPlan;
@@ -97,6 +106,7 @@ export interface FrontierSwarmAdaptiveLoadPlanInput {
   maxLimits?: FrontierSwarmAdaptiveScheduleLimitsInput;
   currentLimits?: FrontierSwarmAdaptiveScheduleLimitsInput;
   minLimits?: FrontierSwarmAdaptiveScheduleLimitsInput;
+  tournamentFeedback?: FrontierSwarmAdaptiveTournamentFeedbackInput | readonly FrontierSwarmAdaptiveTournamentFeedbackInput[];
   observations?: readonly FrontierSwarmAdaptiveObservationInput[];
   generatedAt?: number;
   metadata?: unknown;

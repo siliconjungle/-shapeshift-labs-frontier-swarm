@@ -1,5 +1,6 @@
 import assert from 'node:assert';
 import {
+  createSwarmAdaptiveLoadPlan,
   createSwarmMergeBundle,
   createSwarmMergeIndex,
   createSwarmMergePayoffVector,
@@ -214,3 +215,84 @@ const feedback = createSwarmTournamentAdaptiveFeedback({
 assert.strictEqual(feedback.kind, 'frontier.swarm.tournament-adaptive-feedback');
 assert.ok(feedback.observations.some((entry) => entry.kind === 'strategy-regression'));
 assert.ok(feedback.recommendations.some((entry) => entry.action === 'decrease'));
+
+const adaptiveTournament = createSwarmStrategyTournament({
+  id: 'adaptive-feedback-tournament',
+  strategies: [
+    { id: 'style:noisy-stale-discovery', family: 'style', lane: 'runtime', metadata: { concurrencyKey: 'surface-noisy' } },
+    { id: 'style:landed-verified', family: 'style', lane: 'harness', metadata: { concurrencyKey: 'surface-stable' } }
+  ],
+  matches: [
+    {
+      payoff: createSwarmPayoffVector({
+        strategyId: 'style:noisy-stale-discovery',
+        outcome: 'noisy',
+        components: { correctness: 0.2, evidence: 0.1 },
+        costs: { review: 2 }
+      })
+    },
+    {
+      payoff: createSwarmPayoffVector({
+        strategyId: 'style:noisy-stale-discovery',
+        outcome: 'stale',
+        components: { correctness: 0.2, evidence: 0.2 },
+        penalties: { stale: 0.6 }
+      })
+    },
+    {
+      payoff: createSwarmPayoffVector({
+        strategyId: 'style:noisy-stale-discovery',
+        outcome: 'discovery',
+        components: { novelty: 0.6, evidence: 0.2 }
+      })
+    },
+    {
+      payoff: createSwarmPayoffVector({
+        strategyId: 'style:landed-verified',
+        outcome: 'landed',
+        components: { correctness: 1, evidence: 1, mergeCleanliness: 1 },
+        certificate: { commands: ['npm test'], durationMs: 1000 }
+      })
+    },
+    {
+      payoff: createSwarmPayoffVector({
+        strategyId: 'style:landed-verified',
+        outcome: 'verified',
+        components: { correctness: 1, evidence: 0.9, mergeCleanliness: 1 },
+        certificate: { commands: ['npm test'], durationMs: 1200 }
+      })
+    }
+  ],
+  generatedAt: 8
+});
+const adaptiveFeedback = createSwarmTournamentAdaptiveFeedback({
+  tournament: adaptiveTournament,
+  scoreFloor: 50,
+  generatedAt: 9
+});
+assert.ok(adaptiveFeedback.observations.some((entry) => entry.kind === 'log-noise' && entry.lane === 'runtime'));
+assert.ok(adaptiveFeedback.observations.some((entry) => entry.kind === 'stale-patch' && entry.concurrencyKey === 'surface-noisy'));
+assert.ok(adaptiveFeedback.observations.some((entry) => entry.kind === 'discovery-only-output' && entry.lane === 'runtime'));
+assert.ok(adaptiveFeedback.observations.some((entry) => entry.kind === 'healthy-throughput' && entry.concurrencyKey === 'surface-stable'));
+
+const adaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
+  mode: 'balanced',
+  maxLimits: {
+    maxReadyJobs: 8,
+    maxLaneConcurrency: { runtime: 6, harness: 6 },
+    maxConcurrencyKeyConcurrency: { 'surface-noisy': 6, 'surface-stable': 6 }
+  },
+  currentLimits: {
+    maxReadyJobs: 6,
+    maxLaneConcurrency: { runtime: 6, harness: 3 },
+    maxConcurrencyKeyConcurrency: { 'surface-noisy': 6, 'surface-stable': 3 }
+  },
+  tournamentFeedback: adaptiveFeedback,
+  generatedAt: 10
+});
+assert.ok(adaptiveLoadPlan.effectiveLimits.maxLaneConcurrency.runtime < 6);
+assert.ok(adaptiveLoadPlan.effectiveLimits.maxConcurrencyKeyConcurrency['surface-noisy'] < 6);
+assert.ok(adaptiveLoadPlan.effectiveLimits.maxLaneConcurrency.harness >= 3);
+assert.ok(adaptiveLoadPlan.effectiveLimits.maxConcurrencyKeyConcurrency['surface-stable'] >= 3);
+assert.ok(!adaptiveLoadPlan.decisions.some((entry) => entry.action === 'decrease' && entry.target === 'lane' && entry.key === 'harness'));
+assert.ok(!adaptiveLoadPlan.decisions.some((entry) => entry.action === 'decrease' && entry.target === 'concurrency-key' && entry.key === 'surface-stable'));

@@ -6,7 +6,8 @@ import type {
   FrontierSwarmAdaptiveObservation,
   FrontierSwarmAdaptiveObservationInput,
   FrontierSwarmAdaptiveObservationKind,
-  FrontierSwarmAdaptiveObservationSeverity
+  FrontierSwarmAdaptiveObservationSeverity,
+  FrontierSwarmAdaptiveTournamentFeedbackInput
 } from './adaptive-load-types.js';
 import type { FrontierSwarmMergeAdmission, FrontierSwarmMergeIndex, FrontierSwarmRun, FrontierSwarmSemanticImportSummary } from './index.js';
 
@@ -19,7 +20,7 @@ export function normalizeAdaptiveObservations(
     const reasons = uniqueStrings([...(entry.reason ? [entry.reason] : []), ...(entry.reasons ?? [])]);
     const at = entry.at ?? generatedAt;
     out.push({
-      id: entry.id ?? 'swarm-adaptive-observation:' + stableHash([entry.kind, entry.jobId, entry.lane, entry.resource, reasons, index, at]),
+      id: entry.id ?? 'swarm-adaptive-observation:' + stableHash([entry.kind, entry.jobId, entry.taskId, entry.lane, entry.compute, entry.concurrencyKey, entry.resource, entry.path, entry.region, reasons, index, at]),
       kind: entry.kind,
       severity: entry.severity ?? adaptiveDefaultSeverity(entry.kind),
       at,
@@ -37,6 +38,34 @@ export function normalizeAdaptiveObservations(
     });
   });
   return dedupeAdaptiveObservations(out);
+}
+
+export function deriveAdaptiveTournamentFeedbackObservations(
+  feedback: FrontierSwarmAdaptiveTournamentFeedbackInput | readonly FrontierSwarmAdaptiveTournamentFeedbackInput[] | undefined,
+  at: number
+): FrontierSwarmAdaptiveObservationInput[] {
+  if (!feedback) return [];
+  const records = (Array.isArray(feedback) ? feedback : [feedback])
+    .filter((entry) => entry && typeof entry === 'object')
+    .sort((left, right) => (left.generatedAt ?? at) - (right.generatedAt ?? at) || (left.id ?? '').localeCompare(right.id ?? ''));
+  const observations: FrontierSwarmAdaptiveObservationInput[] = [];
+  for (const record of records) {
+    for (const observation of record.observations ?? []) {
+      const metadata = toJsonObject({
+        ...(toJsonObject(observation.metadata) ?? {}),
+        ...(record.id ? { tournamentFeedbackId: record.id } : {}),
+        ...(record.tournamentId ? { tournamentId: record.tournamentId } : {}),
+        ...(record.historyId ? { historyId: record.historyId } : {}),
+        ...(record.comparisonId ? { comparisonId: record.comparisonId } : {})
+      });
+      observations.push({
+        ...observation,
+        at: observation.at ?? record.generatedAt ?? at,
+        ...(metadata && Object.keys(metadata).length ? { metadata } : {})
+      });
+    }
+  }
+  return observations;
 }
 
 export function deriveAdaptiveScheduleObservations(schedule: FrontierSwarmSchedule | undefined, at: number): FrontierSwarmAdaptiveObservationInput[] {
@@ -158,7 +187,9 @@ export function adaptiveObservationShouldReduceReadyWindow(observation: Frontier
     || observation.kind === 'log-noise'
     || observation.kind === 'discovery-only-output'
     || observation.kind === 'budget-pressure'
-    || observation.kind === 'slow-job';
+    || observation.kind === 'slow-job'
+    || observation.kind === 'strategy-regression'
+    || observation.kind === 'strategy-underperforming';
 }
 
 export function adaptiveObservationIsCapacityBackpressure(observation: FrontierSwarmAdaptiveObservation): boolean {
@@ -173,6 +204,7 @@ export function adaptiveDecisionTargetForObservation(observation: FrontierSwarmA
   if (observation.kind === 'lane-capacity') return 'lane';
   if (observation.kind === 'concurrency-key-capacity' || observation.kind === 'merge-conflict' || observation.kind === 'duplicate-output') return 'concurrency-key';
   if (observation.kind === 'compute-capacity') return 'compute';
+  if (observation.concurrencyKey && adaptiveObservationCanTargetConcurrencyKey(observation.kind)) return 'concurrency-key';
   if (observation.lane) return 'lane';
   return 'max-ready-jobs';
 }
@@ -193,13 +225,28 @@ export function adaptiveObservationIsBottleneck(observation: FrontierSwarmAdapti
     || observation.kind === 'stale-patch'
     || observation.kind === 'semantic-empty'
     || observation.kind === 'log-noise'
-    || observation.kind === 'duplicate-output';
+    || observation.kind === 'discovery-only-output'
+    || observation.kind === 'duplicate-output'
+    || observation.kind === 'strategy-regression'
+    || observation.kind === 'strategy-underperforming';
 }
 
 function adaptiveDefaultSeverity(kind: FrontierSwarmAdaptiveObservationKind): FrontierSwarmAdaptiveObservationSeverity {
   if (kind === 'evidence-failure' || kind === 'budget-pressure') return 'error';
-  if (kind === 'merge-conflict' || kind === 'stale-patch' || kind === 'semantic-empty' || kind === 'browser-contention' || kind.endsWith('-capacity')) return 'warning';
+  if (kind === 'merge-conflict' || kind === 'stale-patch' || kind === 'semantic-empty' || kind === 'browser-contention' || kind === 'strategy-regression' || kind === 'strategy-underperforming' || kind.endsWith('-capacity')) return 'warning';
   return 'info';
+}
+
+function adaptiveObservationCanTargetConcurrencyKey(kind: FrontierSwarmAdaptiveObservationKind): boolean {
+  return kind === 'evidence-failure'
+    || kind === 'stale-patch'
+    || kind === 'log-noise'
+    || kind === 'discovery-only-output'
+    || kind === 'budget-pressure'
+    || kind === 'slow-job'
+    || kind === 'strategy-regression'
+    || kind === 'strategy-underperforming'
+    || kind === 'healthy-throughput';
 }
 
 function semanticSummaryIsEmpty(summary: FrontierSwarmSemanticImportSummary | undefined): boolean {

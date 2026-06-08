@@ -247,7 +247,8 @@ import {
   createSwarmStrategyTournament,
   createSwarmStrategyTournamentHistory,
   compareSwarmStrategyTournaments,
-  createSwarmTournamentAdaptiveFeedback
+  createSwarmTournamentAdaptiveFeedback,
+  createSwarmAdaptiveLoadPlan
 } from '@shapeshift-labs/frontier-swarm';
 
 const tournament = createSwarmStrategyTournament({
@@ -290,9 +291,15 @@ const feedback = createSwarmTournamentAdaptiveFeedback({
   comparison,
   scoreFloor: 40
 });
+
+const adaptive = createSwarmAdaptiveLoadPlan({
+  mode: 'balanced',
+  tournamentFeedback: feedback,
+  maxLimits: { maxReadyJobs: 8 }
+});
 ```
 
-`history` tracks strategy performance across runs, `comparison` highlights regressions and improvements between two tournaments, and `feedback.observations` can be passed into an adaptive scheduler. This makes prompt styles, workspace modes, evidence requirements, and merge policies comparable as strategies instead of treating every worker bundle as a one-off result.
+`history` tracks strategy performance across runs, `comparison` highlights regressions and improvements between two tournaments, and `feedback` can be passed into `createSwarmAdaptiveLoadPlan` as replayable observations. Feedback maps landed/verified outcomes to healthy throughput and noisy, stale, regressed, or discovery-only outcomes to deterministic reduction signals; when strategy or match metadata includes `lane` or `concurrencyKey`, the adaptive planner can adjust those specific scheduler limits without reading mutable tournament state. This makes prompt styles, workspace modes, evidence requirements, and merge policies comparable as strategies instead of treating every worker bundle as a one-off result.
 
 ## 1000-Agent Control Plane
 

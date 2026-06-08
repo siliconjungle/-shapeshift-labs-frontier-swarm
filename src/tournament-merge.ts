@@ -122,11 +122,13 @@ function strategyForBundle(
   bundle: FrontierSwarmMergeBundle,
   mode: FrontierSwarmMergeTournamentInput['strategyMode']
 ): FrontierSwarmStrategyInput {
+  const concurrencyKey = bundleConcurrencyKey(bundle);
   if (mode !== 'style') return {
     id: bundle.jobId,
     title: bundle.title ?? bundle.jobId,
     lane: bundle.lane,
-    tags: [bundle.disposition, bundle.mergeReadiness, bundle.riskLevel]
+    tags: [bundle.disposition, bundle.mergeReadiness, bundle.riskLevel],
+    ...(concurrencyKey ? { metadata: { concurrencyKey } } : {})
   };
   const metadata = toRecord(bundle.metadata);
   const explicit = toRecord(metadata.tournamentStrategy);
@@ -140,8 +142,18 @@ function strategyForBundle(
     family: 'style',
     lane: bundle.lane,
     tags: [promptStyle, workspaceStyle, evidenceStyle, bundle.disposition, bundle.mergeReadiness],
-    metadata: { promptStyle, workspaceStyle, evidenceStyle }
+    metadata: { promptStyle, workspaceStyle, evidenceStyle, ...(concurrencyKey ? { concurrencyKey } : {}) }
   };
+}
+
+function bundleConcurrencyKey(bundle: FrontierSwarmMergeBundle): string | undefined {
+  const metadata = toRecord(bundle.metadata);
+  const explicit = toRecord(metadata.tournamentStrategy);
+  const adaptive = toRecord(metadata.adaptive);
+  return stringValue(explicit.concurrencyKey)
+    ?? stringValue(metadata.concurrencyKey)
+    ?? stringValue(metadata.adaptiveConcurrencyKey)
+    ?? stringValue(adaptive.concurrencyKey);
 }
 
 function evidenceStyleForBundle(bundle: FrontierSwarmMergeBundle): string {

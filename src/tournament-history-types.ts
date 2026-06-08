@@ -40,6 +40,7 @@ export interface FrontierSwarmStrategyTournamentHistoryEntry {
   scoreDelta: number;
   latestRank?: number;
   lanes: string[];
+  concurrencyKeys: string[];
   tags: string[];
   evidencePaths: string[];
   outcomeCounts: Record<string, number>;

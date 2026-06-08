@@ -78,9 +78,10 @@ export function applyAdaptiveRecovery(
   limits: FrontierSwarmScheduleLimits,
   maxLimits: FrontierSwarmScheduleLimits,
   observation: FrontierSwarmAdaptiveObservation,
-  decisions: FrontierSwarmAdaptiveLoadDecision[]
+  decisions: FrontierSwarmAdaptiveLoadDecision[],
+  options: { increaseReadyWindow?: boolean } = {}
 ): void {
-  if (limits.maxReadyJobs !== undefined && maxLimits.maxReadyJobs !== undefined && limits.maxReadyJobs < maxLimits.maxReadyJobs) {
+  if (options.increaseReadyWindow !== false && limits.maxReadyJobs !== undefined && maxLimits.maxReadyJobs !== undefined && limits.maxReadyJobs < maxLimits.maxReadyJobs) {
     const previous = limits.maxReadyJobs;
     limits.maxReadyJobs = Math.min(maxLimits.maxReadyJobs, previous + 1);
     decisions.push(createAdaptiveDecision({
@@ -98,6 +99,9 @@ export function applyAdaptiveRecovery(
   }
   if (observation.compute) {
     increaseAdaptiveRecordLimit(limits.maxComputeConcurrency, maxLimits.maxComputeConcurrency, observation.compute, observation, decisions, 'compute');
+  }
+  if (observation.concurrencyKey) {
+    increaseAdaptiveRecordLimit(limits.maxConcurrencyKeyConcurrency, maxLimits.maxConcurrencyKeyConcurrency, observation.concurrencyKey, observation, decisions, 'concurrency-key');
   }
 }
 

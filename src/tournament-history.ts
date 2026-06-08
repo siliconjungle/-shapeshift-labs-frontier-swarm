@@ -8,7 +8,12 @@ import {
   FRONTIER_SWARM_TOURNAMENT_ADAPTIVE_FEEDBACK_VERSION
 } from './constants.js';
 import { round2 } from './tournament-scoring.js';
-import type { FrontierSwarmAdaptiveObservationInput } from './adaptive-load-types.js';
+import {
+  createTournamentAdaptiveObservations,
+  strategyContextById,
+  tournamentRecommendationAction
+} from './tournament-adaptive-feedback.js';
+import type { FrontierSwarmStrategyContext } from './tournament-adaptive-feedback.js';
 import type {
   FrontierSwarmStrategy,
   FrontierSwarmStrategyStanding,
@@ -94,15 +99,18 @@ export function createSwarmTournamentAdaptiveFeedback(
   input: FrontierSwarmTournamentAdaptiveFeedbackInput = {}
 ): FrontierSwarmTournamentAdaptiveFeedback {
   const generatedAt = input.generatedAt ?? Date.now();
-  const observations: FrontierSwarmAdaptiveObservationInput[] = [
-    ...tournamentObservations(input.tournament, generatedAt, input.scoreFloor ?? 40),
-    ...historyObservations(input.history, generatedAt, input.scoreFloor ?? 40),
-    ...comparisonObservations(input.comparison, generatedAt, input.regressionThreshold ?? 5)
-  ];
+  const observations = createTournamentAdaptiveObservations({
+    tournament: input.tournament,
+    history: input.history,
+    comparison: input.comparison,
+    generatedAt,
+    scoreFloor: input.scoreFloor ?? 40,
+    regressionThreshold: input.regressionThreshold ?? 5
+  });
   const recommendations = observations.map((observation) => ({
-    action: recommendationAction(observation.kind),
-    target: observation.lane ? 'lane' : observation.jobId ? 'strategy' : 'max-ready-jobs',
-    key: observation.lane ?? observation.jobId,
+    action: tournamentRecommendationAction(observation.kind),
+    target: observation.concurrencyKey ? 'concurrency-key' : observation.lane ? 'lane' : observation.jobId ? 'strategy' : 'max-ready-jobs',
+    key: observation.concurrencyKey ?? observation.lane ?? observation.jobId,
     reason: observation.reasons?.[0] ?? observation.reason ?? observation.kind,
     score: observation.value
   }));
@@ -129,22 +137,25 @@ export function createSwarmTournamentAdaptiveFeedback(
 
 function summarizeHistoryEntries(tournaments: readonly FrontierSwarmStrategyTournament[]): FrontierSwarmStrategyTournamentHistoryEntry[] {
   const strategies = new Map<string, FrontierSwarmStrategy>();
+  const contextsByTournament = new Map(tournaments.map((tournament) => [tournament.id, strategyContextById(tournament)]));
   for (const tournament of tournaments) for (const strategy of tournament.strategies) strategies.set(strategy.id, strategy);
   return uniqueStrings(tournaments.flatMap((tournament) => tournament.standings.map((standing) => standing.strategyId))).map((strategyId) => {
     const standings = tournaments.map((tournament) => ({ tournament, standing: tournament.standings.find((entry) => entry.strategyId === strategyId) })).filter((entry): entry is { tournament: FrontierSwarmStrategyTournament; standing: FrontierSwarmStrategyStanding } => !!entry.standing);
-    return historyEntry(strategyId, standings, strategies.get(strategyId));
+    const contexts = standings.map((entry) => contextsByTournament.get(entry.tournament.id)?.get(strategyId)).filter((entry): entry is FrontierSwarmStrategyContext => !!entry);
+    return historyEntry(strategyId, standings, strategies.get(strategyId), contexts);
   }).sort((left, right) => right.averageScore - left.averageScore || left.strategyId.localeCompare(right.strategyId));
 }
 
 function historyEntry(
   strategyId: string,
   standings: readonly { tournament: FrontierSwarmStrategyTournament; standing: FrontierSwarmStrategyStanding }[],
-  strategy?: FrontierSwarmStrategy
+  strategy: FrontierSwarmStrategy | undefined,
+  contexts: readonly FrontierSwarmStrategyContext[]
 ): FrontierSwarmStrategyTournamentHistoryEntry {
   const scores = standings.map((entry) => entry.standing.score);
   const first = standings[0]?.standing;
   const latest = standings[standings.length - 1]?.standing;
-  const outcomes = mergeOutcomeCounts(standings.map((entry) => entry.tournament.summary.outcomeCounts));
+  const outcomes = mergeOutcomeCounts(contexts.map((entry) => entry.outcomeCounts));
   return {
     strategyId,
     tournamentIds: standings.map((entry) => entry.tournament.id),
@@ -160,8 +171,9 @@ function historyEntry(
     latestScore: latest?.score ?? 0,
     scoreDelta: round2((latest?.score ?? 0) - (first?.score ?? 0)),
     ...(latest ? { latestRank: latest.rank } : {}),
-    lanes: uniqueStrings([strategy?.lane]),
-    tags: uniqueStrings(strategy?.tags ?? []),
+    lanes: uniqueStrings([...contexts.flatMap((entry) => entry.lanes), strategy?.lane]),
+    concurrencyKeys: uniqueStrings(contexts.flatMap((entry) => entry.concurrencyKeys)),
+    tags: uniqueStrings([...(strategy?.tags ?? []), ...contexts.flatMap((entry) => entry.tags)]),
     evidencePaths: uniqueStrings(standings.flatMap((entry) => entry.standing.evidencePaths)),
     outcomeCounts: outcomes
   };
@@ -189,48 +201,6 @@ function compareStanding(
     currentVerifiedCount: current?.verifiedCount ?? 0,
     reasons: comparisonReasons(status, scoreDelta, rankDelta)
   };
-}
-
-function tournamentObservations(tournament: FrontierSwarmStrategyTournament | undefined, at: number, scoreFloor: number): FrontierSwarmAdaptiveObservationInput[] {
-  if (!tournament) return [];
-  return tournament.standings.filter((standing) => standing.matchCount > 0 && standing.score < scoreFloor).map((standing) => ({
-    kind: standing.verifiedCount === 0 ? 'discovery-only-output' : 'strategy-underperforming',
-    severity: 'warning',
-    at,
-    value: standing.score,
-    jobId: standing.strategyId,
-    reason: `strategy score ${standing.score} is below floor ${scoreFloor}`
-  }));
-}
-
-function historyObservations(history: FrontierSwarmStrategyTournamentHistory | undefined, at: number, scoreFloor: number): FrontierSwarmAdaptiveObservationInput[] {
-  if (!history) return [];
-  return history.entries.filter((entry) => entry.averageScore < scoreFloor || entry.scoreDelta < 0).map((entry) => ({
-    kind: entry.scoreDelta < 0 ? 'strategy-regression' : 'strategy-underperforming',
-    severity: entry.scoreDelta < -10 ? 'warning' : 'info',
-    at,
-    value: entry.scoreDelta,
-    jobId: entry.strategyId,
-    reason: `strategy average ${entry.averageScore}, delta ${entry.scoreDelta}`
-  }));
-}
-
-function comparisonObservations(comparison: FrontierSwarmStrategyTournamentComparison | undefined, at: number, threshold: number): FrontierSwarmAdaptiveObservationInput[] {
-  if (!comparison) return [];
-  return comparison.entries.filter((entry) => entry.status === 'regressed' || entry.status === 'improved').map((entry) => ({
-    kind: entry.status === 'regressed' ? 'strategy-regression' : 'healthy-throughput',
-    severity: entry.status === 'regressed' && Math.abs(entry.scoreDelta) >= threshold ? 'warning' : 'info',
-    at,
-    value: entry.scoreDelta,
-    jobId: entry.strategyId,
-    reason: entry.reasons[0] ?? entry.status
-  }));
-}
-
-function recommendationAction(kind: string): 'increase' | 'decrease' | 'hold' | 'observe' {
-  if (kind === 'healthy-throughput') return 'increase';
-  if (kind === 'strategy-regression' || kind === 'strategy-underperforming' || kind === 'discovery-only-output') return 'decrease';
-  return 'observe';
 }
 
 function comparisonReasons(status: FrontierSwarmTournamentTrendStatus, scoreDelta: number, rankDelta?: number): string[] {

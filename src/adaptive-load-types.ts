@@ -26,6 +26,8 @@ export type FrontierSwarmAdaptiveObservationKind =
   | 'budget-pressure'
   | 'slow-job'
   | 'healthy-throughput'
+  | 'strategy-regression'
+  | 'strategy-underperforming'
   | string;
 export type FrontierSwarmAdaptiveObservationSeverity = 'info' | 'warning' | 'error' | 'critical' | string;
 export type FrontierSwarmAdaptiveDecisionAction = 'observe' | 'decrease' | 'increase' | 'hold' | string;
@@ -82,6 +84,15 @@ export interface FrontierSwarmAdaptiveObservation {
   metadata?: JsonObject;
 }
 
+export interface FrontierSwarmAdaptiveTournamentFeedbackInput {
+  id?: string;
+  tournamentId?: string;
+  historyId?: string;
+  comparisonId?: string;
+  generatedAt?: number;
+  observations?: readonly FrontierSwarmAdaptiveObservationInput[];
+}
+
 export interface FrontierSwarmAdaptiveLoadPlanInput {
   id?: string;
   plan?: FrontierSwarmPlan;
@@ -94,6 +105,7 @@ export interface FrontierSwarmAdaptiveLoadPlanInput {
   maxLimits?: FrontierSwarmAdaptiveScheduleLimitsInput;
   currentLimits?: FrontierSwarmAdaptiveScheduleLimitsInput;
   minLimits?: FrontierSwarmAdaptiveScheduleLimitsInput;
+  tournamentFeedback?: FrontierSwarmAdaptiveTournamentFeedbackInput | readonly FrontierSwarmAdaptiveTournamentFeedbackInput[];
   observations?: readonly FrontierSwarmAdaptiveObservationInput[];
   generatedAt?: number;
   metadata?: unknown;

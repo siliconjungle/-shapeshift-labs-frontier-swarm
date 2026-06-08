@@ -15,6 +15,7 @@ import {
   deriveAdaptiveMergeIndexObservations,
   deriveAdaptiveRunObservations,
   deriveAdaptiveScheduleObservations,
+  deriveAdaptiveTournamentFeedbackObservations,
   normalizeAdaptiveObservations
 } from './adaptive-load-observations.js';
 import { applyAdaptiveObservation, applyAdaptiveRecovery, createAdaptiveDecision } from './adaptive-load-decisions.js';
@@ -47,6 +48,7 @@ export function createSwarmAdaptiveLoadPlan(input: FrontierSwarmAdaptiveLoadPlan
     ...deriveAdaptiveMergeIndexObservations(input.mergeIndex, generatedAt),
     ...deriveAdaptiveDashboardObservations(input.dashboard, generatedAt),
     ...deriveAdaptiveAdmissionObservations(input.admission, generatedAt),
+    ...deriveAdaptiveTournamentFeedbackObservations(input.tournamentFeedback, generatedAt),
     ...(input.observations ?? [])
   ], generatedAt);
   const decisions: FrontierSwarmAdaptiveLoadDecision[] = [];
@@ -67,8 +69,12 @@ export function createSwarmAdaptiveLoadPlan(input: FrontierSwarmAdaptiveLoadPlan
       applyAdaptiveObservation(effectiveLimits, minLimits, maxLimits, mode, observation, decisions);
     }
     const healthy = observations.filter((observation) => observation.kind === 'healthy-throughput');
-    if (bottlenecks.length === 0 && healthy.length > 0) {
-      for (const observation of healthy) applyAdaptiveRecovery(effectiveLimits, maxLimits, observation, decisions);
+    if (healthy.length > 0) {
+      for (const observation of healthy) {
+        if (!bottlenecks.some((bottleneck) => adaptiveObservationOverlaps(observation, bottleneck))) {
+          applyAdaptiveRecovery(effectiveLimits, maxLimits, observation, decisions, { increaseReadyWindow: bottlenecks.length === 0 });
+        }
+      }
     }
   }
 
@@ -98,6 +104,17 @@ export function createSwarmAdaptiveLoadPlan(input: FrontierSwarmAdaptiveLoadPlan
     summary,
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
+}
+
+function adaptiveObservationOverlaps(
+  left: { lane?: string; compute?: string; concurrencyKey?: string; resource?: string },
+  right: { lane?: string; compute?: string; concurrencyKey?: string; resource?: string }
+): boolean {
+  return !!left.lane && left.lane === right.lane
+    || !!left.compute && left.compute === right.compute
+    || !!left.concurrencyKey && left.concurrencyKey === right.concurrencyKey
+    || !!left.resource && left.resource === right.resource
+    || !left.lane && !left.compute && !left.concurrencyKey && !left.resource;
 }
 
 export function createSwarmScheduleInputFromAdaptiveLoadPlan(
