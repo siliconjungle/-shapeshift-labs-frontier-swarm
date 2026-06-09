@@ -18,6 +18,7 @@ import {
   createSwarmCoordinatorDashboard,
   createSwarmAdaptiveLoadPlan,
   createSwarmScheduleInputFromAdaptiveLoadPlan,
+  createSwarmContextualBanditRecommendations,
   querySwarmCoordinatorDashboard,
   createSwarmReferenceOraclePlan,
   createSwarmReferenceOracleResponse,
@@ -59,6 +60,7 @@ import {
   type FrontierSwarmCoordinatorDashboard,
   type FrontierSwarmAdaptiveLoadPlan,
   type FrontierSwarmAdaptiveTournamentFeedbackInput,
+  type FrontierSwarmContextualBanditRecommendations,
   type FrontierSwarmContextPack,
   type FrontierSwarmDebugHandoff,
   type FrontierSwarmDivergenceReport,
@@ -135,6 +137,7 @@ semanticSummary.paradigmSemantics.hasLowering satisfies boolean;
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
 const styleTournament: FrontierSwarmStrategyTournament = createSwarmMergeTournament({ bundles: [mergeBundle], strategyMode: 'style' });
+const banditRecommendations: FrontierSwarmContextualBanditRecommendations = createSwarmContextualBanditRecommendations({ tournament: styleTournament });
 const tournamentFeedback: FrontierSwarmTournamentAdaptiveFeedback = createSwarmTournamentAdaptiveFeedback({ tournament: styleTournament });
 const structuralTournamentFeedback: FrontierSwarmAdaptiveTournamentFeedbackInput = tournamentFeedback;
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
@@ -193,6 +196,7 @@ semanticSummary.nativeCompiles.emitted satisfies number;
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
 styleTournament.summary.strategyCount satisfies number;
+banditRecommendations.summary.promoteCount satisfies number;
 tournamentFeedback.observations satisfies readonly { kind: string }[];
 structuralTournamentFeedback.generatedAt satisfies number | undefined;
 admission.admitted satisfies string[];

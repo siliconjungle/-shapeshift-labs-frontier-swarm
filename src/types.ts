@@ -19,3 +19,4 @@ export type * from './adaptive-types.js';
 export type * from './tournament-types.js';
 export type * from './tournament-sample-quality-types.js';
 export type * from './tournament-history-types.js';
+export type * from './tournament-bandit-types.js';

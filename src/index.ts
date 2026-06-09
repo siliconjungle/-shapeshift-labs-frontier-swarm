@@ -20,6 +20,7 @@ export { createSwarmAdaptiveLoadPlan, createSwarmScheduleInputFromAdaptiveLoadPl
 export { createSwarmCoordinatorDashboard, querySwarmCoordinatorDashboard } from './coordinator-dashboard.js';
 export { normalizeScoringPolicy, scoreSwarmPayoffVector } from './tournament-scoring.js';
 export { createSwarmPayoffVector, createSwarmStrategyCertificate, createSwarmStrategyTournament, querySwarmStrategyTournament } from './tournament-runtime.js';
+export { createSwarmContextualBanditRecommendations, normalizeContextualBanditPolicy } from './tournament-bandit.js';
 export { createTournamentSampleQuality } from './tournament-sample-quality.js';
 export { createSwarmMergePayoffVector, createSwarmMergeTournament } from './tournament-merge.js';
 export { compareSwarmStrategyTournaments, createSwarmStrategyTournamentHistory, createSwarmTournamentAdaptiveFeedback } from './tournament-history.js';

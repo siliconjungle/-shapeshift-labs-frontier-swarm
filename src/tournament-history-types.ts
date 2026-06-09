@@ -8,6 +8,10 @@ import type {
   FRONTIER_SWARM_TOURNAMENT_ADAPTIVE_FEEDBACK_KIND,
   FRONTIER_SWARM_TOURNAMENT_ADAPTIVE_FEEDBACK_VERSION
 } from './constants.js';
+import type {
+  FrontierSwarmContextualBanditPolicyInput,
+  FrontierSwarmContextualBanditRecommendations
+} from './tournament-bandit-types.js';
 import type { FrontierSwarmStrategyTournament } from './tournament-types.js';
 
 export type FrontierSwarmTournamentTrendStatus =
@@ -122,6 +126,8 @@ export interface FrontierSwarmTournamentAdaptiveFeedbackInput {
   comparison?: FrontierSwarmStrategyTournamentComparison;
   scoreFloor?: number;
   regressionThreshold?: number;
+  banditPolicy?: false | FrontierSwarmContextualBanditPolicyInput;
+  includeBanditObservations?: boolean;
   generatedAt?: number;
   metadata?: unknown;
 }
@@ -142,6 +148,7 @@ export interface FrontierSwarmTournamentAdaptiveFeedback {
   historyId?: string;
   comparisonId?: string;
   generatedAt: number;
+  bandit?: FrontierSwarmContextualBanditRecommendations;
   observations: FrontierSwarmAdaptiveObservationInput[];
   recommendations: FrontierSwarmTournamentAdaptiveRecommendation[];
   summary: {

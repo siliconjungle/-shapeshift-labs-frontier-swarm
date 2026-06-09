@@ -4,4 +4,5 @@ import './smoke/merge-regions-smoke.mjs';
 import './smoke/oracle-trace-smoke.mjs';
 import './smoke/scheduler-governance-smoke.mjs';
 import './smoke/tournament-smoke.mjs';
+import './smoke/tournament-bandit.mjs';
 import './smoke/tournament-sample-quality.mjs';

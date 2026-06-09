@@ -13,6 +13,8 @@ import {
   strategyContextById,
   tournamentRecommendationAction
 } from './tournament-adaptive-feedback.js';
+import { createSwarmContextualBanditRecommendations } from './tournament-bandit.js';
+import type { FrontierSwarmBanditArmRecommendation } from './tournament-bandit-types.js';
 import type { FrontierSwarmStrategyContext } from './tournament-adaptive-feedback.js';
 import type {
   FrontierSwarmStrategy,
@@ -99,6 +101,12 @@ export function createSwarmTournamentAdaptiveFeedback(
   input: FrontierSwarmTournamentAdaptiveFeedbackInput = {}
 ): FrontierSwarmTournamentAdaptiveFeedback {
   const generatedAt = input.generatedAt ?? Date.now();
+  const bandit = input.banditPolicy === false ? undefined : createSwarmContextualBanditRecommendations({
+    tournament: input.tournament,
+    history: input.history,
+    policy: input.banditPolicy,
+    generatedAt
+  });
   const observations = createTournamentAdaptiveObservations({
     tournament: input.tournament,
     history: input.history,
@@ -106,14 +114,17 @@ export function createSwarmTournamentAdaptiveFeedback(
     generatedAt,
     scoreFloor: input.scoreFloor ?? 40,
     regressionThreshold: input.regressionThreshold ?? 5
-  });
-  const recommendations = observations.map((observation) => ({
-    action: tournamentRecommendationAction(observation.kind),
-    target: observation.concurrencyKey ? 'concurrency-key' : observation.lane ? 'lane' : observation.jobId ? 'strategy' : 'max-ready-jobs',
-    key: observation.concurrencyKey ?? observation.lane ?? observation.jobId,
-    reason: observation.reasons?.[0] ?? observation.reason ?? observation.kind,
-    score: observation.value
-  }));
+  }).concat(input.includeBanditObservations === false ? [] : banditObservations(bandit?.recommendations, generatedAt));
+  const recommendations: FrontierSwarmTournamentAdaptiveFeedback['recommendations'] = [
+    ...observations.map((observation) => ({
+      action: tournamentRecommendationAction(observation.kind),
+      target: observation.concurrencyKey ? 'concurrency-key' : observation.lane ? 'lane' : observation.jobId ? 'strategy' : 'max-ready-jobs',
+      key: observation.concurrencyKey ?? observation.lane ?? observation.jobId,
+      reason: observation.reasons?.[0] ?? observation.reason ?? observation.kind,
+      score: observation.value
+    })),
+    ...(bandit?.recommendations ?? []).map(banditRecommendation)
+  ];
   return {
     kind: FRONTIER_SWARM_TOURNAMENT_ADAPTIVE_FEEDBACK_KIND,
     version: FRONTIER_SWARM_TOURNAMENT_ADAPTIVE_FEEDBACK_VERSION,
@@ -122,6 +133,7 @@ export function createSwarmTournamentAdaptiveFeedback(
     ...(input.history ? { historyId: input.history.id } : {}),
     ...(input.comparison ? { comparisonId: input.comparison.id } : {}),
     generatedAt,
+    ...(bandit ? { bandit } : {}),
     observations,
     recommendations,
     summary: {
@@ -133,6 +145,33 @@ export function createSwarmTournamentAdaptiveFeedback(
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
+}
+
+function banditRecommendation(entry: FrontierSwarmBanditArmRecommendation): FrontierSwarmTournamentAdaptiveFeedback['recommendations'][number] {
+  return {
+    action: entry.action === 'promote' ? 'increase' : entry.action === 'demote' ? 'decrease' : entry.action === 'explore' ? 'observe' : 'hold',
+    target: entry.target,
+    key: entry.key,
+    reason: `bandit ${entry.action}: ${entry.reasonCodes.join(', ')}`,
+    score: entry.score
+  };
+}
+
+function banditObservations(
+  entries: readonly FrontierSwarmBanditArmRecommendation[] = [],
+  generatedAt: number
+): FrontierSwarmTournamentAdaptiveFeedback['observations'] {
+  return entries.filter((entry) => entry.action === 'promote' || entry.action === 'demote').map((entry) => ({
+    kind: entry.action === 'promote' ? 'healthy-throughput' : 'strategy-underperforming',
+    severity: entry.action === 'promote' ? 'info' : 'warning',
+    at: generatedAt,
+    value: entry.score,
+    ...(entry.target === 'strategy' ? { jobId: entry.key } : {}),
+    ...(entry.target === 'lane' ? { lane: entry.key } : {}),
+    ...(entry.target === 'concurrency-key' ? { concurrencyKey: entry.key } : {}),
+    reason: `bandit ${entry.action}: ${entry.reasonCodes.join(', ')}`,
+    metadata: { source: 'contextual-bandit', recommendationId: entry.id, target: entry.target, key: entry.key }
+  }));
 }
 
 function summarizeHistoryEntries(tournaments: readonly FrontierSwarmStrategyTournament[]): FrontierSwarmStrategyTournamentHistoryEntry[] {
