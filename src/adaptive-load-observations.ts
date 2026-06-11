@@ -184,6 +184,7 @@ export function adaptiveObservationShouldReduceReadyWindow(observation: Frontier
     || observation.kind === 'stale-patch'
     || observation.kind === 'browser-contention'
     || observation.kind === 'semantic-empty'
+    || observation.kind === 'semantic-weak'
     || observation.kind === 'log-noise'
     || observation.kind === 'discovery-only-output'
     || observation.kind === 'disk-pressure'

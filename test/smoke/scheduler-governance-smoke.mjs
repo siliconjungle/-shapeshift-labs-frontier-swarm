@@ -159,6 +159,23 @@ const observeOnlyAdaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
 assert.strictEqual(observeOnlyAdaptiveLoadPlan.effectiveLimits.maxReadyJobs, 4);
 assert.ok(observeOnlyAdaptiveLoadPlan.decisions.every((entry) => entry.action === 'observe'));
 
+const semanticWeakAdaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
+  plan: resourcePlan,
+  schedule: resourceSchedule,
+  mode: 'balanced',
+  maxLimits: { maxReadyJobs: 4 },
+  currentLimits: { maxReadyJobs: 4 },
+  observations: [{
+    kind: 'semantic-weak',
+    severity: 'warning',
+    jobId: resourcePlan.jobs[0].id,
+    reason: 'semantic auto-merge precision fell below landed threshold'
+  }],
+  generatedAt: 8465
+});
+assert.ok((semanticWeakAdaptiveLoadPlan.effectiveLimits.maxReadyJobs ?? 4) < 4);
+assert.ok(semanticWeakAdaptiveLoadPlan.decisions.some((entry) => entry.reason.includes('semantic auto-merge')));
+
 const fixtureCatalog = createSwarmFixtureCatalog({
   fixtures: [
     { id: 'logged-in-creator', state: { user: 'creator' }, tags: ['auth', 'creator'], setupCommands: ['node fixture.mjs'] },

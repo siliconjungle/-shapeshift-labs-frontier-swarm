@@ -50,6 +50,7 @@ export function tournamentRecommendationAction(kind: string): 'increase' | 'decr
     kind === 'strategy-underperforming' ||
     kind === 'discovery-only-output' ||
     kind === 'stale-patch' ||
+    kind === 'semantic-weak' || kind === 'review-backlog' ||
     kind === 'log-noise'
   ) return 'decrease';
   return 'observe';
