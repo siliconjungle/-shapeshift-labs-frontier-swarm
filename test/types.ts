@@ -58,6 +58,7 @@ import {
   type FrontierSwarmEvidenceIndex,
   type FrontierSwarmFixtureCatalog,
   type FrontierSwarmCoordinatorAgentDrainWork,
+  type FrontierSwarmCoordinatorAgentRootQueueSelectionPressure,
   type FrontierSwarmInstrumentationBudgetDecision,
   type FrontierSwarmInstrumentationBudget,
   type FrontierSwarmManifest,
@@ -179,6 +180,11 @@ coordinatorDrainWork.byDecision satisfies Record<string, string[]>;
 coordinatorDrainWork.byClassification satisfies Record<string, string[]>;
 coordinatorDrainWork.byLeaseScope satisfies Record<string, string[]>;
 coordinatorDrainWork.summary.admissionPressure.applyLocalQueueItemCount satisfies number;
+coordinatorDrainWork.summary.rootQueueSelectionPressure satisfies FrontierSwarmCoordinatorAgentRootQueueSelectionPressure;
+coordinatorDrainWork.summary.rootQueueSelectionPressure.rootQueueId satisfies string;
+coordinatorDrainWork.summary.rootQueueSelectionPressure.promotedJobIds satisfies string[];
+coordinatorDrainWork.summary.rootQueueSelectionPressure.byReason satisfies Record<string, string[]>;
+coordinatorDrainWork.summary.rootQueueSelectionPressure.admissionPressure.promoteUpwardQueueItemCount satisfies number;
 runStoreShards.shards satisfies readonly { path: string }[];
 contextPack.files satisfies string[];
 contextPack.commands satisfies readonly { command: string }[];

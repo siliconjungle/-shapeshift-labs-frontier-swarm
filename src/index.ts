@@ -2727,6 +2727,20 @@ export interface FrontierSwarmCoordinatorAgentDrainWorkConsumerSummary {
   promotedQueueItemCount: number;
   blockerQueueItemCount: number;
   admissionPressure: FrontierSwarmMergeAdmissionPressure;
+  rootQueueSelectionPressure: FrontierSwarmCoordinatorAgentRootQueueSelectionPressure;
+}
+
+export interface FrontierSwarmCoordinatorAgentRootQueueSelectionPressure {
+  rootQueueId: string;
+  leaseId?: string;
+  leaseScope?: string;
+  promotedWorkCount: number;
+  promotedQueueItemCount: number;
+  promotedJobIds: string[];
+  promotedQueueItemIds: string[];
+  bySourceQueueId: Record<string, string[]>;
+  byReason: Record<string, string[]>;
+  admissionPressure: FrontierSwarmMergeAdmissionPressure;
 }
 
 export interface FrontierSwarmCoordinatorAgentDrainWork {
@@ -2771,6 +2785,7 @@ export interface FrontierSwarmCoordinatorAgentDrainWork {
     recordedCount: number;
     blockedCount: number;
     admissionPressure: FrontierSwarmMergeAdmissionPressure;
+    rootQueueSelectionPressure: FrontierSwarmCoordinatorAgentRootQueueSelectionPressure;
   };
   metadata?: JsonObject;
 }
@@ -4660,7 +4675,8 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       rejectedCount: assignments.filter((assignment) => assignment.decision === 'rejected').length,
       recordedCount: assignments.filter((assignment) => assignment.decision === 'recorded').length,
       blockedCount: assignments.filter((assignment) => assignment.decision === 'blocked').length,
-      admissionPressure: consumerSummary.admissionPressure
+      admissionPressure: consumerSummary.admissionPressure,
+      rootQueueSelectionPressure: consumerSummary.rootQueueSelectionPressure
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
@@ -4684,7 +4700,8 @@ export function summarizeSwarmCoordinatorAgentDrainWork(
     terminalQueueItemCount: countUniqueDrainQueueItems(terminalAssignments),
     promotedQueueItemCount: countUniqueDrainQueueItems(work.promotedWork),
     blockerQueueItemCount: countUniqueDrainQueueItems(blockerAssignments),
-    admissionPressure: summarizeSwarmMergeAdmissionPressure(work.assignments)
+    admissionPressure: summarizeSwarmMergeAdmissionPressure(work.assignments),
+    rootQueueSelectionPressure: summarizeRootQueueSelectionPressure(work)
   };
 }
 
@@ -5768,6 +5785,27 @@ function summarizeSwarmMergeAdmissionPressure(
     recordOnlyQueueItemCount: recordOnlyQueueItemIds.size,
     trueBlockCount,
     trueBlockQueueItemCount: trueBlockQueueItemIds.size
+  };
+}
+
+function summarizeRootQueueSelectionPressure(
+  work: Pick<FrontierSwarmCoordinatorAgentDrainWork, 'leases' | 'promotedWork'>
+): FrontierSwarmCoordinatorAgentRootQueueSelectionPressure {
+  const rootLease = work.leases.find((lease) => lease.scopeKind === 'root')
+    ?? work.leases.find((lease) => !lease.parentQueueId);
+  const rootQueueId = rootLease?.queueId ?? 'root';
+  const rootPromotedWork = work.promotedWork.filter((entry) => entry.parentQueueId === rootQueueId);
+  const promotedQueueItemIds = uniqueStrings(rootPromotedWork.flatMap((entry) => entry.queueItemIds));
+  return {
+    rootQueueId,
+    ...(rootLease ? { leaseId: rootLease.id, leaseScope: rootLease.leaseScope } : {}),
+    promotedWorkCount: rootPromotedWork.length,
+    promotedQueueItemCount: promotedQueueItemIds.length,
+    promotedJobIds: uniqueStrings(rootPromotedWork.map((entry) => entry.jobId)),
+    promotedQueueItemIds,
+    bySourceQueueId: groupJobIdsBy(rootPromotedWork, (entry) => entry.fromQueueId),
+    byReason: groupJobIdsByMany(rootPromotedWork, (entry) => entry.reasons),
+    admissionPressure: summarizeSwarmMergeAdmissionPressure(rootPromotedWork)
   };
 }
 
