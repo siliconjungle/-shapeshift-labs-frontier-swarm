@@ -78,6 +78,7 @@ import {
   type FrontierSwarmMergeAdmissionPressure,
   type FrontierSwarmMergePlan,
   type FrontierSwarmMergeQueueAssignment,
+  type FrontierSwarmMergeQueueRetrySlice,
   type FrontierSwarmMergeQueueScope,
   type FrontierSwarmPlan,
   type FrontierSwarmQueueOverlay,
@@ -167,14 +168,22 @@ hierarchicalQueue.rootScopeId satisfies string;
 hierarchicalQueue.scopes satisfies readonly FrontierSwarmMergeQueueScope[];
 hierarchicalQueue.assignments satisfies readonly FrontierSwarmMergeQueueAssignment[];
 hierarchicalQueue.assignments satisfies readonly { scopeId: string; parentScopeIds: string[]; leaseKey: string; queueItemIds: string[]; action: string }[];
+hierarchicalQueue.assignments[0]?.retrySlices satisfies FrontierSwarmMergeQueueRetrySlice[] | undefined;
+hierarchicalQueue.assignments[0]?.semanticSliceScopeIds satisfies string[] | undefined;
+hierarchicalQueue.assignments[0]?.semanticSliceLeaseKeys satisfies string[] | undefined;
+hierarchicalQueue.assignments[0]?.parentDecisionRegions satisfies string[] | undefined;
+hierarchicalQueue.assignments[0]?.unknownRegions satisfies string[] | undefined;
 hierarchicalQueue.byScope satisfies Record<string, string[]>;
 hierarchicalQueue.summary.admissionPressure.promoteUpwardCount satisfies number;
 hierarchicalQueue.summary.admissionPressure.trueBlockQueueItemCount satisfies number;
 coordinatorDrainWork.rootQueueId satisfies string;
 coordinatorDrainWork.leases satisfies readonly { id: string; queueId: string; leaseScope: string; leaseKey: string; jobIds: string[] }[];
 coordinatorDrainWork.assignments satisfies readonly { queueId: string; rootQueueId: string; parentQueueIds: string[]; queueItemIds: string[]; leaseId: string; leaseScope: string }[];
+coordinatorDrainWork.assignments[0]?.retrySlices satisfies FrontierSwarmMergeQueueRetrySlice[] | undefined;
+coordinatorDrainWork.assignments[0]?.semanticSliceLeaseKeys satisfies string[] | undefined;
 coordinatorDrainWork.activeAssignments satisfies readonly { queueId: string; leaseId: string; leaseScope: string; queueItemIds: string[] }[];
 coordinatorDrainWork.terminalDecisions satisfies readonly { queueId: string; leaseId: string; leaseScope: string; queueItemIds: string[] }[];
+coordinatorDrainWork.terminalDecisions[0]?.retrySlices satisfies FrontierSwarmMergeQueueRetrySlice[] | undefined;
 coordinatorDrainWork.blockers satisfies readonly { leaseScope: string; queueItemIds: string[] }[];
 coordinatorDrainWork.byDecision satisfies Record<string, string[]>;
 coordinatorDrainWork.byClassification satisfies Record<string, string[]>;

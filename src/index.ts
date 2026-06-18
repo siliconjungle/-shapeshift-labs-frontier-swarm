@@ -2618,6 +2618,18 @@ export interface FrontierSwarmMergeQueueScope {
   metadata?: JsonObject;
 }
 
+export interface FrontierSwarmMergeQueueRetrySlice {
+  id: string;
+  scopeId: string;
+  kind: FrontierSwarmMergeQueueScopeKind;
+  parentScopeIds: string[];
+  leaseKey: string;
+  lane?: string;
+  changedPaths: string[];
+  changedRegions: string[];
+  reasons: string[];
+}
+
 export interface FrontierSwarmHierarchicalMergeQueueInput {
   id?: string;
   index: FrontierSwarmMergeIndex;
@@ -2675,6 +2687,11 @@ export interface FrontierSwarmMergeQueueAssignment {
   conflictingJobIds: string[];
   leaseKey: string;
   promoteToScopeId?: string;
+  retrySlices?: FrontierSwarmMergeQueueRetrySlice[];
+  semanticSliceScopeIds?: string[];
+  semanticSliceLeaseKeys?: string[];
+  parentDecisionRegions?: string[];
+  unknownRegions?: string[];
 }
 
 export interface FrontierSwarmMergeQueuePromotion {
@@ -2691,6 +2708,7 @@ interface FrontierSwarmMergeQueueEntryScopes {
   pathScopeIds: string[];
   unknownRegions: string[];
   parentDecisionRegions: string[];
+  retrySlices: FrontierSwarmMergeQueueRetrySlice[];
   reasons: string[];
 }
 
@@ -2834,6 +2852,11 @@ export interface FrontierSwarmCoordinatorAgentDrainAssignment {
   changedPaths: string[];
   changedRegions: string[];
   conflictingJobIds: string[];
+  retrySlices?: FrontierSwarmMergeQueueRetrySlice[];
+  semanticSliceScopeIds?: string[];
+  semanticSliceLeaseKeys?: string[];
+  parentDecisionRegions?: string[];
+  unknownRegions?: string[];
 }
 
 export interface FrontierSwarmCoordinatorAgentDrainTerminalDecision {
@@ -2848,6 +2871,11 @@ export interface FrontierSwarmCoordinatorAgentDrainTerminalDecision {
   classification: 'terminal';
   terminal: true;
   reasons: string[];
+  retrySlices?: FrontierSwarmMergeQueueRetrySlice[];
+  semanticSliceScopeIds?: string[];
+  semanticSliceLeaseKeys?: string[];
+  parentDecisionRegions?: string[];
+  unknownRegions?: string[];
 }
 
 export interface FrontierSwarmCoordinatorAgentPromotedWork {
@@ -4456,6 +4484,11 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     const promoteToScopeId = decision.action === 'promote'
       ? mergeQueuePromotionScopeId(entry, scope, scopes, leafScopeIdsByJob, rootScopeId)
       : undefined;
+    const retrySlices = decision.action === 'rerun' && decision.reasons.includes('semantic-slice-lease-retry')
+      ? cloneMergeQueueRetrySlices(entryScopes?.retrySlices ?? [])
+      : [];
+    const semanticSliceScopeIds = uniqueStrings(retrySlices.map((slice) => slice.scopeId));
+    const semanticSliceLeaseKeys = uniqueStrings(retrySlices.map((slice) => slice.leaseKey));
     const assignment: FrontierSwarmMergeQueueAssignment = {
       jobId: entry.jobId,
       ...(entry.taskId ? { taskId: entry.taskId } : {}),
@@ -4474,7 +4507,10 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
       changedRegions: [...entry.changedRegions],
       conflictingJobIds: [...entry.conflictingJobIds],
       leaseKey: scope.leaseKey,
-      ...(promoteToScopeId ? { promoteToScopeId } : {})
+      ...(promoteToScopeId ? { promoteToScopeId } : {}),
+      ...(retrySlices.length ? { retrySlices, semanticSliceScopeIds, semanticSliceLeaseKeys } : {}),
+      ...(entryScopes?.parentDecisionRegions.length ? { parentDecisionRegions: [...entryScopes.parentDecisionRegions] } : {}),
+      ...(entryScopes?.unknownRegions.length ? { unknownRegions: [...entryScopes.unknownRegions] } : {})
     };
     assignments.push(assignment);
     scope.jobIds = uniqueStrings([...scope.jobIds, entry.jobId]);
@@ -4590,7 +4626,12 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       mergeReadiness: assignment.mergeReadiness,
       changedPaths: [...assignment.changedPaths],
       changedRegions: [...assignment.changedRegions],
-      conflictingJobIds: [...assignment.conflictingJobIds]
+      conflictingJobIds: [...assignment.conflictingJobIds],
+      ...(assignment.retrySlices?.length ? { retrySlices: cloneMergeQueueRetrySlices(assignment.retrySlices) } : {}),
+      ...(assignment.semanticSliceScopeIds?.length ? { semanticSliceScopeIds: [...assignment.semanticSliceScopeIds] } : {}),
+      ...(assignment.semanticSliceLeaseKeys?.length ? { semanticSliceLeaseKeys: [...assignment.semanticSliceLeaseKeys] } : {}),
+      ...(assignment.parentDecisionRegions?.length ? { parentDecisionRegions: [...assignment.parentDecisionRegions] } : {}),
+      ...(assignment.unknownRegions?.length ? { unknownRegions: [...assignment.unknownRegions] } : {})
     };
   });
   const terminalDecisions: FrontierSwarmCoordinatorAgentDrainTerminalDecision[] = assignments
@@ -4606,7 +4647,12 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       decision: assignment.decision,
       classification: 'terminal',
       terminal: true,
-      reasons: [...assignment.reasons]
+      reasons: [...assignment.reasons],
+      ...(assignment.retrySlices?.length ? { retrySlices: cloneMergeQueueRetrySlices(assignment.retrySlices) } : {}),
+      ...(assignment.semanticSliceScopeIds?.length ? { semanticSliceScopeIds: [...assignment.semanticSliceScopeIds] } : {}),
+      ...(assignment.semanticSliceLeaseKeys?.length ? { semanticSliceLeaseKeys: [...assignment.semanticSliceLeaseKeys] } : {}),
+      ...(assignment.parentDecisionRegions?.length ? { parentDecisionRegions: [...assignment.parentDecisionRegions] } : {}),
+      ...(assignment.unknownRegions?.length ? { unknownRegions: [...assignment.unknownRegions] } : {})
     }));
   const promotedWork: FrontierSwarmCoordinatorAgentPromotedWork[] = assignments
     .filter((assignment) => assignment.assignedAction === 'promote' && assignment.parentQueueId)
@@ -5513,11 +5559,14 @@ function mergeQueueScopesForEntry(
       ? pathScopes[0] as FrontierSwarmMergeQueueScope
       : entry.changedPaths.length === 0 && changedRegions.length === 0
         ? rootScope
-        : laneScope ?? rootScope;
+      : laneScope ?? rootScope;
   const reasons: string[] = [];
   if (unknownRegions.length) reasons.push('unknown-semantic-region');
   if (parentDecisionRegions.length) reasons.push('public-api-or-contract-region');
   if (semanticScopes.length + pathScopes.length > 1) reasons.push('cross-scope-change');
+  const retrySlices = semanticScopes
+    .filter((scope) => scope.changedRegions.every((region) => !mergeQueueRegionRequiresParentDecision(region)))
+    .map((scope) => mergeQueueRetrySliceForScope(entry, scope, scopes));
   return {
     leafScope,
     scopeIds: uniqueStrings([...semanticScopes.map((scope) => scope.id), ...pathScopes.map((scope) => scope.id), leafScope.id]),
@@ -5525,6 +5574,7 @@ function mergeQueueScopesForEntry(
     pathScopeIds: pathScopes.map((scope) => scope.id),
     unknownRegions,
     parentDecisionRegions,
+    retrySlices,
     reasons: uniqueStrings(reasons)
   };
 }
@@ -5539,6 +5589,38 @@ function mergeQueueParentScopeIds(scope: FrontierSwarmMergeQueueScope, scopes: M
     next = scopes.get(next)?.parentId;
   }
   return parentIds;
+}
+
+function mergeQueueRetrySliceForScope(
+  entry: FrontierSwarmMergeIndexEntry,
+  scope: FrontierSwarmMergeQueueScope,
+  scopes: Map<string, FrontierSwarmMergeQueueScope>
+): FrontierSwarmMergeQueueRetrySlice {
+  return {
+    id: 'swarm-merge-queue-retry-slice:' + stableHash([entry.jobId, scope.id, scope.leaseKey]),
+    scopeId: scope.id,
+    kind: scope.kind,
+    parentScopeIds: mergeQueueParentScopeIds(scope, scopes),
+    leaseKey: scope.leaseKey,
+    ...(scope.lane ? { lane: scope.lane } : {}),
+    changedPaths: [...scope.changedPaths],
+    changedRegions: [...scope.changedRegions],
+    reasons: ['semantic-slice-lease-retry']
+  };
+}
+
+function cloneMergeQueueRetrySlices(slices: readonly FrontierSwarmMergeQueueRetrySlice[]): FrontierSwarmMergeQueueRetrySlice[] {
+  return slices.map((slice) => ({
+    id: slice.id,
+    scopeId: slice.scopeId,
+    kind: slice.kind,
+    parentScopeIds: [...slice.parentScopeIds],
+    leaseKey: slice.leaseKey,
+    ...(slice.lane ? { lane: slice.lane } : {}),
+    changedPaths: [...slice.changedPaths],
+    changedRegions: [...slice.changedRegions],
+    reasons: [...slice.reasons]
+  }));
 }
 
 function classifyMergeQueueAssignment(
@@ -5579,6 +5661,9 @@ function classifyMergeQueueAssignment(
   if (cleanAutoMerge && (context.entryScopes?.unknownRegions.length ?? 0) > 0) {
     return { action: 'promote', reasons: uniqueStrings(['unknown-semantic-region', ...reasons]) };
   }
+  if (cleanAutoMerge && mergeQueueEntryCanRetrySemanticSlices(context.entryScopes)) {
+    return { action: 'rerun', reasons: uniqueStrings(['semantic-slice-lease-retry', 'cross-scope-change', ...reasons]) };
+  }
   if (cleanAutoMerge && mergeQueueEntrySpansMultipleLeaseScopes(entry, context.entryScopes)) {
     return { action: 'promote', reasons: uniqueStrings(['cross-scope-change', ...reasons]) };
   }
@@ -5605,6 +5690,13 @@ function mergeQueueEntrySpansMultipleLeaseScopes(
   }
   if (entry.changedRegions.length > 1) return true;
   return entry.changedRegions.length === 0 && entry.changedPaths.length > 1;
+}
+
+function mergeQueueEntryCanRetrySemanticSlices(entryScopes?: FrontierSwarmMergeQueueEntryScopes): boolean {
+  return (entryScopes?.retrySlices.length ?? 0) > 1
+    && (entryScopes?.unknownRegions.length ?? 0) === 0
+    && (entryScopes?.parentDecisionRegions.length ?? 0) === 0
+    && (entryScopes?.pathScopeIds.length ?? 0) === 0;
 }
 
 function mergeQueueRegionIsUnknown(region: string): boolean {

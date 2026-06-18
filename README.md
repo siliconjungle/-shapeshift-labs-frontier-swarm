@@ -8,6 +8,8 @@ Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and
 
 `createSwarmHierarchicalMergeQueue()` turns a merge index plus optional admission budget into root, lane, semantic-region, and path queues. Clean admitted work can be applied by the local queue, clean excess work stays queued locally, stale work is marked for rerun, failed evidence is rejected, discovery work is recorded without review debt, true blockers stay blocked, and conflicted or higher-risk work is promoted upward.
 
+Clean auto-mergeable work that spans multiple known semantic regions is returned as a `rerun` assignment with `retrySlices`, `semanticSliceScopeIds`, and `semanticSliceLeaseKeys`. Runners can use those slices to retry the same-file work under separate semantic leases instead of promoting the whole file to the root queue. Same-region conflicts still serialize under one local lease, while unknown regions and public-contract/API regions promote to the parent queue for a broader decision.
+
 The queue model is generic. Runners can map scopes to any repository, package, feature, service, file, symbol, or semantic ownership region without baking project-specific package names into the core package.
 
 Caller-provided `scopes` are serialized as opaque queue scopes. Their `id`, `kind`, `leaseKey`, `changedPaths`, `changedRegions`, and `metadata` stay runner-owned, with `kind` defaulting to `custom`; when no custom scope is supplied, queue assignments still derive the default root, lane, semantic-region, and path scopes from the merge index.

@@ -641,11 +641,34 @@ assert.strictEqual(new Set(sameRegionQueue.assignments.map((assignment) => assig
 assert.ok(sameRegionQueue.assignments.every((assignment) => assignment.reasons.includes('same-lease-scope-conflict')));
 assert.strictEqual(new Set(sameRegionQueue.assignments.map((assignment) => assignment.leaseKey)).size, 1);
 assert.strictEqual(sameRegionQueue.summary.admissionPressure.queueLocalQueueItemCount, 2);
+assert.ok(sameRegionQueue.assignments.every((assignment) => assignment.retrySlices === undefined));
 const crossScopeQueue = createSwarmHierarchicalMergeQueue({ index: crossScopeIndex, generatedAt: 7260 });
 const crossScopeAssignment = crossScopeQueue.assignments.find((assignment) => assignment.jobId === crossScopeBundle.jobId);
-assert.strictEqual(crossScopeAssignment.action, 'promote');
-assert.strictEqual(crossScopeAssignment.promoteToScopeId, 'root');
+assert.strictEqual(crossScopeAssignment.action, 'rerun');
+assert.strictEqual(crossScopeAssignment.promoteToScopeId, undefined);
 assert.ok(crossScopeAssignment.reasons.includes('cross-scope-change'));
+assert.ok(crossScopeAssignment.reasons.includes('semantic-slice-lease-retry'));
+assert.strictEqual(crossScopeQueue.summary.rerunCount, 1);
+assert.strictEqual(crossScopeQueue.summary.promoteCount, 0);
+assert.deepStrictEqual(crossScopeQueue.promotions, []);
+assert.strictEqual(crossScopeAssignment.retrySlices.length, 2);
+assert.deepStrictEqual(crossScopeAssignment.retrySlices.map((slice) => slice.changedRegions[0]).sort(), ['content.docs', 'content.legal']);
+assert.deepStrictEqual(crossScopeAssignment.semanticSliceLeaseKeys.sort(), [
+  'merge:semantic:runtime:content.docs',
+  'merge:semantic:runtime:content.legal'
+]);
+assert.ok(crossScopeAssignment.retrySlices.every((slice) => slice.kind === 'semantic-region'));
+assert.ok(crossScopeAssignment.retrySlices.every((slice) => slice.parentScopeIds.includes('lane:runtime')));
+const semanticSliceRetryDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: crossScopeQueue, generatedAt: 7265 });
+const semanticSliceRetryDrainAssignment = semanticSliceRetryDrainWork.assignments.find((assignment) => assignment.jobId === crossScopeBundle.jobId);
+assert.strictEqual(semanticSliceRetryDrainAssignment.assignedAction, 'rerun');
+assert.strictEqual(semanticSliceRetryDrainAssignment.decision, 'rerun');
+assert.strictEqual(semanticSliceRetryDrainAssignment.terminal, true);
+assert.strictEqual(semanticSliceRetryDrainAssignment.retrySlices.length, 2);
+assert.deepStrictEqual(
+  semanticSliceRetryDrainWork.terminalDecisions.find((decision) => decision.jobId === crossScopeBundle.jobId).semanticSliceLeaseKeys.sort(),
+  crossScopeAssignment.semanticSliceLeaseKeys.sort()
+);
 const highRiskQueue = createSwarmHierarchicalMergeQueue({ index: highRiskIndex, generatedAt: 7270 });
 const highRiskAssignment = highRiskQueue.assignments.find((assignment) => assignment.jobId === highRiskBundle.jobId);
 assert.strictEqual(highRiskAssignment.action, 'promote');
@@ -659,6 +682,8 @@ assert.ok(publicApiAssignment.scopeId.startsWith('semantic-region:'));
 assert.strictEqual(publicApiAssignment.leaseKey, `merge:semantic:${publicApiAssignment.lane ?? 'root'}:contract.public-api`);
 assert.deepStrictEqual(publicApiAssignment.queueItemIds, publicApiBundle.queueItemIds);
 assert.ok(publicApiAssignment.reasons.includes('public-api-or-contract-region'));
+assert.deepStrictEqual(publicApiAssignment.parentDecisionRegions, ['contract.public-api']);
+assert.strictEqual(publicApiAssignment.retrySlices, undefined);
 assert.strictEqual(publicApiQueue.summary.admissionPressure.promoteUpwardQueueItemCount, 1);
 const unknownRegionQueue = createSwarmHierarchicalMergeQueue({ index: unknownRegionIndex, generatedAt: 7290 });
 const unknownRegionAssignment = unknownRegionQueue.assignments.find((assignment) => assignment.jobId === unknownRegionBundle.jobId);
@@ -667,6 +692,8 @@ assert.strictEqual(unknownRegionQueue.scopes.find((scope) => scope.id === unknow
 assert.strictEqual(unknownRegionAssignment.leaseKey, 'merge:path:src/runtime/unknown-region.ts');
 assert.strictEqual(unknownRegionAssignment.promoteToScopeId, unknownRegionAssignment.parentScopeIds[0]);
 assert.ok(unknownRegionAssignment.reasons.includes('unknown-semantic-region'));
+assert.deepStrictEqual(unknownRegionAssignment.unknownRegions, ['unknown']);
+assert.strictEqual(unknownRegionAssignment.retrySlices, undefined);
 assert.strictEqual(unknownRegionQueue.summary.admissionPressure.promoteUpwardCount, 1);
 const conflictQueue = createSwarmHierarchicalMergeQueue({ index: pathFallbackIndex, generatedAt: 7300 });
 assert.strictEqual(conflictQueue.summary.promoteCount, 2);
