@@ -4,6 +4,12 @@ Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and
 
 `frontier-swarm` turns parallel agent work into data: manifests, parent/child swarm layers, compute profiles, lane ownership, task queues, dry-run plans, event streams, changed-path checks, job results, and proof hashes. It does not spawn processes, create git worktrees, call Codex, or talk to queue brokers. Runners attach through structural adapters such as `@shapeshift-labs/frontier-swarm-codex`.
 
+## Hierarchical Merge Queues
+
+`createSwarmHierarchicalMergeQueue()` turns a merge index plus optional admission budget into root, lane, semantic-region, and path queues. Clean admitted work can be applied by the local queue, clean excess work stays queued locally, stale work is marked for rerun, failed evidence is rejected, discovery work is recorded without review debt, true blockers stay blocked, and conflicted or higher-risk work is promoted upward.
+
+The queue model is generic. Runners can map scopes to any repository, package, feature, service, file, symbol, or semantic ownership region without baking project-specific package names into the core package.
+
 
 ## Related Packages
 

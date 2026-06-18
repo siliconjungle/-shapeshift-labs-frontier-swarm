@@ -23,6 +23,7 @@ import {
   createSwarmInstrumentationBudget,
   createSwarmLeases,
   createSwarmHotspotReport,
+  createSwarmHierarchicalMergeQueue,
   createSwarmLanePlaybook,
   createSwarmMergeAdmission,
   createSwarmManifest,
@@ -508,6 +509,42 @@ assert.deepStrictEqual(lanePlaybook.changedRegions, ['content.docs', 'content.le
 const patchStackPlan = createSwarmPatchStackPlan({ index: pathFallbackIndex, maxStackSize: 4, generatedAt: 7100 });
 assert.strictEqual(patchStackPlan.summary.jobCount, 2);
 assert.ok(patchStackPlan.stacks.some((stack) => stack.conflicts.length === 1));
+const hierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, admission, generatedAt: 7200 });
+assert.strictEqual(hierarchicalQueue.summary.applyLocalCount, 1);
+assert.strictEqual(hierarchicalQueue.summary.queueLocalCount, 1);
+assert.strictEqual(hierarchicalQueue.summary.promoteCount, 0);
+assert.strictEqual(hierarchicalQueue.scopes.filter((scope) => scope.kind === 'semantic-region').length, 2);
+assert.strictEqual(
+  hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).action,
+  'apply-local'
+);
+assert.strictEqual(
+  hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleB.jobId).action,
+  'queue-local'
+);
+const conflictQueue = createSwarmHierarchicalMergeQueue({ index: pathFallbackIndex, generatedAt: 7300 });
+assert.strictEqual(conflictQueue.summary.promoteCount, 2);
+assert.deepStrictEqual(conflictQueue.promotions.map((promotion) => promotion.toScopeId), ['root', 'root']);
+assert.ok(conflictQueue.byAction.promote.includes(regionBundleA.jobId));
+assert.ok(conflictQueue.byScope['lane:runtime'] === undefined);
+const sameLaneRuntimeJob = scalePlan.jobs.find((job) => job.id !== regionBundleA.jobId && job.lane === 'runtime');
+assert.ok(sameLaneRuntimeJob);
+const sameLaneUnregionedBundle = createSwarmMergeBundle({
+  job: sameLaneRuntimeJob,
+  result: {
+    jobId: sameLaneRuntimeJob.id,
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-website-content.ts'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/d/changes.patch',
+  riskLevel: 'low'
+});
+const sameLaneConflictQueue = createSwarmHierarchicalMergeQueue({
+  index: createSwarmMergeIndex({ bundles: [regionBundleA, sameLaneUnregionedBundle], generatedAt: 7400 }),
+  generatedAt: 7500
+});
+assert.deepStrictEqual(sameLaneConflictQueue.promotions.map((promotion) => promotion.toScopeId), ['lane:runtime', 'lane:runtime']);
 
 const decomposed = decomposeSwarmFeature({
   featureId: 'feature-x',

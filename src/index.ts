@@ -90,6 +90,8 @@ export const FRONTIER_SWARM_LANE_PLAYBOOK_KIND = 'frontier.swarm.lane-playbook';
 export const FRONTIER_SWARM_LANE_PLAYBOOK_VERSION = 1;
 export const FRONTIER_SWARM_PATCH_STACK_PLAN_KIND = 'frontier.swarm.patch-stack-plan';
 export const FRONTIER_SWARM_PATCH_STACK_PLAN_VERSION = 1;
+export const FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_KIND = 'frontier.swarm.hierarchical-merge-queue';
+export const FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
@@ -2554,6 +2556,113 @@ export interface FrontierSwarmPatchStack {
   gateHints: string[];
 }
 
+export type FrontierSwarmMergeQueueScopeKind =
+  | 'root'
+  | 'lane'
+  | 'semantic-region'
+  | 'path'
+  | 'custom'
+  | string;
+
+export type FrontierSwarmMergeQueueAssignmentAction =
+  | 'apply-local'
+  | 'queue-local'
+  | 'promote'
+  | 'rerun'
+  | 'reject'
+  | 'record-only'
+  | 'block'
+  | string;
+
+export interface FrontierSwarmMergeQueueScopeInput {
+  id: string;
+  kind?: FrontierSwarmMergeQueueScopeKind;
+  parentId?: string;
+  title?: string;
+  lane?: string;
+  changedPaths?: readonly string[];
+  changedRegions?: readonly string[];
+  leaseKey?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmMergeQueueScope {
+  id: string;
+  kind: FrontierSwarmMergeQueueScopeKind;
+  parentId?: string;
+  title: string;
+  lane?: string;
+  changedPaths: string[];
+  changedRegions: string[];
+  leaseKey: string;
+  jobIds: string[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmHierarchicalMergeQueueInput {
+  id?: string;
+  index: FrontierSwarmMergeIndex;
+  admission?: FrontierSwarmMergeAdmission;
+  rootScopeId?: string;
+  scopes?: readonly FrontierSwarmMergeQueueScopeInput[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmHierarchicalMergeQueue {
+  kind: typeof FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_KIND;
+  version: typeof FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_VERSION;
+  id: string;
+  mergeIndexId: string;
+  admissionId?: string;
+  generatedAt: number;
+  rootScopeId: string;
+  scopes: FrontierSwarmMergeQueueScope[];
+  assignments: FrontierSwarmMergeQueueAssignment[];
+  promotions: FrontierSwarmMergeQueuePromotion[];
+  byScope: Record<string, string[]>;
+  byAction: Record<string, string[]>;
+  summary: {
+    scopeCount: number;
+    assignmentCount: number;
+    applyLocalCount: number;
+    queueLocalCount: number;
+    promoteCount: number;
+    rerunCount: number;
+    rejectCount: number;
+    blockCount: number;
+    recordOnlyCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmMergeQueueAssignment {
+  jobId: string;
+  taskId?: string;
+  lane?: string;
+  title?: string;
+  scopeId: string;
+  parentScopeIds: string[];
+  action: FrontierSwarmMergeQueueAssignmentAction;
+  reasons: string[];
+  admitted: boolean;
+  riskLevel: FrontierSwarmRiskLevel;
+  disposition: FrontierSwarmMergeDisposition;
+  mergeReadiness: FrontierSwarmMergeReadiness;
+  changedPaths: string[];
+  changedRegions: string[];
+  conflictingJobIds: string[];
+  leaseKey: string;
+  promoteToScopeId?: string;
+}
+
+export interface FrontierSwarmMergeQueuePromotion {
+  jobId: string;
+  fromScopeId: string;
+  toScopeId: string;
+  reasons: string[];
+}
+
 export interface FrontierSwarmProof {
   kind: typeof FRONTIER_SWARM_PROOF_KIND;
   version: typeof FRONTIER_SWARM_PROOF_VERSION;
@@ -4105,6 +4214,101 @@ export function createSwarmPatchStackPlan(input: FrontierSwarmPatchStackPlanInpu
   };
 }
 
+export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchicalMergeQueueInput): FrontierSwarmHierarchicalMergeQueue {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const rootScopeId = input.rootScopeId ?? 'root';
+  const scopes = new Map<string, FrontierSwarmMergeQueueScope>();
+  ensureMergeQueueScope(scopes, {
+    id: rootScopeId,
+    kind: 'root',
+    title: 'Root merge queue',
+    leaseKey: `merge:${rootScopeId}`
+  });
+  for (const scope of input.scopes ?? []) ensureMergeQueueScope(scopes, scope);
+  const leafScopeIdsByJob = new Map<string, string>();
+  for (const entry of input.index.entries) {
+    const scope = mergeQueueLeafScopeForEntry(entry, scopes, rootScopeId);
+    leafScopeIdsByJob.set(entry.jobId, scope.id);
+  }
+  const admitted = new Set(input.admission?.admitted ?? []);
+  const deferralsByJob = new Map((input.admission?.deferred ?? []).map((entry) => [entry.jobId, entry.reasons]));
+  const assignments: FrontierSwarmMergeQueueAssignment[] = [];
+  const promotions: FrontierSwarmMergeQueuePromotion[] = [];
+  for (const entry of input.index.entries) {
+    const scopeId = leafScopeIdsByJob.get(entry.jobId) ?? rootScopeId;
+    const scope = scopes.get(scopeId) ?? scopes.get(rootScopeId);
+    if (!scope) throw new Error(`Missing merge queue scope: ${scopeId}`);
+    const deferralReasons = deferralsByJob.get(entry.jobId) ?? [];
+    const entryAdmitted = input.admission ? admitted.has(entry.jobId) : defaultMergeQueueAdmission(entry);
+    const decision = mergeQueueDecisionForEntry(entry, entryAdmitted, deferralReasons);
+    const parentScopeIds = mergeQueueParentScopeIds(scope, scopes);
+    const promoteToScopeId = decision.action === 'promote'
+      ? mergeQueuePromotionScopeId(entry, scope, scopes, leafScopeIdsByJob, rootScopeId)
+      : undefined;
+    const assignment: FrontierSwarmMergeQueueAssignment = {
+      jobId: entry.jobId,
+      ...(entry.taskId ? { taskId: entry.taskId } : {}),
+      ...(entry.lane ? { lane: entry.lane } : {}),
+      ...(entry.title ? { title: entry.title } : {}),
+      scopeId: scope.id,
+      parentScopeIds,
+      action: decision.action,
+      reasons: decision.reasons,
+      admitted: entryAdmitted,
+      riskLevel: entry.riskLevel,
+      disposition: entry.disposition,
+      mergeReadiness: entry.mergeReadiness,
+      changedPaths: [...entry.changedPaths],
+      changedRegions: [...entry.changedRegions],
+      conflictingJobIds: [...entry.conflictingJobIds],
+      leaseKey: scope.leaseKey,
+      ...(promoteToScopeId ? { promoteToScopeId } : {})
+    };
+    assignments.push(assignment);
+    scope.jobIds = uniqueStrings([...scope.jobIds, entry.jobId]);
+    if (promoteToScopeId) {
+      promotions.push({
+        jobId: entry.jobId,
+        fromScopeId: scope.id,
+        toScopeId: promoteToScopeId,
+        reasons: decision.reasons
+      });
+    }
+  }
+  const byScope = groupJobIdsBy(assignments, (assignment) => assignment.scopeId);
+  const byAction = groupJobIdsBy(assignments, (assignment) => assignment.action);
+  const orderedScopes = Array.from(scopes.values()).sort((left, right) => (
+    mergeQueueScopeRank(left.kind) - mergeQueueScopeRank(right.kind)
+    || left.id.localeCompare(right.id)
+  ));
+  return {
+    kind: FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_KIND,
+    version: FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_VERSION,
+    id: input.id ?? 'swarm-hierarchical-merge-queue:' + stableHash([input.index.id, input.admission?.id, orderedScopes, assignments, promotions, generatedAt]),
+    mergeIndexId: input.index.id,
+    ...(input.admission ? { admissionId: input.admission.id } : {}),
+    generatedAt,
+    rootScopeId,
+    scopes: orderedScopes,
+    assignments,
+    promotions,
+    byScope,
+    byAction,
+    summary: {
+      scopeCount: orderedScopes.length,
+      assignmentCount: assignments.length,
+      applyLocalCount: byAction['apply-local']?.length ?? 0,
+      queueLocalCount: byAction['queue-local']?.length ?? 0,
+      promoteCount: byAction.promote?.length ?? 0,
+      rerunCount: byAction.rerun?.length ?? 0,
+      rejectCount: byAction.reject?.length ?? 0,
+      blockCount: byAction.block?.length ?? 0,
+      recordOnlyCount: byAction['record-only']?.length ?? 0
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
 export function resolveSwarmCompute(
   manifestInput: FrontierSwarmManifest | FrontierSwarmManifestInput,
   taskInput: FrontierSwarmTask | FrontierSwarmTaskInput
@@ -4819,6 +5023,165 @@ function reviewerLaneReasons(entry: FrontierSwarmMergeIndexEntry): string[] {
   if (!entry.autoMergeable) reasons.push('not-auto-mergeable');
   if (entry.staleAgainstHead) reasons.push('stale-against-head');
   return uniqueStrings(reasons);
+}
+
+function ensureMergeQueueScope(
+  scopes: Map<string, FrontierSwarmMergeQueueScope>,
+  input: FrontierSwarmMergeQueueScopeInput
+): FrontierSwarmMergeQueueScope {
+  const existing = scopes.get(input.id);
+  if (existing) {
+    existing.changedPaths = uniqueStrings([...existing.changedPaths, ...(input.changedPaths ?? [])]);
+    existing.changedRegions = uniqueStrings([...existing.changedRegions, ...(input.changedRegions ?? [])]);
+    return existing;
+  }
+  const scope: FrontierSwarmMergeQueueScope = {
+    id: input.id,
+    kind: input.kind ?? 'custom',
+    ...(input.parentId ? { parentId: input.parentId } : {}),
+    title: input.title ?? titleFromId(input.id),
+    ...(input.lane ? { lane: input.lane } : {}),
+    changedPaths: uniqueStrings(input.changedPaths ?? []),
+    changedRegions: uniqueStrings(input.changedRegions ?? []),
+    leaseKey: input.leaseKey ?? `merge:${input.id}`,
+    jobIds: [],
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+  scopes.set(scope.id, scope);
+  return scope;
+}
+
+function mergeQueueLeafScopeForEntry(
+  entry: FrontierSwarmMergeIndexEntry,
+  scopes: Map<string, FrontierSwarmMergeQueueScope>,
+  rootScopeId: string
+): FrontierSwarmMergeQueueScope {
+  const laneScope = entry.lane
+    ? ensureMergeQueueScope(scopes, {
+      id: `lane:${slug(entry.lane)}`,
+      kind: 'lane',
+      parentId: rootScopeId,
+      title: `${titleFromId(entry.lane)} merge queue`,
+      lane: entry.lane,
+      leaseKey: `merge:lane:${entry.lane}`
+    })
+    : undefined;
+  const parentId = laneScope?.id ?? rootScopeId;
+  if (entry.changedRegions.length === 1) {
+    const region = entry.changedRegions[0] as string;
+    return ensureMergeQueueScope(scopes, {
+      id: `semantic-region:${stableHash([parentId, region])}`,
+      kind: 'semantic-region',
+      parentId,
+      title: `Semantic region ${region}`,
+      ...(entry.lane ? { lane: entry.lane } : {}),
+      changedPaths: entry.changedPaths,
+      changedRegions: [region],
+      leaseKey: `merge:semantic:${entry.lane ?? 'root'}:${region}`
+    });
+  }
+  if (entry.changedPaths.length === 1) {
+    const file = entry.changedPaths[0] as string;
+    return ensureMergeQueueScope(scopes, {
+      id: `path:${stableHash([parentId, file])}`,
+      kind: 'path',
+      parentId,
+      title: `Path ${file}`,
+      ...(entry.lane ? { lane: entry.lane } : {}),
+      changedPaths: [file],
+      leaseKey: `merge:path:${file}`
+    });
+  }
+  return laneScope ?? scopes.get(rootScopeId) ?? ensureMergeQueueScope(scopes, {
+    id: rootScopeId,
+    kind: 'root',
+    title: 'Root merge queue'
+  });
+}
+
+function mergeQueueParentScopeIds(scope: FrontierSwarmMergeQueueScope, scopes: Map<string, FrontierSwarmMergeQueueScope>): string[] {
+  const parentIds: string[] = [];
+  const visited = new Set<string>([scope.id]);
+  let next = scope.parentId;
+  while (next && !visited.has(next)) {
+    parentIds.push(next);
+    visited.add(next);
+    next = scopes.get(next)?.parentId;
+  }
+  return parentIds;
+}
+
+function mergeQueueDecisionForEntry(
+  entry: FrontierSwarmMergeIndexEntry,
+  admitted: boolean,
+  deferralReasons: readonly string[]
+): { action: FrontierSwarmMergeQueueAssignmentAction; reasons: string[] } {
+  const reasons = uniqueStrings([...reviewerLaneReasons(entry), ...deferralReasons]);
+  if (entry.staleAgainstHead || entry.disposition === 'stale-against-head') {
+    return { action: 'rerun', reasons: uniqueStrings(['stale-against-head', ...reasons]) };
+  }
+  if (
+    entry.disposition === 'rejected'
+    || entry.status === 'failed'
+    || entry.ownershipViolations.length > 0
+    || entry.patchStatus === 'failed-check'
+  ) {
+    return { action: 'reject', reasons: uniqueStrings(['failed-or-invalid-evidence', ...reasons]) };
+  }
+  if (entry.disposition === 'discovery-only' || entry.mergeReadiness === 'discovery-only') {
+    return { action: 'record-only', reasons: uniqueStrings(['discovery-only', ...reasons]) };
+  }
+  if (entry.disposition === 'blocked' || entry.mergeReadiness === 'blocked' || entry.status === 'blocked') {
+    return { action: 'block', reasons: uniqueStrings(['true-blocker', ...reasons]) };
+  }
+  const cleanAutoMerge = entry.disposition === 'auto-mergeable' && entry.autoMergeable;
+  if (cleanAutoMerge && entry.conflictingJobIds.length === 0) {
+    if (admitted) return { action: 'apply-local', reasons: uniqueStrings(['admitted-by-merge-admission', ...reasons]) };
+    return {
+      action: 'queue-local',
+      reasons: uniqueStrings([...(deferralReasons.length ? deferralReasons : ['waiting-for-local-queue-capacity']), ...reasons])
+    };
+  }
+  return { action: 'promote', reasons: uniqueStrings(['coordinator-queue-required', ...reasons]) };
+}
+
+function defaultMergeQueueAdmission(entry: FrontierSwarmMergeIndexEntry): boolean {
+  return entry.disposition === 'auto-mergeable'
+    && entry.autoMergeable
+    && !entry.staleAgainstHead
+    && entry.conflictingJobIds.length === 0
+    && entry.ownershipViolations.length === 0
+    && entry.riskLevel !== 'high';
+}
+
+function mergeQueuePromotionScopeId(
+  entry: FrontierSwarmMergeIndexEntry,
+  scope: FrontierSwarmMergeQueueScope,
+  scopes: Map<string, FrontierSwarmMergeQueueScope>,
+  leafScopeIdsByJob: Map<string, string>,
+  rootScopeId: string
+): string {
+  if (entry.riskLevel === 'high') return rootScopeId;
+  if (entry.conflictingJobIds.length > 0) {
+    const conflictScopes = entry.conflictingJobIds
+      .map((jobId) => leafScopeIdsByJob.get(jobId))
+      .filter((value): value is string => Boolean(value))
+      .map((scopeId) => scopes.get(scopeId))
+      .filter((value): value is FrontierSwarmMergeQueueScope => Boolean(value));
+    const sameLane = conflictScopes.length > 0 && conflictScopes.every((conflictScope) => conflictScope.lane === scope.lane && scope.lane !== undefined);
+    if (!sameLane) return rootScopeId;
+    const laneParent = mergeQueueParentScopeIds(scope, scopes).find((scopeId) => scopes.get(scopeId)?.kind === 'lane');
+    return laneParent ?? rootScopeId;
+  }
+  return mergeQueueParentScopeIds(scope, scopes)[0] ?? rootScopeId;
+}
+
+function mergeQueueScopeRank(kind: FrontierSwarmMergeQueueScopeKind): number {
+  if (kind === 'root') return 0;
+  if (kind === 'lane') return 1;
+  if (kind === 'semantic-region') return 2;
+  if (kind === 'path') return 3;
+  return 4;
 }
 
 function hashBucket(value: string, buckets: number): number {
