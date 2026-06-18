@@ -1,5 +1,6 @@
 import assert from 'node:assert';
 import {
+  FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND,
   FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID,
   checkSwarmOwnership,
   classifySwarmMergeDisposition,
@@ -14,6 +15,7 @@ import {
   createSwarmAutoReviewReport,
   createSwarmBlackboard,
   createSwarmBottleneckReport,
+  createSwarmCoordinatorAgentDrainWork,
   createSwarmContextPack,
   createSwarmDebugHandoff,
   createSwarmDivergenceReport,
@@ -573,7 +575,7 @@ const sameLaneConflictQueue = createSwarmHierarchicalMergeQueue({
   generatedAt: 7500
 });
 assert.deepStrictEqual(sameLaneConflictQueue.promotions.map((promotion) => promotion.toScopeId), ['lane:runtime', 'lane:runtime']);
-const terminalJobs = [scalePlan.jobs[8], scalePlan.jobs[9], scalePlan.jobs[10], scalePlan.jobs[11]];
+const terminalJobs = [scalePlan.jobs[8], scalePlan.jobs[9], scalePlan.jobs[10], scalePlan.jobs[11], scalePlan.jobs[12]];
 assert.ok(terminalJobs.every(Boolean));
 const terminalBundleStale = createSwarmMergeBundle({
   job: terminalJobs[0],
@@ -616,9 +618,25 @@ const terminalBundleBlocked = createSwarmMergeBundle({
   },
   riskLevel: 'high'
 });
+const terminalBundleCoordinatorReview = createSwarmMergeBundle({
+  job: terminalJobs[4],
+  result: {
+    jobId: terminalJobs[4].id,
+    status: 'completed',
+    changedPaths: ['src/terminal/coordinator-review.ts']
+  },
+  patchPath: 'agent-runs/terminal/coordinator-review.patch',
+  riskLevel: 'medium'
+});
 const terminalQueue = createSwarmHierarchicalMergeQueue({
   index: createSwarmMergeIndex({
-    bundles: [terminalBundleStale, terminalBundleRejected, terminalBundleDiscovery, terminalBundleBlocked],
+    bundles: [
+      terminalBundleStale,
+      terminalBundleRejected,
+      terminalBundleDiscovery,
+      terminalBundleBlocked,
+      terminalBundleCoordinatorReview
+    ],
     generatedAt: 7550
   }),
   generatedAt: 7560
@@ -627,16 +645,83 @@ assert.strictEqual(terminalQueue.summary.rerunCount, 1);
 assert.strictEqual(terminalQueue.summary.rejectCount, 1);
 assert.strictEqual(terminalQueue.summary.recordOnlyCount, 1);
 assert.strictEqual(terminalQueue.summary.blockCount, 1);
-assert.strictEqual(terminalQueue.summary.promoteCount, 0);
-assert.deepStrictEqual(terminalQueue.promotions, []);
+assert.strictEqual(terminalQueue.summary.promoteCount, 1);
+assert.deepStrictEqual(terminalQueue.byAction.block, [terminalBundleBlocked.jobId]);
+assert.deepStrictEqual(terminalQueue.byAction.promote, [terminalBundleCoordinatorReview.jobId]);
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).action, 'rerun');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId).action, 'reject');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId).action, 'record-only');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).action, 'block');
+assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId).action, 'promote');
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).reasons.includes('stale-against-head'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId).reasons.includes('failed-or-invalid-evidence'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId).reasons.includes('discovery-only'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).reasons.includes('true-blocker'));
+assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId).reasons.includes('coordinator-queue-required'));
+assert.ok(terminalQueue.promotions.find((promotion) => promotion.jobId === terminalBundleCoordinatorReview.jobId).reasons.includes('coordinator-queue-required'));
+
+const coordinatorDrainWork = createSwarmCoordinatorAgentDrainWork({
+  queue: hierarchicalQueue,
+  coordinatorId: 'coordinator-1',
+  generatedAt: 7570
+});
+assert.strictEqual(coordinatorDrainWork.kind, FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND);
+assert.strictEqual(coordinatorDrainWork.queueId, hierarchicalQueue.id);
+assert.strictEqual(coordinatorDrainWork.coordinatorId, 'coordinator-1');
+assert.strictEqual(coordinatorDrainWork.summary.appliedCount, 1);
+assert.strictEqual(coordinatorDrainWork.summary.queuedCount, 1);
+assert.strictEqual(coordinatorDrainWork.summary.terminalCount, 1);
+assert.strictEqual(coordinatorDrainWork.summary.nonTerminalCount, 1);
+const drainApply = coordinatorDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId);
+assert.strictEqual(drainApply.assignedAction, 'apply-local');
+assert.strictEqual(drainApply.decision, 'applied');
+assert.strictEqual(drainApply.classification, 'terminal');
+assert.strictEqual(drainApply.terminal, true);
+assert.ok(drainApply.leaseId.startsWith('swarm-coordinator-agent-drain-lease:'));
+assert.ok(drainApply.leaseScope.startsWith('merge:semantic:'));
+assert.strictEqual(drainApply.queueId, hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).scopeId);
+const drainQueue = coordinatorDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleB.jobId);
+assert.strictEqual(drainQueue.assignedAction, 'queue-local');
+assert.strictEqual(drainQueue.decision, 'queued');
+assert.strictEqual(drainQueue.classification, 'non-terminal');
+assert.strictEqual(drainQueue.terminal, false);
+assert.ok(drainQueue.reasons.includes('max-ready'));
+
+const promoteDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: conflictQueue, generatedAt: 7580 });
+assert.strictEqual(promoteDrainWork.summary.escalatedCount, 2);
+assert.strictEqual(promoteDrainWork.summary.nonTerminalCount, 2);
+const drainPromote = promoteDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId);
+assert.strictEqual(drainPromote.assignedAction, 'promote');
+assert.strictEqual(drainPromote.decision, 'escalated');
+assert.strictEqual(drainPromote.classification, 'non-terminal');
+assert.strictEqual(drainPromote.parentQueueId, 'root');
+assert.strictEqual(drainPromote.promoteToQueueId, 'root');
+assert.ok(promoteDrainWork.promotedWork.some((entry) => entry.jobId === regionBundleA.jobId && entry.parentQueueId === 'root'));
+
+const terminalDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: terminalQueue, generatedAt: 7590 });
+assert.strictEqual(terminalDrainWork.summary.terminalCount, 4);
+assert.strictEqual(terminalDrainWork.summary.escalatedCount, 1);
+assert.strictEqual(terminalDrainWork.summary.rerunCount, 1);
+assert.strictEqual(terminalDrainWork.summary.rejectedCount, 1);
+assert.strictEqual(terminalDrainWork.summary.recordedCount, 1);
+assert.strictEqual(terminalDrainWork.summary.blockedCount, 1);
+assert.strictEqual(terminalDrainWork.summary.nonTerminalCount, 1);
+const drainRerun = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId);
+const drainReject = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId);
+const drainRecordOnly = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId);
+const drainBlock = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId);
+assert.deepStrictEqual(
+  [drainRerun.decision, drainReject.decision, drainRecordOnly.decision, drainBlock.decision],
+  ['rerun', 'rejected', 'recorded', 'blocked']
+);
+assert.ok([drainRerun, drainReject, drainRecordOnly, drainBlock].every((assignment) => assignment.classification === 'terminal' && assignment.terminal === true));
+assert.strictEqual(drainBlock.assignedAction, 'block');
+assert.ok(drainBlock.reasons.includes('true-blocker'));
+const drainCoordinatorReview = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId);
+assert.strictEqual(drainCoordinatorReview.assignedAction, 'promote');
+assert.strictEqual(drainCoordinatorReview.decision, 'escalated');
+assert.strictEqual(drainCoordinatorReview.classification, 'non-terminal');
+assert.strictEqual(drainCoordinatorReview.terminal, false);
 
 const decomposed = decomposeSwarmFeature({
   featureId: 'feature-x',
