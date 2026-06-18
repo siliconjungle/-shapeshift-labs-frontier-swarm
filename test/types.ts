@@ -15,6 +15,7 @@ import {
   querySwarmEvidenceIndex,
   createSwarmBlackboard,
   querySwarmBlackboard,
+  createSwarmCoordinatorAgentDrainWork,
   createSwarmReferenceOraclePlan,
   createSwarmReferenceOracleResponse,
   createSwarmArtifactRoutingPlan,
@@ -34,6 +35,7 @@ import {
   createSwarmReviewPlan,
   createSwarmMergeIndex,
   createSwarmMergeAdmission,
+  createSwarmHierarchicalMergeQueue,
   createSwarmMergePlan,
   createSwarmMergeBundle,
   createSwarmRunStoreShards,
@@ -55,9 +57,11 @@ import {
   type FrontierSwarmDivergenceReport,
   type FrontierSwarmEvidenceIndex,
   type FrontierSwarmFixtureCatalog,
+  type FrontierSwarmCoordinatorAgentDrainWork,
   type FrontierSwarmInstrumentationBudgetDecision,
   type FrontierSwarmInstrumentationBudget,
   type FrontierSwarmManifest,
+  type FrontierSwarmHierarchicalMergeQueue,
   type FrontierSwarmOracleCorpus,
   type FrontierSwarmParityOracle,
   type FrontierSwarmProgressModel,
@@ -113,6 +117,8 @@ const mergeBundle: FrontierSwarmMergeBundle = createSwarmMergeBundle({ job: plan
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
+const hierarchicalQueue: FrontierSwarmHierarchicalMergeQueue = createSwarmHierarchicalMergeQueue({ index: mergeIndex, admission });
+const coordinatorDrainWork: FrontierSwarmCoordinatorAgentDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: hierarchicalQueue });
 const runStoreShards: FrontierSwarmRunStoreShards = createSwarmRunStoreShards({ plan });
 const contextPack: FrontierSwarmContextPack = createSwarmContextPack({ job: plan.jobs[0] });
 const oracleCorpus: FrontierSwarmOracleCorpus = createSwarmOracleCorpus({ artifacts: [{ id: 'oracle', path: 'oracle.json' }] });
@@ -153,6 +159,9 @@ mergeBundle.queueItemIds satisfies string[];
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
 admission.admitted satisfies string[];
+hierarchicalQueue.assignments satisfies readonly { scopeId: string; leaseKey: string; action: string }[];
+coordinatorDrainWork.leases satisfies readonly { id: string; queueId: string; leaseScope: string; leaseKey: string }[];
+coordinatorDrainWork.assignments satisfies readonly { queueId: string; leaseId: string; leaseScope: string }[];
 runStoreShards.shards satisfies readonly { path: string }[];
 contextPack.files satisfies string[];
 contextPack.commands satisfies readonly { command: string }[];

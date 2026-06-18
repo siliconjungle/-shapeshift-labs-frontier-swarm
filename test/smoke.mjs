@@ -453,9 +453,56 @@ const unregionedBundle = createSwarmMergeBundle({
   patchPath: 'agent-runs/c/changes.patch',
   riskLevel: 'low'
 });
+const sameRegionJob = scalePlan.jobs[14];
+const crossScopeJob = scalePlan.jobs[16];
+const highRiskJob = scalePlan.jobs[18];
+assert.ok(sameRegionJob && crossScopeJob && highRiskJob);
+const sameRegionBundle = createSwarmMergeBundle({
+  job: sameRegionJob,
+  result: {
+    jobId: sameRegionJob.id,
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-website-content.ts'],
+    changedRegions: ['content.docs'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/same-region/changes.patch',
+  riskLevel: 'low'
+});
+const crossScopeBundle = createSwarmMergeBundle({
+  job: crossScopeJob,
+  result: {
+    jobId: crossScopeJob.id,
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-website-content.ts'],
+    changedRegions: ['content.docs', 'content.legal'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/cross-scope/changes.patch',
+  riskLevel: 'low'
+});
+const highRiskBundle = createSwarmMergeBundle({
+  job: highRiskJob,
+  result: {
+    jobId: highRiskJob.id,
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-website-content.ts'],
+    changedRegions: ['content.docs'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/high-risk/changes.patch',
+  riskLevel: 'high'
+});
 const regionIndex = createSwarmMergeIndex({ bundles: [regionBundleA, regionBundleB], generatedAt: 6100 });
 assert.strictEqual(regionIndex.summary.conflictCount, 0);
 assert.strictEqual(regionIndex.summary.readyToApplyCount, 2);
+const sameRegionIndex = createSwarmMergeIndex({ bundles: [regionBundleA, sameRegionBundle], generatedAt: 6150 });
+assert.strictEqual(sameRegionIndex.summary.conflictCount, 1);
+assert.deepStrictEqual(sameRegionIndex.entries.find((entry) => entry.jobId === sameRegionBundle.jobId).conflictingJobIds, [regionBundleA.jobId]);
+const crossScopeIndex = createSwarmMergeIndex({ bundles: [crossScopeBundle], generatedAt: 6160 });
+assert.strictEqual(crossScopeIndex.summary.conflictCount, 0);
+const highRiskIndex = createSwarmMergeIndex({ bundles: [highRiskBundle], generatedAt: 6170 });
+assert.strictEqual(highRiskIndex.summary.readyToApplyCount, 1);
 const pathFallbackIndex = createSwarmMergeIndex({ bundles: [regionBundleA, unregionedBundle], generatedAt: 6200 });
 assert.strictEqual(pathFallbackIndex.summary.conflictCount, 1);
 assert.deepStrictEqual(pathFallbackIndex.entries.find((entry) => entry.jobId === regionBundleA.jobId).conflictingJobIds, [unregionedBundle.jobId]);
@@ -512,6 +559,8 @@ assert.deepStrictEqual(lanePlaybook.changedRegions, ['content.docs', 'content.le
 const patchStackPlan = createSwarmPatchStackPlan({ index: pathFallbackIndex, maxStackSize: 4, generatedAt: 7100 });
 assert.strictEqual(patchStackPlan.summary.jobCount, 2);
 assert.ok(patchStackPlan.stacks.some((stack) => stack.conflicts.length === 1));
+const defaultHierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, generatedAt: 7190 });
+assert.strictEqual(defaultHierarchicalQueue.summary.applyLocalCount, 2);
 const hierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, admission, generatedAt: 7200 });
 assert.strictEqual(hierarchicalQueue.summary.applyLocalCount, 1);
 assert.strictEqual(hierarchicalQueue.summary.queueLocalCount, 1);
@@ -530,6 +579,22 @@ assert.strictEqual(
   hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleB.jobId).action,
   'queue-local'
 );
+const sameRegionQueue = createSwarmHierarchicalMergeQueue({ index: sameRegionIndex, generatedAt: 7250 });
+assert.strictEqual(sameRegionQueue.summary.queueLocalCount, 2);
+assert.strictEqual(sameRegionQueue.summary.promoteCount, 0);
+assert.strictEqual(new Set(sameRegionQueue.assignments.map((assignment) => assignment.scopeId)).size, 1);
+assert.ok(sameRegionQueue.assignments.every((assignment) => assignment.reasons.includes('same-lease-scope-conflict')));
+assert.strictEqual(new Set(sameRegionQueue.assignments.map((assignment) => assignment.leaseKey)).size, 1);
+const crossScopeQueue = createSwarmHierarchicalMergeQueue({ index: crossScopeIndex, generatedAt: 7260 });
+const crossScopeAssignment = crossScopeQueue.assignments.find((assignment) => assignment.jobId === crossScopeBundle.jobId);
+assert.strictEqual(crossScopeAssignment.action, 'promote');
+assert.strictEqual(crossScopeAssignment.promoteToScopeId, 'root');
+assert.ok(crossScopeAssignment.reasons.includes('cross-scope-change'));
+const highRiskQueue = createSwarmHierarchicalMergeQueue({ index: highRiskIndex, generatedAt: 7270 });
+const highRiskAssignment = highRiskQueue.assignments.find((assignment) => assignment.jobId === highRiskBundle.jobId);
+assert.strictEqual(highRiskAssignment.action, 'promote');
+assert.strictEqual(highRiskAssignment.promoteToScopeId, 'root');
+assert.ok(highRiskAssignment.reasons.includes('high-risk'));
 const conflictQueue = createSwarmHierarchicalMergeQueue({ index: pathFallbackIndex, generatedAt: 7300 });
 assert.strictEqual(conflictQueue.summary.promoteCount, 2);
 assert.deepStrictEqual(conflictQueue.promotions.map((promotion) => promotion.toScopeId), ['root', 'root']);
@@ -713,6 +778,15 @@ assert.strictEqual(drainQueue.classification, 'non-terminal');
 assert.strictEqual(drainQueue.terminal, false);
 assert.deepStrictEqual(drainQueue.queueItemIds, regionBundleB.queueItemIds);
 assert.ok(drainQueue.reasons.includes('max-ready'));
+const stableCoordinatorDrainWork = createSwarmCoordinatorAgentDrainWork({
+  queue: createSwarmHierarchicalMergeQueue({ index: regionIndex, admission, generatedAt: 7201 }),
+  coordinatorId: 'coordinator-1',
+  generatedAt: 7571
+});
+assert.deepStrictEqual(
+  coordinatorDrainWork.leases.map((lease) => [lease.queueId, lease.id, lease.leaseScope]),
+  stableCoordinatorDrainWork.leases.map((lease) => [lease.queueId, lease.id, lease.leaseScope])
+);
 
 const promoteDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: conflictQueue, generatedAt: 7580 });
 assert.strictEqual(promoteDrainWork.summary.escalatedCount, 2);
@@ -729,9 +803,16 @@ assert.strictEqual(drainPromote.decision, 'escalated');
 assert.strictEqual(drainPromote.classification, 'non-terminal');
 assert.strictEqual(drainPromote.parentQueueId, 'root');
 assert.strictEqual(drainPromote.promoteToQueueId, 'root');
+const drainPromoteLease = promoteDrainWork.leases.find((lease) => lease.queueId === drainPromote.parentQueueId);
+assert.strictEqual(drainPromote.leaseId, drainPromoteLease.id);
+assert.strictEqual(drainPromote.leaseScope, drainPromoteLease.leaseScope);
+assert.ok(drainPromoteLease.actions.promote.includes(regionBundleA.jobId));
+assert.ok(drainPromoteLease.jobIds.includes(regionBundleA.jobId));
 assert.ok(promoteDrainWork.promotedWork.some((entry) => (
   entry.jobId === regionBundleA.jobId
   && entry.parentQueueId === 'root'
+  && entry.leaseId === drainPromoteLease.id
+  && entry.leaseScope === drainPromoteLease.leaseScope
   && entry.queueItemIds.join('\n') === regionBundleA.queueItemIds.join('\n')
 )));
 

@@ -4393,7 +4393,10 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     if (!scope) throw new Error(`Missing merge queue scope: ${scopeId}`);
     const deferralReasons = deferralsByJob.get(entry.jobId) ?? [];
     const entryAdmitted = input.admission ? admitted.has(entry.jobId) : defaultMergeQueueAdmission(entry);
-    const decision = mergeQueueDecisionForEntry(entry, entryAdmitted, deferralReasons);
+    const decision = mergeQueueDecisionForEntry(entry, entryAdmitted, deferralReasons, {
+      scope,
+      leafScopeIdsByJob
+    });
     const parentScopeIds = mergeQueueParentScopeIds(scope, scopes);
     const promoteToScopeId = decision.action === 'promote'
       ? mergeQueuePromotionScopeId(entry, scope, scopes, leafScopeIdsByJob, rootScopeId)
@@ -4467,9 +4470,12 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
   const generatedAt = input.generatedAt ?? Date.now();
   const scopesById = new Map(input.queue.scopes.map((scope) => [scope.id, scope]));
   const leases: FrontierSwarmCoordinatorAgentDrainLease[] = input.queue.scopes.map((scope) => {
-    const scopedAssignments = input.queue.assignments.filter((assignment) => assignment.scopeId === scope.id);
+    const scopedAssignments = input.queue.assignments.filter((assignment) => (
+      assignment.scopeId === scope.id || assignment.promoteToScopeId === scope.id
+    ));
+    const jobIds = uniqueStrings([...scope.jobIds, ...scopedAssignments.map((assignment) => assignment.jobId)]);
     return {
-      id: coordinatorAgentDrainLeaseId(input.queue.id, scope),
+      id: coordinatorAgentDrainLeaseId(scope),
       queueId: scope.id,
       scopeId: scope.id,
       scopeKind: scope.kind,
@@ -4480,7 +4486,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       ...(scope.lane ? { lane: scope.lane } : {}),
       changedPaths: [...scope.changedPaths],
       changedRegions: [...scope.changedRegions],
-      jobIds: [...scope.jobIds],
+      jobIds,
       actions: groupJobIdsBy(scopedAssignments, (assignment) => assignment.action),
       ...(scope.metadata ? { metadata: cloneJsonValue(scope.metadata) as JsonObject } : {})
     };
@@ -4488,9 +4494,15 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
   const leasesByQueueId = new Map(leases.map((lease) => [lease.queueId, lease]));
   const assignments: FrontierSwarmCoordinatorAgentDrainAssignment[] = input.queue.assignments.map((assignment) => {
     const scope = scopesById.get(assignment.scopeId);
-    const lease = leasesByQueueId.get(assignment.scopeId);
-    const leaseId = lease?.id ?? 'swarm-coordinator-agent-drain-lease:' + stableHash([input.queue.id, assignment.scopeId, assignment.leaseKey]);
-    const leaseScope = lease?.leaseScope ?? assignment.leaseKey;
+    const assignmentLeaseScopeId = coordinatorAgentDrainAssignmentLeaseScopeId(assignment);
+    const leaseScopeRecord = scopesById.get(assignmentLeaseScopeId);
+    const lease = leasesByQueueId.get(assignmentLeaseScopeId);
+    const leaseScope = lease?.leaseScope ?? leaseScopeRecord?.leaseKey ?? assignment.leaseKey;
+    const leaseId = lease?.id ?? coordinatorAgentDrainLeaseId({
+      id: assignmentLeaseScopeId,
+      kind: leaseScopeRecord?.kind ?? 'custom',
+      leaseKey: leaseScope
+    });
     const decision = coordinatorAgentDrainDecisionForAction(assignment.action);
     const terminal = coordinatorAgentDrainActionIsTerminal(assignment.action);
     const parentQueueId = assignment.action === 'promote'
@@ -5392,7 +5404,7 @@ function mergeQueueLeafScopeForEntry(
       leaseKey: `merge:semantic:${entry.lane ?? 'root'}:${region}`
     });
   }
-  if (entry.changedPaths.length === 1) {
+  if (entry.changedRegions.length === 0 && entry.changedPaths.length === 1) {
     const file = entry.changedPaths[0] as string;
     return ensureMergeQueueScope(scopes, {
       id: `path:${stableHash([parentId, file])}`,
@@ -5426,7 +5438,11 @@ function mergeQueueParentScopeIds(scope: FrontierSwarmMergeQueueScope, scopes: M
 function mergeQueueDecisionForEntry(
   entry: FrontierSwarmMergeIndexEntry,
   admitted: boolean,
-  deferralReasons: readonly string[]
+  deferralReasons: readonly string[],
+  context: {
+    scope: FrontierSwarmMergeQueueScope;
+    leafScopeIdsByJob: Map<string, string>;
+  }
 ): { action: FrontierSwarmMergeQueueAssignmentAction; reasons: string[] } {
   const reasons = uniqueStrings([...reviewerLaneReasons(entry), ...deferralReasons]);
   if (entry.staleAgainstHead || entry.disposition === 'stale-against-head') {
@@ -5446,7 +5462,16 @@ function mergeQueueDecisionForEntry(
   if (entry.disposition === 'blocked' || entry.mergeReadiness === 'blocked' || entry.status === 'blocked') {
     return { action: 'block', reasons: uniqueStrings(['true-blocker', ...reasons]) };
   }
+  if (entry.riskLevel === 'high') {
+    return { action: 'promote', reasons: uniqueStrings(['high-risk', ...reasons]) };
+  }
   const cleanAutoMerge = entry.disposition === 'auto-mergeable' && entry.autoMergeable;
+  if (cleanAutoMerge && mergeQueueEntrySpansMultipleLeaseScopes(entry)) {
+    return { action: 'promote', reasons: uniqueStrings(['cross-scope-change', ...reasons]) };
+  }
+  if (cleanAutoMerge && entry.conflictingJobIds.length > 0 && mergeQueueConflictsStayInScope(entry, context.scope, context.leafScopeIdsByJob)) {
+    return { action: 'queue-local', reasons: uniqueStrings(['same-lease-scope-conflict', ...reasons]) };
+  }
   if (cleanAutoMerge && entry.conflictingJobIds.length === 0) {
     if (admitted) return { action: 'apply-local', reasons: uniqueStrings(['admitted-by-merge-admission', ...reasons]) };
     return {
@@ -5455,6 +5480,20 @@ function mergeQueueDecisionForEntry(
     };
   }
   return { action: 'promote', reasons: uniqueStrings(['coordinator-queue-required', ...reasons]) };
+}
+
+function mergeQueueEntrySpansMultipleLeaseScopes(entry: FrontierSwarmMergeIndexEntry): boolean {
+  if (entry.changedRegions.length > 1) return true;
+  return entry.changedRegions.length === 0 && entry.changedPaths.length > 1;
+}
+
+function mergeQueueConflictsStayInScope(
+  entry: FrontierSwarmMergeIndexEntry,
+  scope: FrontierSwarmMergeQueueScope,
+  leafScopeIdsByJob: Map<string, string>
+): boolean {
+  return entry.conflictingJobIds.length > 0
+    && entry.conflictingJobIds.every((jobId) => leafScopeIdsByJob.get(jobId) === scope.id);
 }
 
 function defaultMergeQueueAdmission(entry: FrontierSwarmMergeIndexEntry): boolean {
@@ -5496,8 +5535,14 @@ function mergeQueueScopeRank(kind: FrontierSwarmMergeQueueScopeKind): number {
   return 4;
 }
 
-function coordinatorAgentDrainLeaseId(queueId: string, scope: FrontierSwarmMergeQueueScope): string {
-  return 'swarm-coordinator-agent-drain-lease:' + stableHash([queueId, scope.id, scope.leaseKey]);
+function coordinatorAgentDrainLeaseId(scope: Pick<FrontierSwarmMergeQueueScope, 'id' | 'kind' | 'leaseKey'>): string {
+  return 'swarm-coordinator-agent-drain-lease:' + stableHash([scope.kind, scope.id, scope.leaseKey]);
+}
+
+function coordinatorAgentDrainAssignmentLeaseScopeId(assignment: FrontierSwarmMergeQueueAssignment): string {
+  return assignment.action === 'promote'
+    ? assignment.promoteToScopeId ?? assignment.parentScopeIds[0] ?? assignment.scopeId
+    : assignment.scopeId;
 }
 
 function coordinatorAgentDrainDecisionForAction(action: FrontierSwarmMergeQueueAssignmentAction): FrontierSwarmCoordinatorAgentDrainDecision {
