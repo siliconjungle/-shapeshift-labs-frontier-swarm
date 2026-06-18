@@ -69,6 +69,7 @@ import {
   checkSwarmRegionOwnership,
   resolveSwarmCompute,
   routeSwarmEventToMailboxes,
+  summarizeSwarmCoordinatorAgentDrainWork,
   validateSwarmManifest
 } from '../dist/index.js';
 
@@ -676,6 +677,22 @@ assert.strictEqual(coordinatorDrainWork.summary.appliedCount, 1);
 assert.strictEqual(coordinatorDrainWork.summary.queuedCount, 1);
 assert.strictEqual(coordinatorDrainWork.summary.terminalCount, 1);
 assert.strictEqual(coordinatorDrainWork.summary.nonTerminalCount, 1);
+const coordinatorDrainSummary = summarizeSwarmCoordinatorAgentDrainWork(coordinatorDrainWork);
+assert.deepStrictEqual(coordinatorDrainSummary, {
+  leaseCount: coordinatorDrainWork.leases.length,
+  assignmentCount: 2,
+  activeAssignmentCount: 1,
+  terminalCount: 1,
+  promotedWorkCount: 0,
+  blockerCount: 0,
+  queueItemCount: 2,
+  activeQueueItemCount: 1,
+  terminalQueueItemCount: 1,
+  promotedQueueItemCount: 0,
+  blockerQueueItemCount: 0
+});
+assert.strictEqual(coordinatorDrainWork.summary.activeAssignmentCount, coordinatorDrainSummary.activeAssignmentCount);
+assert.strictEqual(coordinatorDrainWork.summary.queueItemCount, coordinatorDrainSummary.queueItemCount);
 const drainApply = coordinatorDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId);
 assert.strictEqual(drainApply.assignedAction, 'apply-local');
 assert.strictEqual(drainApply.decision, 'applied');
@@ -701,6 +718,11 @@ const promoteDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: conflictQ
 assert.strictEqual(promoteDrainWork.summary.escalatedCount, 2);
 assert.strictEqual(promoteDrainWork.summary.nonTerminalCount, 2);
 assert.strictEqual(promoteDrainWork.summary.promotedWorkCount, 2);
+const promoteDrainSummary = summarizeSwarmCoordinatorAgentDrainWork(promoteDrainWork);
+assert.strictEqual(promoteDrainSummary.activeAssignmentCount, 2);
+assert.strictEqual(promoteDrainSummary.promotedWorkCount, 2);
+assert.strictEqual(promoteDrainSummary.promotedQueueItemCount, 2);
+assert.strictEqual(promoteDrainWork.summary.promotedQueueItemCount, promoteDrainSummary.promotedQueueItemCount);
 const drainPromote = promoteDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId);
 assert.strictEqual(drainPromote.assignedAction, 'promote');
 assert.strictEqual(drainPromote.decision, 'escalated');
@@ -721,6 +743,27 @@ assert.strictEqual(terminalDrainWork.summary.rejectedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.recordedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.blockedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.nonTerminalCount, 1);
+const terminalDrainSummary = summarizeSwarmCoordinatorAgentDrainWork(terminalDrainWork);
+assert.deepStrictEqual(terminalDrainSummary, {
+  leaseCount: terminalDrainWork.leases.length,
+  assignmentCount: 5,
+  activeAssignmentCount: 1,
+  terminalCount: 4,
+  promotedWorkCount: 1,
+  blockerCount: 1,
+  queueItemCount: 5,
+  activeQueueItemCount: 1,
+  terminalQueueItemCount: 4,
+  promotedQueueItemCount: 1,
+  blockerQueueItemCount: 1
+});
+assert.strictEqual(terminalDrainWork.summary.activeAssignmentCount, terminalDrainSummary.activeAssignmentCount);
+assert.strictEqual(terminalDrainWork.summary.blockerCount, terminalDrainSummary.blockerCount);
+assert.strictEqual(terminalDrainWork.summary.blockerQueueItemCount, terminalDrainSummary.blockerQueueItemCount);
+assert.deepStrictEqual(
+  summarizeSwarmCoordinatorAgentDrainWork(JSON.parse(JSON.stringify(terminalDrainWork))),
+  terminalDrainSummary
+);
 const drainRerun = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId);
 const drainReject = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId);
 const drainRecordOnly = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId);

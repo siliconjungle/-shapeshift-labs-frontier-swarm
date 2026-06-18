@@ -2686,6 +2686,20 @@ export interface FrontierSwarmCoordinatorAgentDrainWorkInput {
   metadata?: unknown;
 }
 
+export interface FrontierSwarmCoordinatorAgentDrainWorkConsumerSummary {
+  leaseCount: number;
+  assignmentCount: number;
+  activeAssignmentCount: number;
+  terminalCount: number;
+  promotedWorkCount: number;
+  blockerCount: number;
+  queueItemCount: number;
+  activeQueueItemCount: number;
+  terminalQueueItemCount: number;
+  promotedQueueItemCount: number;
+  blockerQueueItemCount: number;
+}
+
 export interface FrontierSwarmCoordinatorAgentDrainWork {
   kind: typeof FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND;
   version: typeof FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_VERSION;
@@ -2705,9 +2719,16 @@ export interface FrontierSwarmCoordinatorAgentDrainWork {
   summary: {
     leaseCount: number;
     assignmentCount: number;
+    activeAssignmentCount?: number;
     terminalCount: number;
     nonTerminalCount: number;
     promotedWorkCount: number;
+    blockerCount?: number;
+    queueItemCount?: number;
+    activeQueueItemCount?: number;
+    terminalQueueItemCount?: number;
+    promotedQueueItemCount?: number;
+    blockerQueueItemCount?: number;
     appliedCount: number;
     queuedCount: number;
     escalatedCount: number;
@@ -4537,6 +4558,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
     }));
   const byAction = groupJobIdsBy(assignments, (assignment) => assignment.assignedAction);
   const byQueueId = groupJobIdsBy(assignments, (assignment) => assignment.queueId);
+  const consumerSummary = summarizeSwarmCoordinatorAgentDrainWork({ leases, assignments, terminalDecisions, promotedWork });
   return {
     kind: FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND,
     version: FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_VERSION,
@@ -4556,9 +4578,16 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
     summary: {
       leaseCount: leases.length,
       assignmentCount: assignments.length,
+      activeAssignmentCount: consumerSummary.activeAssignmentCount,
       terminalCount: terminalDecisions.length,
       nonTerminalCount: assignments.length - terminalDecisions.length,
       promotedWorkCount: promotedWork.length,
+      blockerCount: consumerSummary.blockerCount,
+      queueItemCount: consumerSummary.queueItemCount,
+      activeQueueItemCount: consumerSummary.activeQueueItemCount,
+      terminalQueueItemCount: consumerSummary.terminalQueueItemCount,
+      promotedQueueItemCount: consumerSummary.promotedQueueItemCount,
+      blockerQueueItemCount: consumerSummary.blockerQueueItemCount,
       appliedCount: assignments.filter((assignment) => assignment.decision === 'applied').length,
       queuedCount: assignments.filter((assignment) => assignment.decision === 'queued').length,
       escalatedCount: assignments.filter((assignment) => assignment.decision === 'escalated').length,
@@ -4568,6 +4597,27 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       blockedCount: assignments.filter((assignment) => assignment.decision === 'blocked').length
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function summarizeSwarmCoordinatorAgentDrainWork(
+  work: Pick<FrontierSwarmCoordinatorAgentDrainWork, 'leases' | 'assignments' | 'terminalDecisions' | 'promotedWork'>
+): FrontierSwarmCoordinatorAgentDrainWorkConsumerSummary {
+  const activeAssignments = work.assignments.filter((assignment) => !coordinatorAgentDrainAssignmentIsTerminal(assignment));
+  const terminalAssignments = work.assignments.filter((assignment) => coordinatorAgentDrainAssignmentIsTerminal(assignment));
+  const blockerAssignments = work.assignments.filter((assignment) => coordinatorAgentDrainAssignmentIsBlocker(assignment));
+  return {
+    leaseCount: work.leases.length,
+    assignmentCount: work.assignments.length,
+    activeAssignmentCount: activeAssignments.length,
+    terminalCount: terminalAssignments.length,
+    promotedWorkCount: work.promotedWork.length,
+    blockerCount: blockerAssignments.length,
+    queueItemCount: countUniqueDrainQueueItems(work.assignments),
+    activeQueueItemCount: countUniqueDrainQueueItems(activeAssignments),
+    terminalQueueItemCount: countUniqueDrainQueueItems(terminalAssignments),
+    promotedQueueItemCount: countUniqueDrainQueueItems(work.promotedWork),
+    blockerQueueItemCount: countUniqueDrainQueueItems(blockerAssignments)
   };
 }
 
@@ -5467,6 +5517,24 @@ function coordinatorAgentDrainActionIsTerminal(action: FrontierSwarmMergeQueueAs
     || action === 'reject'
     || action === 'record-only'
     || action === 'block';
+}
+
+function coordinatorAgentDrainAssignmentIsTerminal(assignment: FrontierSwarmCoordinatorAgentDrainAssignment): boolean {
+  return assignment.terminal === true
+    || assignment.classification === 'terminal'
+    || coordinatorAgentDrainActionIsTerminal(assignment.assignedAction);
+}
+
+function coordinatorAgentDrainAssignmentIsBlocker(assignment: FrontierSwarmCoordinatorAgentDrainAssignment): boolean {
+  return assignment.decision === 'blocked' || assignment.assignedAction === 'block';
+}
+
+function countUniqueDrainQueueItems(items: readonly { queueItemIds: readonly string[] }[]): number {
+  const ids = new Set<string>();
+  for (const item of items) {
+    for (const id of item.queueItemIds) ids.add(id);
+  }
+  return ids.size;
 }
 
 function hashBucket(value: string, buckets: number): number {
