@@ -2772,6 +2772,8 @@ export interface FrontierSwarmMergeQueueAssignment {
   changedRegions: string[];
   conflictingJobIds: string[];
   leaseKey: string;
+  requiredLeaseScopeIds?: string[];
+  requiredLeaseKeys?: string[];
   promoteToScopeId?: string;
   retrySlices?: FrontierSwarmMergeQueueRetrySlice[];
   semanticSliceScopeIds?: string[];
@@ -2941,6 +2943,8 @@ export interface FrontierSwarmCoordinatorAgentDrainAssignment {
   retrySlices?: FrontierSwarmMergeQueueRetrySlice[];
   semanticSliceScopeIds?: string[];
   semanticSliceLeaseKeys?: string[];
+  requiredLeaseScopeIds?: string[];
+  requiredLeaseKeys?: string[];
   parentDecisionRegions?: string[];
   unknownRegions?: string[];
 }
@@ -2960,6 +2964,8 @@ export interface FrontierSwarmCoordinatorAgentDrainTerminalDecision {
   retrySlices?: FrontierSwarmMergeQueueRetrySlice[];
   semanticSliceScopeIds?: string[];
   semanticSliceLeaseKeys?: string[];
+  requiredLeaseScopeIds?: string[];
+  requiredLeaseKeys?: string[];
   parentDecisionRegions?: string[];
   unknownRegions?: string[];
 }
@@ -2979,6 +2985,8 @@ export interface FrontierSwarmCoordinatorAgentPromotedWork {
   classification: 'non-terminal';
   terminal: false;
   reasons: string[];
+  requiredLeaseScopeIds?: string[];
+  requiredLeaseKeys?: string[];
 }
 
 export interface FrontierSwarmProof {
@@ -4581,6 +4589,14 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     const retrySlices = decision.action === 'rerun' ? semanticSlices : [];
     const semanticSliceScopeIds = uniqueStrings(semanticSlices.map((slice) => slice.scopeId));
     const semanticSliceLeaseKeys = uniqueStrings(semanticSlices.map((slice) => slice.leaseKey));
+    const requiredLeases = mergeQueueRequiredLeasesForAssignment({
+      action: decision.action,
+      scope,
+      scopes,
+      promoteToScopeId,
+      semanticSliceScopeIds,
+      semanticSliceLeaseKeys
+    });
     const assignment: FrontierSwarmMergeQueueAssignment = {
       jobId: entry.jobId,
       ...(entry.taskId ? { taskId: entry.taskId } : {}),
@@ -4599,6 +4615,8 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
       changedRegions: [...entry.changedRegions],
       conflictingJobIds: [...entry.conflictingJobIds],
       leaseKey: scope.leaseKey,
+      requiredLeaseScopeIds: requiredLeases.scopeIds,
+      requiredLeaseKeys: requiredLeases.leaseKeys,
       ...(promoteToScopeId ? { promoteToScopeId } : {}),
       ...(retrySlices.length ? { retrySlices } : {}),
       ...(semanticSliceScopeIds.length ? { semanticSliceScopeIds, semanticSliceLeaseKeys } : {}),
@@ -4689,6 +4707,14 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       kind: leaseScopeRecord?.kind ?? 'custom',
       leaseKey: leaseScope
     });
+    const assignmentRequiredLeaseScopeIds = assignment.requiredLeaseScopeIds ?? [];
+    const assignmentRequiredLeaseKeys = assignment.requiredLeaseKeys ?? [];
+    const requiredLeaseScopeIds = assignmentRequiredLeaseScopeIds.length
+      ? [...assignmentRequiredLeaseScopeIds]
+      : [assignmentLeaseScopeId];
+    const requiredLeaseKeys = assignmentRequiredLeaseKeys.length
+      ? [...assignmentRequiredLeaseKeys]
+      : [leaseScope];
     const decision = coordinatorAgentDrainDecisionForAction(assignment.action);
     const terminal = coordinatorAgentDrainActionIsTerminal(assignment.action);
     const parentQueueId = assignment.action === 'promote'
@@ -4720,6 +4746,8 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       changedPaths: [...assignment.changedPaths],
       changedRegions: [...assignment.changedRegions],
       conflictingJobIds: [...assignment.conflictingJobIds],
+      requiredLeaseScopeIds,
+      requiredLeaseKeys,
       ...(assignment.retrySlices?.length ? { retrySlices: cloneMergeQueueRetrySlices(assignment.retrySlices) } : {}),
       ...(assignment.semanticSliceScopeIds?.length ? { semanticSliceScopeIds: [...assignment.semanticSliceScopeIds] } : {}),
       ...(assignment.semanticSliceLeaseKeys?.length ? { semanticSliceLeaseKeys: [...assignment.semanticSliceLeaseKeys] } : {}),
@@ -4741,6 +4769,8 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       classification: 'terminal',
       terminal: true,
       reasons: [...assignment.reasons],
+      requiredLeaseScopeIds: [...(assignment.requiredLeaseScopeIds ?? [])],
+      requiredLeaseKeys: [...(assignment.requiredLeaseKeys ?? [])],
       ...(assignment.retrySlices?.length ? { retrySlices: cloneMergeQueueRetrySlices(assignment.retrySlices) } : {}),
       ...(assignment.semanticSliceScopeIds?.length ? { semanticSliceScopeIds: [...assignment.semanticSliceScopeIds] } : {}),
       ...(assignment.semanticSliceLeaseKeys?.length ? { semanticSliceLeaseKeys: [...assignment.semanticSliceLeaseKeys] } : {}),
@@ -4763,7 +4793,9 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       decision: assignment.decision,
       classification: 'non-terminal',
       terminal: false,
-      reasons: [...assignment.reasons]
+      reasons: [...assignment.reasons],
+      requiredLeaseScopeIds: [...(assignment.requiredLeaseScopeIds ?? [])],
+      requiredLeaseKeys: [...(assignment.requiredLeaseKeys ?? [])]
     }));
   const activeAssignments = assignments.filter((assignment) => !coordinatorAgentDrainAssignmentIsTerminal(assignment));
   const blockers = terminalDecisions.filter((decision) => decision.assignedAction === 'block' || decision.decision === 'blocked');
@@ -5714,6 +5746,34 @@ function cloneMergeQueueRetrySlices(slices: readonly FrontierSwarmMergeQueueRetr
     changedRegions: [...slice.changedRegions],
     reasons: [...slice.reasons]
   }));
+}
+
+function mergeQueueRequiredLeasesForAssignment(input: {
+  action: FrontierSwarmMergeQueueAssignmentAction;
+  scope: FrontierSwarmMergeQueueScope;
+  scopes: Map<string, FrontierSwarmMergeQueueScope>;
+  promoteToScopeId?: string;
+  semanticSliceScopeIds: readonly string[];
+  semanticSliceLeaseKeys: readonly string[];
+}): { scopeIds: string[]; leaseKeys: string[] } {
+  const hasSemanticSliceLeases = input.semanticSliceScopeIds.length > 0 && input.semanticSliceLeaseKeys.length > 0;
+  if ((input.action === 'apply-local' || input.action === 'rerun') && hasSemanticSliceLeases) {
+    return {
+      scopeIds: uniqueStrings(input.semanticSliceScopeIds),
+      leaseKeys: uniqueStrings(input.semanticSliceLeaseKeys)
+    };
+  }
+  if (input.action === 'promote' && input.promoteToScopeId) {
+    const promotedScope = input.scopes.get(input.promoteToScopeId);
+    return {
+      scopeIds: [input.promoteToScopeId],
+      leaseKeys: [promotedScope?.leaseKey ?? input.scope.leaseKey]
+    };
+  }
+  return {
+    scopeIds: [input.scope.id],
+    leaseKeys: [input.scope.leaseKey]
+  };
 }
 
 function classifyMergeQueueAssignment(
