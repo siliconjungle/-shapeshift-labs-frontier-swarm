@@ -672,6 +672,21 @@ assert.deepStrictEqual(
 assert.strictEqual(new Set(defaultHierarchicalQueue.assignments.map((assignment) => assignment.scopeId)).size, 2);
 assert.strictEqual(new Set(defaultHierarchicalQueue.assignments.map((assignment) => assignment.leaseKey)).size, 2);
 assert.ok(defaultHierarchicalQueue.assignments.every((assignment) => assignment.leaseKey.startsWith(`merge:semantic:${assignment.lane ?? 'root'}:content.`)));
+assert.ok(defaultHierarchicalQueue.assignments.every((assignment) => assignment.changedPaths.length === 1));
+assert.strictEqual(new Set(defaultHierarchicalQueue.assignments.flatMap((assignment) => assignment.changedPaths)).size, 1);
+const sameFileSliceAdmission = createSwarmMergeAdmission({ index: regionIndex, maxReady: 2, maxChangedPaths: 1, maxChangedRegions: 2, generatedAt: 7195 });
+assert.deepStrictEqual(sameFileSliceAdmission.admitted.sort(), [regionBundleA.jobId, regionBundleB.jobId].sort());
+assert.strictEqual(sameFileSliceAdmission.summary.changedPathCount, 1);
+assert.strictEqual(sameFileSliceAdmission.summary.changedRegionCount, 2);
+const sameFileSliceQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, admission: sameFileSliceAdmission, generatedAt: 7196 });
+assert.strictEqual(sameFileSliceQueue.summary.applyLocalCount, 2);
+assert.strictEqual(sameFileSliceQueue.summary.promoteCount, 0);
+assert.deepStrictEqual(
+  sameFileSliceQueue.assignments.map((assignment) => assignment.action),
+  ['apply-local', 'apply-local']
+);
+assert.strictEqual(new Set(sameFileSliceQueue.assignments.map((assignment) => assignment.leaseKey)).size, 2);
+assert.ok(sameFileSliceQueue.assignments.every((assignment) => assignment.scopeId.startsWith('semantic-region:')));
 const hierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, admission, generatedAt: 7200 });
 assert.strictEqual(hierarchicalQueue.summary.applyLocalCount, 1);
 assert.strictEqual(hierarchicalQueue.summary.queueLocalCount, 1);
@@ -756,6 +771,11 @@ assert.ok(admittedCrossScopeAssignment.reasons.includes('admitted-by-merge-admis
 assert.ok(admittedCrossScopeAssignment.reasons.includes('lease-backed-cross-scope-apply'));
 assert.ok(admittedCrossScopeAssignment.reasons.includes('cross-scope-change'));
 assert.strictEqual(admittedCrossScopeAssignment.retrySlices, undefined);
+assert.deepStrictEqual([...admittedCrossScopeAssignment.semanticSliceLeaseKeys].sort(), [
+  'merge:semantic:runtime:content.docs',
+  'merge:semantic:runtime:content.legal'
+]);
+assert.strictEqual(admittedCrossScopeAssignment.semanticSliceScopeIds.length, 2);
 assert.strictEqual(admittedCrossScopeQueue.summary.applyLocalCount, 1);
 assert.strictEqual(admittedCrossScopeQueue.summary.rerunCount, 0);
 assert.strictEqual(admittedCrossScopeQueue.summary.promoteCount, 0);
@@ -764,6 +784,11 @@ const admittedCrossScopeDrainAssignment = admittedCrossScopeDrainWork.assignment
 assert.strictEqual(admittedCrossScopeDrainAssignment.assignedAction, 'apply-local');
 assert.strictEqual(admittedCrossScopeDrainAssignment.decision, 'applied');
 assert.strictEqual(admittedCrossScopeDrainAssignment.terminal, true);
+assert.deepStrictEqual([...admittedCrossScopeDrainAssignment.semanticSliceLeaseKeys].sort(), admittedCrossScopeAssignment.semanticSliceLeaseKeys.sort());
+assert.deepStrictEqual(
+  [...admittedCrossScopeDrainWork.terminalDecisions.find((decision) => decision.jobId === crossScopeBundle.jobId).semanticSliceLeaseKeys].sort(),
+  [...admittedCrossScopeAssignment.semanticSliceLeaseKeys].sort()
+);
 assert.strictEqual(admittedCrossScopeDrainWork.summary.appliedCount, 1);
 assert.strictEqual(admittedCrossScopeDrainWork.summary.rerunCount, 0);
 const highRiskQueue = createSwarmHierarchicalMergeQueue({ index: highRiskIndex, generatedAt: 7270 });

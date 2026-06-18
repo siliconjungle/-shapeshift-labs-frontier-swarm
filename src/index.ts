@@ -4572,11 +4572,15 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     const promoteToScopeId = decision.action === 'promote'
       ? mergeQueuePromotionScopeId(entry, scope, scopes, leafScopeIdsByJob, rootScopeId)
       : undefined;
-    const retrySlices = decision.action === 'rerun' && decision.reasons.includes('semantic-slice-lease-retry')
+    const semanticSlices = (
+      decision.action === 'rerun' && decision.reasons.includes('semantic-slice-lease-retry')
+      || decision.action === 'apply-local' && decision.reasons.includes('lease-backed-cross-scope-apply')
+    )
       ? cloneMergeQueueRetrySlices(entryScopes?.retrySlices ?? [])
       : [];
-    const semanticSliceScopeIds = uniqueStrings(retrySlices.map((slice) => slice.scopeId));
-    const semanticSliceLeaseKeys = uniqueStrings(retrySlices.map((slice) => slice.leaseKey));
+    const retrySlices = decision.action === 'rerun' ? semanticSlices : [];
+    const semanticSliceScopeIds = uniqueStrings(semanticSlices.map((slice) => slice.scopeId));
+    const semanticSliceLeaseKeys = uniqueStrings(semanticSlices.map((slice) => slice.leaseKey));
     const assignment: FrontierSwarmMergeQueueAssignment = {
       jobId: entry.jobId,
       ...(entry.taskId ? { taskId: entry.taskId } : {}),
@@ -4596,7 +4600,8 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
       conflictingJobIds: [...entry.conflictingJobIds],
       leaseKey: scope.leaseKey,
       ...(promoteToScopeId ? { promoteToScopeId } : {}),
-      ...(retrySlices.length ? { retrySlices, semanticSliceScopeIds, semanticSliceLeaseKeys } : {}),
+      ...(retrySlices.length ? { retrySlices } : {}),
+      ...(semanticSliceScopeIds.length ? { semanticSliceScopeIds, semanticSliceLeaseKeys } : {}),
       ...(entryScopes?.parentDecisionRegions.length ? { parentDecisionRegions: [...entryScopes.parentDecisionRegions] } : {}),
       ...(entryScopes?.unknownRegions.length ? { unknownRegions: [...entryScopes.unknownRegions] } : {})
     };
