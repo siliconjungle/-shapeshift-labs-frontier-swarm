@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import {
   FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND,
   FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID,
+  FRONTIER_SWARM_PRIORITY_POLICY_KIND,
   checkSwarmOwnership,
   classifySwarmMergeDisposition,
   classifySwarmMergeReadiness,
@@ -296,6 +297,77 @@ assert.strictEqual(leases.length, 5);
 assert.strictEqual(leases[0].expiresAt, 6000);
 assert.strictEqual(new Set(leases.map((lease) => lease.fencingToken)).size, 5);
 assert.strictEqual(renewSwarmLease({ lease: leases[0], now: 7000, leaseMs: 5000 }).expiresAt, 12000);
+
+const priorityManifest = defineSwarmManifest({
+  id: 'priority-scheduler',
+  lanes: [
+    { id: 'implementation', allowedWrites: ['src/**'], maxConcurrency: 8 },
+    { id: 'coordinator-review', allowedWrites: ['review/**'], maxConcurrency: 8 },
+    { id: 'merge-review', allowedWrites: ['review/**'], maxConcurrency: 8 }
+  ],
+  policy: { defaultConcurrency: 8 }
+});
+const priorityTasks = defineSwarmTasks([
+  ...Array.from({ length: 8 }, (_, index) => ({
+    id: `speculative-${index}`,
+    lane: 'implementation',
+    kind: 'speculative-backlog',
+    priority: index,
+    targetRefs: [`src/speculative-${index}.ts`],
+    tags: ['speculative', 'backlog']
+  })),
+  {
+    id: 'drain-a',
+    lane: 'coordinator-review',
+    kind: 'coordinator-drain',
+    priority: 999,
+    targetRefs: ['review/a.md'],
+    concurrencyKey: 'review-scope'
+  },
+  {
+    id: 'drain-b',
+    lane: 'coordinator-review',
+    kind: 'coordinator-drain',
+    priority: 1000,
+    targetRefs: ['review/b.md'],
+    concurrencyKey: 'review-scope'
+  },
+  {
+    id: 'review-c',
+    lane: 'merge-review',
+    kind: 'review',
+    priority: 1001,
+    targetRefs: ['review/c.md'],
+    concurrencyKey: 'review-c'
+  }
+]);
+const priorityPlan = createSwarmPlan(priorityManifest, priorityTasks, {
+  includeCompleted: true,
+  maxLaneConcurrency: { implementation: 8, 'coordinator-review': 8, 'merge-review': 8 },
+  maxConcurrencyKeyConcurrency: { 'review-scope': 1 },
+  maxReadyJobs: 2
+});
+assert.strictEqual(priorityPlan.metadata.priorityPolicy.policy.kind, FRONTIER_SWARM_PRIORITY_POLICY_KIND);
+const limitedPriorityPlan = createSwarmPlan(priorityManifest, priorityTasks, {
+  includeCompleted: true,
+  limit: 2
+});
+assert.deepStrictEqual(limitedPriorityPlan.jobs.map((job) => job.taskId), ['drain-a', 'review-c']);
+assert.strictEqual(priorityPlan.jobs.find((job) => job.taskId === 'drain-a').metadata.priorityPolicy.className, 'coordinator-drain');
+assert.strictEqual(priorityPlan.jobs.find((job) => job.taskId === 'review-c').metadata.priorityPolicy.className, 'review');
+assert.strictEqual(priorityPlan.jobs.find((job) => job.taskId === 'speculative-0').metadata.priorityPolicy.className, 'speculative');
+const prioritySchedule = createSwarmSchedule({ plan: priorityPlan, maxReadyJobs: 2 });
+assert.strictEqual(prioritySchedule.metadata.priorityPolicy.policy.kind, FRONTIER_SWARM_PRIORITY_POLICY_KIND);
+assert.deepStrictEqual(prioritySchedule.ready.map((job) => job.taskId), ['drain-a', 'review-c']);
+assert.strictEqual(prioritySchedule.ready.some((job) => job.taskId.startsWith('speculative-')), false);
+assert.ok(prioritySchedule.blocked.find((job) => job.taskId === 'drain-b').reasons.includes('concurrency-key-capacity'));
+assert.deepStrictEqual(prioritySchedule.metadata.priorityPolicy.summary.schedule.readyClassCounts, { 'coordinator-drain': 1, review: 1 });
+const priorityQueue = createSwarmQueueSnapshot({ plan: priorityPlan, generatedAt: 12500 });
+assert.strictEqual(priorityQueue.metadata.priorityPolicy.policy.kind, FRONTIER_SWARM_PRIORITY_POLICY_KIND);
+assert.deepStrictEqual(priorityQueue.jobs.slice(0, 3).map((job) => job.taskId), ['drain-a', 'review-c', 'drain-b']);
+assert.strictEqual(priorityQueue.jobs[0].metadata.priorityPolicy.className, 'coordinator-drain');
+assert.strictEqual(priorityQueue.jobs[1].metadata.priorityPolicy.className, 'review');
+assert.strictEqual(priorityQueue.jobs.find((job) => job.taskId === 'speculative-0').metadata.priorityPolicy.className, 'speculative');
 
 const firstScaleJob = scalePlan.jobs[0];
 const budgetDecision = checkSwarmBudget(firstScaleJob, { inputTokens: 2500, outputTokens: 10, durationMs: 20, attempts: 1 });

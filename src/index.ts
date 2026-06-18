@@ -94,6 +94,8 @@ export const FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_KIND = 'frontier.swarm.hier
 export const FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_VERSION = 1;
 export const FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND = 'frontier.swarm.coordinator-agent-drain-work';
 export const FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_VERSION = 1;
+export const FRONTIER_SWARM_PRIORITY_POLICY_KIND = 'frontier.swarm.priority-policy';
+export const FRONTIER_SWARM_PRIORITY_POLICY_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
@@ -538,6 +540,87 @@ export interface FrontierSwarmPlanFilter {
   compute?: string;
 }
 
+export type FrontierSwarmPriorityClass = 'coordinator-drain' | 'review' | 'standard' | 'speculative' | string;
+
+export interface FrontierSwarmPriorityPolicyClass {
+  className: FrontierSwarmPriorityClass;
+  rank: number;
+  description: string;
+  matchers: string[];
+}
+
+export interface FrontierSwarmPriorityPolicy {
+  kind: typeof FRONTIER_SWARM_PRIORITY_POLICY_KIND;
+  version: typeof FRONTIER_SWARM_PRIORITY_POLICY_VERSION;
+  id: string;
+  description: string;
+  classes: FrontierSwarmPriorityPolicyClass[];
+  laneFairness: {
+    strategy: 'round-robin-within-priority-class';
+    scope: 'ready-window' | string;
+    tieBreakers: string[];
+  };
+  concurrency: {
+    preservesLaneLimits: boolean;
+    preservesConcurrencyKeyLimits: boolean;
+    preservesComputeLimits: boolean;
+    preservesResourceQuotas: boolean;
+  };
+}
+
+export interface FrontierSwarmPriorityDecision {
+  policyId: string;
+  className: FrontierSwarmPriorityClass;
+  rank: number;
+  basePriority: number;
+  effectivePriority: number;
+  reasons: string[];
+}
+
+export const FRONTIER_SWARM_REVIEW_PRIORITY_POLICY: FrontierSwarmPriorityPolicy = {
+  kind: FRONTIER_SWARM_PRIORITY_POLICY_KIND,
+  version: FRONTIER_SWARM_PRIORITY_POLICY_VERSION,
+  id: 'frontier-swarm-review-priority-v1',
+  description: 'Coordinator drain and review work is selected before speculative backlog, with lane round-robin inside each priority class and all existing lane, compute, resource, and concurrency-key limits preserved.',
+  classes: [
+    {
+      className: 'coordinator-drain',
+      rank: 0,
+      description: 'Coordinator-agent drain, auto-drain, review-debt drain, and coordinator-review queue work.',
+      matchers: ['coordinator-drain', 'coordinator-agent-drain', 'auto-drain', 'drain-work', 'review-debt-drain', 'coordinator-review']
+    },
+    {
+      className: 'review',
+      rank: 0,
+      description: 'Review, reviewer, merge-review, and needs-port work that should not wait behind speculative implementation backlog.',
+      matchers: ['review', 'reviewer', 'merge-review', 'needs-human-port', 'needs-port']
+    },
+    {
+      className: 'standard',
+      rank: 50,
+      description: 'Ordinary implementation, evidence, diagnostics, and queue work without an explicit drain/review/speculative marker.',
+      matchers: []
+    },
+    {
+      className: 'speculative',
+      rank: 90,
+      description: 'Speculative, exploratory, idea, research, or backlog work that should yield to current-head review and drain decisions.',
+      matchers: ['speculative', 'exploratory', 'exploration', 'idea', 'research', 'backlog']
+    }
+  ],
+  laneFairness: {
+    strategy: 'round-robin-within-priority-class',
+    scope: 'ready-window',
+    tieBreakers: ['priority-class-rank', 'lane-round-robin', 'base-priority', 'id']
+  },
+  concurrency: {
+    preservesLaneLimits: true,
+    preservesConcurrencyKeyLimits: true,
+    preservesComputeLimits: true,
+    preservesResourceQuotas: true
+  }
+};
+
 export interface FrontierSwarmSelectionPriorityInput {
   statuses?: Record<string, number>;
   workKinds?: Record<string, number>;
@@ -758,6 +841,7 @@ export interface FrontierSwarmSchedule {
   completed: string[];
   failed: string[];
   summary: FrontierSwarmScheduleSummary;
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmScheduledJob {
@@ -770,6 +854,7 @@ export interface FrontierSwarmScheduledJob {
   dependsOn: string[];
   capabilities: string[];
   resourceRequirements?: FrontierSwarmResourceRequirements;
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmBlockedJob extends FrontierSwarmScheduledJob {
@@ -784,6 +869,7 @@ export interface FrontierSwarmRunningJob {
   concurrencyKey: string;
   capabilities: string[];
   resourceRequirements?: FrontierSwarmResourceRequirements;
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmScheduleSummary {
@@ -3063,7 +3149,7 @@ export function createSwarmPlan(
     jobs,
     graph,
     summary: summarizeJobs(jobs),
-    ...(toJsonObject(options.metadata) ? { metadata: toJsonObject(options.metadata) } : {})
+    metadata: priorityPolicyMetadata(options.metadata, jobs)
   };
 }
 
@@ -4802,7 +4888,8 @@ export function createSwarmSchedule(input: FrontierSwarmPlan | FrontierSwarmSche
       compute: job.compute.id,
       concurrencyKey: job.concurrencyKey,
       capabilities: [...job.capabilities],
-      ...(job.resourceRequirements ? { resourceRequirements: cloneJsonValue(job.resourceRequirements) as FrontierSwarmResourceRequirements } : {})
+      ...(job.resourceRequirements ? { resourceRequirements: cloneJsonValue(job.resourceRequirements) as FrontierSwarmResourceRequirements } : {}),
+      metadata: priorityDecisionMetadata(job.metadata, priorityDecisionForJob(job))
     }));
   const runningByLane = countBy(runningJobs.map((job) => job.lane));
   const runningByKey = countBy(runningJobs.map((job) => job.concurrencyKey));
@@ -4810,7 +4897,7 @@ export function createSwarmSchedule(input: FrontierSwarmPlan | FrontierSwarmSche
   const runningByResource = resourceUsageFromScheduled(runningJobs);
   const ready: FrontierSwarmScheduledJob[] = [];
   const blocked: FrontierSwarmBlockedJob[] = [];
-  const sortedJobs = [...plan.jobs].sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id));
+  const sortedJobs = orderJobsByPriorityPolicy(plan.jobs);
   for (const job of sortedJobs) {
     if (completed.has(job.id) || failed.has(job.id) || runningJobs.some((running) => running.jobId === job.id)) continue;
     const dependencyIds = plan.graph.dependenciesByJobId[job.id] ?? [];
@@ -4860,7 +4947,8 @@ export function createSwarmSchedule(input: FrontierSwarmPlan | FrontierSwarmSche
       runningCount: runningJobs.length,
       completedCount: completed.size,
       failedCount: failed.size
-    }
+    },
+    metadata: priorityPolicyMetadata(undefined, plan.jobs, { ready, blocked, running: runningJobs })
   };
 }
 
@@ -4941,10 +5029,7 @@ export function renewSwarmLease(input: FrontierSwarmLeaseRenewalInput): Frontier
 export function createSwarmQueueSnapshot(input: FrontierSwarmQueueSnapshotInput): FrontierSwarmQueueSnapshot {
   const generatedAt = input.generatedAt ?? Date.now();
   const leases = [...(input.leases ?? [])].map((lease) => cloneJsonValue(lease) as FrontierSwarmLease);
-  const jobs = (input.jobs ? input.jobs.map(normalizeQueueJob) : queueJobsFromPlan(input.plan, input.run, leases)).sort((left, right) => (
-    left.priority - right.priority
-    || left.jobId.localeCompare(right.jobId)
-  ));
+  const jobs = orderQueueJobsByPriorityPolicy(input.jobs ? input.jobs.map(normalizeQueueJob) : queueJobsFromPlan(input.plan, input.run, leases));
   const byStatus = groupIds(jobs, (job) => job.status);
   const byLane = groupIds(jobs, (job) => job.lane ?? 'unassigned');
   return {
@@ -4958,7 +5043,7 @@ export function createSwarmQueueSnapshot(input: FrontierSwarmQueueSnapshotInput)
     byStatus,
     byLane,
     leases,
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}),
+    metadata: priorityPolicyMetadata(input.metadata, jobs),
     summary: {
       jobCount: jobs.length,
       leaseCount: leases.length,
@@ -5214,7 +5299,8 @@ function scheduleJob(job: FrontierSwarmJob, dependsOn: readonly string[] = job.d
     priority: job.priority,
     dependsOn: [...dependsOn],
     capabilities: [...job.capabilities],
-    ...(job.resourceRequirements ? { resourceRequirements: cloneJsonValue(job.resourceRequirements) as FrontierSwarmResourceRequirements } : {})
+    ...(job.resourceRequirements ? { resourceRequirements: cloneJsonValue(job.resourceRequirements) as FrontierSwarmResourceRequirements } : {}),
+    metadata: priorityDecisionMetadata(job.metadata, priorityDecisionForJob(job))
   };
 }
 
@@ -6311,6 +6397,345 @@ function deterministicUnitInterval(value: unknown): number {
   return parseInt(hex, 16) / 0xffffffff;
 }
 
+interface PriorityPolicyRecord<T> {
+  item: T;
+  id: string;
+  lane: string;
+  decision: FrontierSwarmPriorityDecision;
+  index: number;
+}
+
+function orderTasksByPriorityPolicy(tasks: readonly FrontierSwarmTask[]): FrontierSwarmTask[] {
+  return roundRobinPriorityPolicy(tasks.map((task, index) => ({
+    item: task,
+    id: task.id,
+    lane: task.lane ?? 'unassigned',
+    decision: priorityDecisionForTask(task),
+    index
+  })));
+}
+
+function orderJobsByPriorityPolicy(jobs: readonly FrontierSwarmJob[]): FrontierSwarmJob[] {
+  return roundRobinPriorityPolicy(jobs.map((job, index) => ({
+    item: job,
+    id: job.id,
+    lane: job.lane,
+    decision: priorityDecisionForJob(job),
+    index
+  })));
+}
+
+function orderQueueJobsByPriorityPolicy(jobs: readonly FrontierSwarmQueueJob[]): FrontierSwarmQueueJob[] {
+  return roundRobinPriorityPolicy(jobs.map((job, index) => ({
+    item: job,
+    id: job.jobId,
+    lane: job.lane ?? 'unassigned',
+    decision: priorityDecisionForQueueJob(job),
+    index
+  })));
+}
+
+function roundRobinPriorityPolicy<T>(records: readonly PriorityPolicyRecord<T>[]): T[] {
+  const classGroups = new Map<string, { rank: number; className: string; records: PriorityPolicyRecord<T>[] }>();
+  for (const record of records) {
+    const key = String(record.decision.rank);
+    const group = classGroups.get(key) ?? { rank: record.decision.rank, className: `rank:${record.decision.rank}`, records: [] };
+    group.records.push(record);
+    classGroups.set(key, group);
+  }
+
+  const ordered: T[] = [];
+  const sortedClassGroups = Array.from(classGroups.values()).sort((left, right) => (
+    left.rank - right.rank
+  ));
+  for (const group of sortedClassGroups) {
+    const lanes = new Map<string, PriorityPolicyRecord<T>[]>();
+    for (const record of group.records) lanes.set(record.lane, [...(lanes.get(record.lane) ?? []), record]);
+    const laneQueues = Array.from(lanes.entries()).map(([lane, laneRecords]) => ({
+      lane,
+      records: laneRecords.sort(comparePriorityPolicyRecords)
+    })).sort((left, right) => {
+      const leftFirst = left.records[0];
+      const rightFirst = right.records[0];
+      if (!leftFirst || !rightFirst) return left.lane.localeCompare(right.lane);
+      return comparePriorityPolicyRecords(leftFirst, rightFirst)
+        || leftFirst.index - rightFirst.index
+        || left.lane.localeCompare(right.lane);
+    });
+
+    while (laneQueues.some((queue) => queue.records.length > 0)) {
+      for (const queue of laneQueues) {
+        const next = queue.records.shift();
+        if (next) ordered.push(next.item);
+      }
+    }
+  }
+  return ordered;
+}
+
+function comparePriorityPolicyRecords<T>(left: PriorityPolicyRecord<T>, right: PriorityPolicyRecord<T>): number {
+  return left.decision.rank - right.decision.rank
+    || left.decision.basePriority - right.decision.basePriority
+    || left.id.localeCompare(right.id)
+    || left.index - right.index;
+}
+
+function priorityDecisionForTask(
+  task: FrontierSwarmTask,
+  lane: string | undefined = task.lane,
+  layer: string | undefined = task.layer
+): FrontierSwarmPriorityDecision {
+  return createPriorityDecision({
+    id: task.id,
+    priority: task.priority,
+    lane,
+    layer,
+    title: task.title,
+    objective: task.objective,
+    workKind: task.workKind,
+    status: task.status,
+    tags: task.tags,
+    metadata: task.metadata
+  });
+}
+
+function priorityDecisionForJob(job: FrontierSwarmJob): FrontierSwarmPriorityDecision {
+  return readPriorityDecision(job.metadata) ?? createPriorityDecision({
+    id: job.id,
+    priority: job.priority,
+    lane: job.lane,
+    layer: job.layer,
+    title: job.title,
+    objective: job.task.objective,
+    workKind: job.task.workKind,
+    status: job.status,
+    tags: job.tags,
+    metadata: job.metadata
+  });
+}
+
+function priorityDecisionForQueueJob(job: FrontierSwarmQueueJob): FrontierSwarmPriorityDecision {
+  return readPriorityDecision(job.metadata) ?? createPriorityDecision({
+    id: job.jobId,
+    priority: job.priority,
+    lane: job.lane,
+    status: job.status,
+    metadata: job.metadata
+  });
+}
+
+function priorityDecisionForScheduledJob(job: FrontierSwarmScheduledJob | FrontierSwarmBlockedJob | FrontierSwarmRunningJob): FrontierSwarmPriorityDecision {
+  return readPriorityDecision(job.metadata) ?? createPriorityDecision({
+    id: job.jobId,
+    priority: 'priority' in job ? job.priority : 100,
+    lane: job.lane,
+    metadata: job.metadata
+  });
+}
+
+function readPriorityDecision(metadata: JsonObject | undefined): FrontierSwarmPriorityDecision | undefined {
+  const value = metadata?.priorityPolicy;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.policyId !== 'string'
+    || typeof record.className !== 'string'
+    || typeof record.rank !== 'number'
+    || typeof record.basePriority !== 'number'
+    || typeof record.effectivePriority !== 'number'
+    || !Array.isArray(record.reasons)
+  ) return undefined;
+  return {
+    policyId: record.policyId,
+    className: record.className,
+    rank: record.rank,
+    basePriority: record.basePriority,
+    effectivePriority: record.effectivePriority,
+    reasons: uniqueStrings(record.reasons.map((entry) => typeof entry === 'string' ? entry : undefined))
+  };
+}
+
+function priorityDecisionMetadata(metadata: unknown, decision: FrontierSwarmPriorityDecision): JsonObject {
+  return {
+    ...(toJsonObject(metadata) ?? {}),
+    priorityPolicy: cloneJsonValue(decision) as unknown as JsonObject
+  };
+}
+
+function priorityPolicyMetadata(
+  metadata: unknown,
+  items: readonly (FrontierSwarmJob | FrontierSwarmQueueJob)[],
+  schedule?: {
+    ready?: readonly FrontierSwarmScheduledJob[];
+    blocked?: readonly FrontierSwarmBlockedJob[];
+    running?: readonly FrontierSwarmRunningJob[];
+  }
+): JsonObject {
+  const decisions = items.map(priorityDecisionForMetadataItem);
+  const base = toJsonObject(metadata) ?? {};
+  const scheduleSummary = schedule ? {
+    readyClassCounts: priorityClassCounts(schedule.ready?.map(priorityDecisionForScheduledJob) ?? []),
+    blockedClassCounts: priorityClassCounts(schedule.blocked?.map(priorityDecisionForScheduledJob) ?? []),
+    runningClassCounts: priorityClassCounts(schedule.running?.map(priorityDecisionForScheduledJob) ?? [])
+  } : undefined;
+  return {
+    ...base,
+    priorityPolicy: {
+      policy: cloneJsonValue(FRONTIER_SWARM_REVIEW_PRIORITY_POLICY) as unknown as JsonObject,
+      summary: {
+        itemCount: decisions.length,
+        classCounts: priorityClassCounts(decisions),
+        laneClassCounts: priorityLaneClassCounts(items),
+        ...(scheduleSummary ? { schedule: scheduleSummary } : {})
+      }
+    }
+  };
+}
+
+function priorityDecisionForMetadataItem(item: FrontierSwarmJob | FrontierSwarmQueueJob): FrontierSwarmPriorityDecision {
+  return 'jobId' in item ? priorityDecisionForQueueJob(item) : priorityDecisionForJob(item);
+}
+
+function priorityClassCounts(decisions: readonly FrontierSwarmPriorityDecision[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const decision of decisions) counts[decision.className] = (counts[decision.className] ?? 0) + 1;
+  return counts;
+}
+
+function priorityLaneClassCounts(items: readonly (FrontierSwarmJob | FrontierSwarmQueueJob)[]): Record<string, Record<string, number>> {
+  const counts: Record<string, Record<string, number>> = {};
+  for (const item of items) {
+    const lane = 'jobId' in item ? item.lane ?? 'unassigned' : item.lane;
+    const decision = priorityDecisionForMetadataItem(item);
+    counts[lane] = counts[lane] ?? {};
+    counts[lane][decision.className] = (counts[lane][decision.className] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function createPriorityDecision(input: {
+  id: string;
+  priority: number;
+  lane?: string;
+  layer?: string;
+  title?: string;
+  objective?: string;
+  workKind?: string;
+  status?: string;
+  tags?: readonly string[];
+  metadata?: JsonObject;
+}): FrontierSwarmPriorityDecision {
+  const terms = prioritySubjectTerms(input);
+  const tokens = priorityTokens(terms);
+  const phrases = priorityPhrases(terms);
+  const hasToken = (value: string) => tokens.has(value);
+  const hasPhrase = (value: string) => phrases.some((phrase) => phrase === value || phrase.includes(value));
+  let className: FrontierSwarmPriorityClass = 'standard';
+  let reasons = ['default-standard-priority'];
+  if (
+    hasPhrase('coordinator-drain')
+    || hasPhrase('coordinator-agent-drain')
+    || hasPhrase('auto-drain')
+    || hasPhrase('drain-work')
+    || hasPhrase('review-debt-drain')
+    || hasPhrase('coordinator-review')
+    || (hasToken('drain') && (hasToken('coordinator') || hasToken('review')))
+    || (hasToken('coordinator') && hasToken('review'))
+  ) {
+    className = 'coordinator-drain';
+    reasons = ['matched-coordinator-drain-work'];
+  } else if (
+    hasToken('review')
+    || hasToken('reviewer')
+    || hasPhrase('merge-review')
+    || hasPhrase('needs-human-port')
+    || hasPhrase('needs-port')
+  ) {
+    className = 'review';
+    reasons = ['matched-review-work'];
+  } else if (
+    hasToken('speculative')
+    || hasToken('exploratory')
+    || hasToken('exploration')
+    || hasToken('idea')
+    || hasToken('research')
+    || hasToken('backlog')
+  ) {
+    className = 'speculative';
+    reasons = ['matched-speculative-backlog'];
+  }
+  const rank = priorityRankForClass(className);
+  const basePriority = Number.isFinite(input.priority) ? Number(input.priority) : 100;
+  return {
+    policyId: FRONTIER_SWARM_REVIEW_PRIORITY_POLICY.id,
+    className,
+    rank,
+    basePriority,
+    effectivePriority: rank * 1_000_000 + Math.max(0, Math.floor(basePriority)),
+    reasons
+  };
+}
+
+function priorityRankForClass(className: FrontierSwarmPriorityClass): number {
+  return FRONTIER_SWARM_REVIEW_PRIORITY_POLICY.classes.find((entry) => entry.className === className)?.rank ?? 50;
+}
+
+function prioritySubjectTerms(input: {
+  id: string;
+  lane?: string;
+  layer?: string;
+  title?: string;
+  objective?: string;
+  workKind?: string;
+  status?: string;
+  tags?: readonly string[];
+  metadata?: JsonObject;
+}): string[] {
+  const terms = uniqueStrings([
+    input.id,
+    input.lane,
+    input.layer,
+    input.title,
+    input.objective,
+    input.workKind,
+    input.status,
+    ...(input.tags ?? [])
+  ]);
+  collectPriorityMetadataTerms(input.metadata, terms);
+  return uniqueStrings(terms);
+}
+
+function collectPriorityMetadataTerms(value: unknown, terms: string[], depth = 0): void {
+  if (!value || depth > 2) return;
+  if (typeof value === 'string') {
+    terms.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (typeof entry === 'string') terms.push(entry);
+    }
+    return;
+  }
+  if (typeof value !== 'object') return;
+  const object = value as Record<string, unknown>;
+  for (const key of ['priorityClass', 'queueClass', 'workKind', 'kind', 'lane', 'status', 'title', 'objective', 'queuePurpose', 'tags', 'source']) {
+    const entry = object[key];
+    if (typeof entry === 'string') terms.push(entry);
+    else if (Array.isArray(entry)) {
+      for (const item of entry) if (typeof item === 'string') terms.push(item);
+    } else if (entry && typeof entry === 'object') collectPriorityMetadataTerms(entry, terms, depth + 1);
+  }
+}
+
+function priorityPhrases(terms: readonly string[]): string[] {
+  return uniqueStrings(terms.map((term) => slug(term)));
+}
+
+function priorityTokens(terms: readonly string[]): Set<string> {
+  return new Set(priorityPhrases(terms).flatMap((term) => term.split('-').filter(Boolean)));
+}
+
 function normalizeComputeList(input: readonly FrontierSwarmComputeInput[] | undefined): FrontierSwarmCompute[] {
   const values = input && input.length > 0 ? input : [{
     id: FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID,
@@ -6525,15 +6950,17 @@ function selectSwarmTasks(manifest: FrontierSwarmManifest, tasks: readonly Front
   const selectors = (options.selectors ?? []).map((selector) => selector.toLowerCase());
   const completed = new Set(manifest.policy.completedStatuses);
   const limit = options.limit === undefined ? tasks.length : Math.max(0, Math.floor(options.limit));
-  return tasks
+  const candidates = tasks
     .filter((task) => !task.lane || manifest.lanes.some((lane) => lane.id === task.lane))
     .filter((task) => lanes.size === 0 || (task.lane !== undefined && lanes.has(task.lane)))
     .filter((task) => layers.size === 0 || taskLayer(manifest, task) !== undefined && layers.has(taskLayer(manifest, task) as string))
     .filter((task) => statuses.size === 0 || statuses.has(task.status))
     .filter((task) => options.includeCompleted || !completed.has(task.status))
-    .filter((task) => selectors.length === 0 || selectors.some((selector) => searchableTask(task).includes(selector)))
-    .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
-    .slice(0, limit);
+    .filter((task) => selectors.length === 0 || selectors.some((selector) => searchableTask(task).includes(selector)));
+  const ordered = options.limit === undefined
+    ? [...candidates].sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
+    : orderTasksByPriorityPolicy(candidates);
+  return ordered.slice(0, limit);
 }
 
 function createSelectionEntry(
@@ -6638,7 +7065,7 @@ function createJob(compiled: FrontierSwarmCompiled, task: FrontierSwarmTask, opt
     ...(task.budget ? { budget: task.budget } : {}),
     review: task.review ?? normalizeReviewPolicy(),
     tags: uniqueStrings([...task.tags, ...(lane?.tags ?? []), ...(layer ? [layer] : []), compute.id]),
-    ...(task.metadata ? { metadata: task.metadata } : {})
+    metadata: priorityDecisionMetadata(task.metadata, priorityDecisionForTask(task, lane?.id ?? 'unassigned', layer))
   };
 }
 
@@ -6776,7 +7203,8 @@ function queueJobsFromPlan(
       attempts: result?.metadata && typeof result.metadata.attempts === 'number' ? result.metadata.attempts : undefined,
       maxAttempts: job.budget?.maxRetries !== undefined ? job.budget.maxRetries + 1 : 1,
       lease,
-      lastError: result?.error
+      lastError: result?.error,
+      metadata: priorityDecisionMetadata(job.metadata, priorityDecisionForJob(job))
     });
   });
 }
