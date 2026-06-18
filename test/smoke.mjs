@@ -669,6 +669,31 @@ assert.deepStrictEqual(
   semanticSliceRetryDrainWork.terminalDecisions.find((decision) => decision.jobId === crossScopeBundle.jobId).semanticSliceLeaseKeys.sort(),
   crossScopeAssignment.semanticSliceLeaseKeys.sort()
 );
+const admittedCrossScopeAdmission = createSwarmMergeAdmission({ index: crossScopeIndex, maxReady: 1, maxChangedPaths: 4, maxChangedRegions: 4, generatedAt: 7266 });
+assert.deepStrictEqual(admittedCrossScopeAdmission.admitted, [crossScopeBundle.jobId]);
+const admittedCrossScopeQueue = createSwarmHierarchicalMergeQueue({
+  index: crossScopeIndex,
+  admission: admittedCrossScopeAdmission,
+  generatedAt: 7267
+});
+const admittedCrossScopeAssignment = admittedCrossScopeQueue.assignments.find((assignment) => assignment.jobId === crossScopeBundle.jobId);
+assert.strictEqual(admittedCrossScopeAssignment.action, 'apply-local');
+assert.strictEqual(admittedCrossScopeAssignment.admitted, true);
+assert.strictEqual(admittedCrossScopeAssignment.leaseKey, 'merge:lane:runtime');
+assert.ok(admittedCrossScopeAssignment.reasons.includes('admitted-by-merge-admission'));
+assert.ok(admittedCrossScopeAssignment.reasons.includes('lease-backed-cross-scope-apply'));
+assert.ok(admittedCrossScopeAssignment.reasons.includes('cross-scope-change'));
+assert.strictEqual(admittedCrossScopeAssignment.retrySlices, undefined);
+assert.strictEqual(admittedCrossScopeQueue.summary.applyLocalCount, 1);
+assert.strictEqual(admittedCrossScopeQueue.summary.rerunCount, 0);
+assert.strictEqual(admittedCrossScopeQueue.summary.promoteCount, 0);
+const admittedCrossScopeDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: admittedCrossScopeQueue, generatedAt: 7268 });
+const admittedCrossScopeDrainAssignment = admittedCrossScopeDrainWork.assignments.find((assignment) => assignment.jobId === crossScopeBundle.jobId);
+assert.strictEqual(admittedCrossScopeDrainAssignment.assignedAction, 'apply-local');
+assert.strictEqual(admittedCrossScopeDrainAssignment.decision, 'applied');
+assert.strictEqual(admittedCrossScopeDrainAssignment.terminal, true);
+assert.strictEqual(admittedCrossScopeDrainWork.summary.appliedCount, 1);
+assert.strictEqual(admittedCrossScopeDrainWork.summary.rerunCount, 0);
 const highRiskQueue = createSwarmHierarchicalMergeQueue({ index: highRiskIndex, generatedAt: 7270 });
 const highRiskAssignment = highRiskQueue.assignments.find((assignment) => assignment.jobId === highRiskBundle.jobId);
 assert.strictEqual(highRiskAssignment.action, 'promote');

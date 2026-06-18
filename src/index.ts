@@ -4465,6 +4465,7 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     leafScopeIdsByJob.set(entry.jobId, entryScopes.leafScope.id);
   }
   const admitted = new Set(input.admission?.admitted ?? []);
+  const hasExplicitAdmission = input.admission !== undefined;
   const deferralsByJob = new Map((input.admission?.deferred ?? []).map((entry) => [entry.jobId, entry.reasons]));
   const assignments: FrontierSwarmMergeQueueAssignment[] = [];
   const promotions: FrontierSwarmMergeQueuePromotion[] = [];
@@ -4478,7 +4479,8 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     const decision = classifyMergeQueueAssignment(entry, entryAdmitted, deferralReasons, {
       scope,
       entryScopes,
-      leafScopeIdsByJob
+      leafScopeIdsByJob,
+      hasExplicitAdmission
     });
     const parentScopeIds = mergeQueueParentScopeIds(scope, scopes);
     const promoteToScopeId = decision.action === 'promote'
@@ -5631,6 +5633,7 @@ function classifyMergeQueueAssignment(
     scope: FrontierSwarmMergeQueueScope;
     entryScopes?: FrontierSwarmMergeQueueEntryScopes;
     leafScopeIdsByJob: Map<string, string>;
+    hasExplicitAdmission: boolean;
   }
 ): { action: FrontierSwarmMergeQueueAssignmentAction; reasons: string[] } {
   const reasons = uniqueStrings([...reviewerLaneReasons(entry), ...deferralReasons, ...(context.entryScopes?.reasons ?? [])]);
@@ -5661,17 +5664,23 @@ function classifyMergeQueueAssignment(
   if (cleanAutoMerge && (context.entryScopes?.unknownRegions.length ?? 0) > 0) {
     return { action: 'promote', reasons: uniqueStrings(['unknown-semantic-region', ...reasons]) };
   }
-  if (cleanAutoMerge && mergeQueueEntryCanRetrySemanticSlices(context.entryScopes)) {
+  const explicitlyAdmitted = context.hasExplicitAdmission && admitted;
+  if (!explicitlyAdmitted && cleanAutoMerge && mergeQueueEntryCanRetrySemanticSlices(context.entryScopes)) {
     return { action: 'rerun', reasons: uniqueStrings(['semantic-slice-lease-retry', 'cross-scope-change', ...reasons]) };
   }
-  if (cleanAutoMerge && mergeQueueEntrySpansMultipleLeaseScopes(entry, context.entryScopes)) {
+  if (!explicitlyAdmitted && cleanAutoMerge && mergeQueueEntrySpansMultipleLeaseScopes(entry, context.entryScopes)) {
     return { action: 'promote', reasons: uniqueStrings(['cross-scope-change', ...reasons]) };
   }
   if (cleanAutoMerge && entry.conflictingJobIds.length > 0 && mergeQueueConflictsStayInScope(entry, context.scope, context.leafScopeIdsByJob)) {
     return { action: 'queue-local', reasons: uniqueStrings(['same-lease-scope-conflict', ...reasons]) };
   }
   if (cleanAutoMerge && entry.conflictingJobIds.length === 0) {
-    if (admitted) return { action: 'apply-local', reasons: uniqueStrings(['admitted-by-merge-admission', ...reasons]) };
+    if (admitted) {
+      const admittedReasons = mergeQueueEntrySpansMultipleLeaseScopes(entry, context.entryScopes)
+        ? ['admitted-by-merge-admission', 'lease-backed-cross-scope-apply']
+        : ['admitted-by-merge-admission'];
+      return { action: 'apply-local', reasons: uniqueStrings([...admittedReasons, ...reasons]) };
+    }
     return {
       action: 'queue-local',
       reasons: uniqueStrings([...(deferralReasons.length ? deferralReasons : ['waiting-for-local-queue-capacity']), ...reasons])
