@@ -2643,6 +2643,7 @@ export interface FrontierSwarmMergeQueueAssignment {
   taskId?: string;
   lane?: string;
   title?: string;
+  queueItemIds: string[];
   scopeId: string;
   parentScopeIds: string[];
   action: FrontierSwarmMergeQueueAssignmentAction;
@@ -2706,6 +2707,7 @@ export interface FrontierSwarmCoordinatorAgentDrainWork {
     assignmentCount: number;
     terminalCount: number;
     nonTerminalCount: number;
+    promotedWorkCount: number;
     appliedCount: number;
     queuedCount: number;
     escalatedCount: number;
@@ -2740,6 +2742,7 @@ export interface FrontierSwarmCoordinatorAgentDrainAssignment {
   taskId?: string;
   lane?: string;
   title?: string;
+  queueItemIds: string[];
   queueId: string;
   queueKind: FrontierSwarmMergeQueueScopeKind;
   rootQueueId: string;
@@ -2765,6 +2768,7 @@ export interface FrontierSwarmCoordinatorAgentDrainAssignment {
 export interface FrontierSwarmCoordinatorAgentDrainTerminalDecision {
   id: string;
   jobId: string;
+  queueItemIds: string[];
   queueId: string;
   leaseId: string;
   assignedAction: FrontierSwarmMergeQueueAssignmentAction;
@@ -2779,6 +2783,7 @@ export interface FrontierSwarmCoordinatorAgentPromotedWork {
   jobId: string;
   taskId?: string;
   lane?: string;
+  queueItemIds: string[];
   fromQueueId: string;
   parentQueueId: string;
   leaseId: string;
@@ -4377,6 +4382,7 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
       ...(entry.taskId ? { taskId: entry.taskId } : {}),
       ...(entry.lane ? { lane: entry.lane } : {}),
       ...(entry.title ? { title: entry.title } : {}),
+      queueItemIds: entry.queueItemIds.length ? [...entry.queueItemIds] : [entry.taskId ?? entry.jobId],
       scopeId: scope.id,
       parentScopeIds,
       action: decision.action,
@@ -4475,6 +4481,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       ...(assignment.taskId ? { taskId: assignment.taskId } : {}),
       ...(assignment.lane ? { lane: assignment.lane } : {}),
       ...(assignment.title ? { title: assignment.title } : {}),
+      queueItemIds: [...assignment.queueItemIds],
       queueId: assignment.scopeId,
       queueKind: scope?.kind ?? 'custom',
       rootQueueId: input.queue.rootScopeId,
@@ -4501,6 +4508,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
     .map((assignment) => ({
       id: 'swarm-coordinator-agent-terminal-decision:' + stableHash([input.queue.id, assignment.jobId, assignment.queueId, assignment.assignedAction]),
       jobId: assignment.jobId,
+      queueItemIds: [...assignment.queueItemIds],
       queueId: assignment.queueId,
       leaseId: assignment.leaseId,
       assignedAction: assignment.assignedAction,
@@ -4516,6 +4524,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       jobId: assignment.jobId,
       ...(assignment.taskId ? { taskId: assignment.taskId } : {}),
       ...(assignment.lane ? { lane: assignment.lane } : {}),
+      queueItemIds: [...assignment.queueItemIds],
       fromQueueId: assignment.queueId,
       parentQueueId: assignment.parentQueueId as string,
       leaseId: assignment.leaseId,
@@ -4549,6 +4558,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       assignmentCount: assignments.length,
       terminalCount: terminalDecisions.length,
       nonTerminalCount: assignments.length - terminalDecisions.length,
+      promotedWorkCount: promotedWork.length,
       appliedCount: assignments.filter((assignment) => assignment.decision === 'applied').length,
       queuedCount: assignments.filter((assignment) => assignment.decision === 'queued').length,
       escalatedCount: assignments.filter((assignment) => assignment.decision === 'escalated').length,

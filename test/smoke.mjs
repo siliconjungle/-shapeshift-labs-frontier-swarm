@@ -521,6 +521,10 @@ assert.strictEqual(
   hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).action,
   'apply-local'
 );
+assert.deepStrictEqual(
+  hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).queueItemIds,
+  regionBundleA.queueItemIds
+);
 assert.strictEqual(
   hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleB.jobId).action,
   'queue-local'
@@ -677,26 +681,37 @@ assert.strictEqual(drainApply.assignedAction, 'apply-local');
 assert.strictEqual(drainApply.decision, 'applied');
 assert.strictEqual(drainApply.classification, 'terminal');
 assert.strictEqual(drainApply.terminal, true);
+assert.deepStrictEqual(drainApply.queueItemIds, regionBundleA.queueItemIds);
 assert.ok(drainApply.leaseId.startsWith('swarm-coordinator-agent-drain-lease:'));
 assert.ok(drainApply.leaseScope.startsWith('merge:semantic:'));
 assert.strictEqual(drainApply.queueId, hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).scopeId);
+assert.deepStrictEqual(
+  coordinatorDrainWork.terminalDecisions.find((decision) => decision.jobId === regionBundleA.jobId).queueItemIds,
+  regionBundleA.queueItemIds
+);
 const drainQueue = coordinatorDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleB.jobId);
 assert.strictEqual(drainQueue.assignedAction, 'queue-local');
 assert.strictEqual(drainQueue.decision, 'queued');
 assert.strictEqual(drainQueue.classification, 'non-terminal');
 assert.strictEqual(drainQueue.terminal, false);
+assert.deepStrictEqual(drainQueue.queueItemIds, regionBundleB.queueItemIds);
 assert.ok(drainQueue.reasons.includes('max-ready'));
 
 const promoteDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: conflictQueue, generatedAt: 7580 });
 assert.strictEqual(promoteDrainWork.summary.escalatedCount, 2);
 assert.strictEqual(promoteDrainWork.summary.nonTerminalCount, 2);
+assert.strictEqual(promoteDrainWork.summary.promotedWorkCount, 2);
 const drainPromote = promoteDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId);
 assert.strictEqual(drainPromote.assignedAction, 'promote');
 assert.strictEqual(drainPromote.decision, 'escalated');
 assert.strictEqual(drainPromote.classification, 'non-terminal');
 assert.strictEqual(drainPromote.parentQueueId, 'root');
 assert.strictEqual(drainPromote.promoteToQueueId, 'root');
-assert.ok(promoteDrainWork.promotedWork.some((entry) => entry.jobId === regionBundleA.jobId && entry.parentQueueId === 'root'));
+assert.ok(promoteDrainWork.promotedWork.some((entry) => (
+  entry.jobId === regionBundleA.jobId
+  && entry.parentQueueId === 'root'
+  && entry.queueItemIds.join('\n') === regionBundleA.queueItemIds.join('\n')
+)));
 
 const terminalDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: terminalQueue, generatedAt: 7590 });
 assert.strictEqual(terminalDrainWork.summary.terminalCount, 4);
