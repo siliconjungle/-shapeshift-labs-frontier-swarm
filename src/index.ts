@@ -2731,10 +2731,15 @@ export interface FrontierSwarmCoordinatorAgentDrainWork {
   rootQueueId: string;
   leases: FrontierSwarmCoordinatorAgentDrainLease[];
   assignments: FrontierSwarmCoordinatorAgentDrainAssignment[];
+  activeAssignments: FrontierSwarmCoordinatorAgentDrainAssignment[];
   terminalDecisions: FrontierSwarmCoordinatorAgentDrainTerminalDecision[];
   promotedWork: FrontierSwarmCoordinatorAgentPromotedWork[];
+  blockers: FrontierSwarmCoordinatorAgentDrainTerminalDecision[];
   byAction: Record<string, string[]>;
+  byDecision: Record<string, string[]>;
+  byClassification: Record<string, string[]>;
   byQueueId: Record<string, string[]>;
+  byLeaseScope: Record<string, string[]>;
   summary: {
     leaseCount: number;
     assignmentCount: number;
@@ -2812,6 +2817,7 @@ export interface FrontierSwarmCoordinatorAgentDrainTerminalDecision {
   queueItemIds: string[];
   queueId: string;
   leaseId: string;
+  leaseScope: string;
   assignedAction: FrontierSwarmMergeQueueAssignmentAction;
   decision: FrontierSwarmCoordinatorAgentDrainDecision;
   classification: 'terminal';
@@ -4566,6 +4572,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       queueItemIds: [...assignment.queueItemIds],
       queueId: assignment.queueId,
       leaseId: assignment.leaseId,
+      leaseScope: assignment.leaseScope,
       assignedAction: assignment.assignedAction,
       decision: assignment.decision,
       classification: 'terminal',
@@ -4590,8 +4597,13 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       terminal: false,
       reasons: [...assignment.reasons]
     }));
+  const activeAssignments = assignments.filter((assignment) => !coordinatorAgentDrainAssignmentIsTerminal(assignment));
+  const blockers = terminalDecisions.filter((decision) => decision.assignedAction === 'block' || decision.decision === 'blocked');
   const byAction = groupJobIdsBy(assignments, (assignment) => assignment.assignedAction);
+  const byDecision = groupJobIdsBy(assignments, (assignment) => assignment.decision);
+  const byClassification = groupJobIdsBy(assignments, (assignment) => assignment.classification);
   const byQueueId = groupJobIdsBy(assignments, (assignment) => assignment.queueId);
+  const byLeaseScope = groupJobIdsBy(assignments, (assignment) => assignment.leaseScope);
   const consumerSummary = summarizeSwarmCoordinatorAgentDrainWork({ leases, assignments, terminalDecisions, promotedWork });
   return {
     kind: FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND,
@@ -4605,10 +4617,15 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
     rootQueueId: input.queue.rootScopeId,
     leases,
     assignments,
+    activeAssignments,
     terminalDecisions,
     promotedWork,
+    blockers,
     byAction,
+    byDecision,
+    byClassification,
     byQueueId,
+    byLeaseScope,
     summary: {
       leaseCount: leases.length,
       assignmentCount: assignments.length,

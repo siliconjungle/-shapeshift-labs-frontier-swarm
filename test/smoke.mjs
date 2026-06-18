@@ -807,6 +807,13 @@ assert.deepStrictEqual(coordinatorDrainSummary, {
 assert.strictEqual(coordinatorDrainWork.summary.activeAssignmentCount, coordinatorDrainSummary.activeAssignmentCount);
 assert.strictEqual(coordinatorDrainWork.summary.queueItemCount, coordinatorDrainSummary.queueItemCount);
 assert.deepStrictEqual(coordinatorDrainWork.summary.admissionPressure, coordinatorDrainSummary.admissionPressure);
+assert.deepStrictEqual(coordinatorDrainWork.activeAssignments.map((assignment) => assignment.jobId), [regionBundleB.jobId]);
+assert.deepStrictEqual(coordinatorDrainWork.byAction['apply-local'], [regionBundleA.jobId]);
+assert.deepStrictEqual(coordinatorDrainWork.byAction['queue-local'], [regionBundleB.jobId]);
+assert.deepStrictEqual(coordinatorDrainWork.byDecision.applied, [regionBundleA.jobId]);
+assert.deepStrictEqual(coordinatorDrainWork.byDecision.queued, [regionBundleB.jobId]);
+assert.deepStrictEqual(coordinatorDrainWork.byClassification.terminal, [regionBundleA.jobId]);
+assert.deepStrictEqual(coordinatorDrainWork.byClassification['non-terminal'], [regionBundleB.jobId]);
 const drainApply = coordinatorDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId);
 assert.strictEqual(drainApply.assignedAction, 'apply-local');
 assert.strictEqual(drainApply.decision, 'applied');
@@ -820,6 +827,11 @@ assert.deepStrictEqual(
   coordinatorDrainWork.terminalDecisions.find((decision) => decision.jobId === regionBundleA.jobId).queueItemIds,
   regionBundleA.queueItemIds
 );
+assert.strictEqual(
+  coordinatorDrainWork.terminalDecisions.find((decision) => decision.jobId === regionBundleA.jobId).leaseScope,
+  drainApply.leaseScope
+);
+assert.deepStrictEqual(coordinatorDrainWork.byLeaseScope[drainApply.leaseScope], [regionBundleA.jobId]);
 const drainQueue = coordinatorDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleB.jobId);
 assert.strictEqual(drainQueue.assignedAction, 'queue-local');
 assert.strictEqual(drainQueue.decision, 'queued');
@@ -827,6 +839,8 @@ assert.strictEqual(drainQueue.classification, 'non-terminal');
 assert.strictEqual(drainQueue.terminal, false);
 assert.deepStrictEqual(drainQueue.queueItemIds, regionBundleB.queueItemIds);
 assert.ok(drainQueue.reasons.includes('max-ready'));
+assert.strictEqual(coordinatorDrainWork.activeAssignments[0].leaseScope, drainQueue.leaseScope);
+assert.deepStrictEqual(coordinatorDrainWork.byLeaseScope[drainQueue.leaseScope], [regionBundleB.jobId]);
 const stableCoordinatorDrainWork = createSwarmCoordinatorAgentDrainWork({
   queue: createSwarmHierarchicalMergeQueue({ index: regionIndex, admission, generatedAt: 7201 }),
   coordinatorId: 'coordinator-1',
@@ -838,9 +852,12 @@ assert.deepStrictEqual(
 );
 
 const promoteDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: conflictQueue, generatedAt: 7580 });
+const promoteQueueJobIds = conflictQueue.assignments.map((assignment) => assignment.jobId);
 assert.strictEqual(promoteDrainWork.summary.escalatedCount, 2);
 assert.strictEqual(promoteDrainWork.summary.nonTerminalCount, 2);
 assert.strictEqual(promoteDrainWork.summary.promotedWorkCount, 2);
+assert.deepStrictEqual(promoteDrainWork.activeAssignments.map((assignment) => assignment.jobId), promoteQueueJobIds);
+assert.deepStrictEqual(promoteDrainWork.byDecision.escalated, promoteQueueJobIds);
 const promoteDrainSummary = summarizeSwarmCoordinatorAgentDrainWork(promoteDrainWork);
 assert.strictEqual(promoteDrainSummary.activeAssignmentCount, 2);
 assert.strictEqual(promoteDrainSummary.promotedWorkCount, 2);
@@ -857,6 +874,7 @@ assert.strictEqual(drainPromote.promoteToQueueId, 'root');
 const drainPromoteLease = promoteDrainWork.leases.find((lease) => lease.queueId === drainPromote.parentQueueId);
 assert.strictEqual(drainPromote.leaseId, drainPromoteLease.id);
 assert.strictEqual(drainPromote.leaseScope, drainPromoteLease.leaseScope);
+assert.deepStrictEqual(promoteDrainWork.byLeaseScope[drainPromoteLease.leaseScope], promoteQueueJobIds);
 assert.ok(drainPromoteLease.actions.promote.includes(regionBundleA.jobId));
 assert.ok(drainPromoteLease.jobIds.includes(regionBundleA.jobId));
 assert.ok(promoteDrainWork.promotedWork.some((entry) => (
@@ -875,6 +893,7 @@ assert.strictEqual(terminalDrainWork.summary.rejectedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.recordedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.blockedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.nonTerminalCount, 1);
+assert.deepStrictEqual(terminalDrainWork.activeAssignments.map((assignment) => assignment.jobId), [terminalBundleCoordinatorReview.jobId]);
 const terminalDrainSummary = summarizeSwarmCoordinatorAgentDrainWork(terminalDrainWork);
 assert.deepStrictEqual(terminalDrainSummary, {
   leaseCount: terminalDrainWork.leases.length,
@@ -924,6 +943,9 @@ assert.deepStrictEqual(
 assert.ok([drainRerun, drainReject, drainRecordOnly, drainBlock].every((assignment) => assignment.classification === 'terminal' && assignment.terminal === true));
 assert.strictEqual(drainBlock.assignedAction, 'block');
 assert.ok(drainBlock.reasons.includes('true-blocker'));
+assert.deepStrictEqual(terminalDrainWork.blockers.map((decision) => decision.jobId), [terminalBundleBlocked.jobId]);
+assert.strictEqual(terminalDrainWork.blockers[0].leaseScope, drainBlock.leaseScope);
+assert.deepStrictEqual(terminalDrainWork.byDecision.blocked, [terminalBundleBlocked.jobId]);
 const drainCoordinatorReview = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId);
 assert.strictEqual(drainCoordinatorReview.assignedAction, 'promote');
 assert.strictEqual(drainCoordinatorReview.decision, 'escalated');
