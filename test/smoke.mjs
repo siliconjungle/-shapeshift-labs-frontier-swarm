@@ -565,6 +565,22 @@ const hierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex
 assert.strictEqual(hierarchicalQueue.summary.applyLocalCount, 1);
 assert.strictEqual(hierarchicalQueue.summary.queueLocalCount, 1);
 assert.strictEqual(hierarchicalQueue.summary.promoteCount, 0);
+assert.deepStrictEqual(hierarchicalQueue.summary.admissionPressure, {
+  applyLocalCount: 1,
+  applyLocalQueueItemCount: 1,
+  queueLocalCount: 1,
+  queueLocalQueueItemCount: 1,
+  promoteUpwardCount: 0,
+  promoteUpwardQueueItemCount: 0,
+  rerunCount: 0,
+  rerunQueueItemCount: 0,
+  rejectedCount: 0,
+  rejectedQueueItemCount: 0,
+  recordOnlyCount: 0,
+  recordOnlyQueueItemCount: 0,
+  trueBlockCount: 0,
+  trueBlockQueueItemCount: 0
+});
 assert.strictEqual(hierarchicalQueue.scopes.filter((scope) => scope.kind === 'semantic-region').length, 2);
 assert.strictEqual(hierarchicalQueue.scopes.some((scope) => scope.kind === 'custom'), false);
 assert.strictEqual(
@@ -716,6 +732,22 @@ assert.strictEqual(terminalQueue.summary.rejectCount, 1);
 assert.strictEqual(terminalQueue.summary.recordOnlyCount, 1);
 assert.strictEqual(terminalQueue.summary.blockCount, 1);
 assert.strictEqual(terminalQueue.summary.promoteCount, 1);
+assert.deepStrictEqual(terminalQueue.summary.admissionPressure, {
+  applyLocalCount: 0,
+  applyLocalQueueItemCount: 0,
+  queueLocalCount: 0,
+  queueLocalQueueItemCount: 0,
+  promoteUpwardCount: 1,
+  promoteUpwardQueueItemCount: 1,
+  rerunCount: 1,
+  rerunQueueItemCount: 1,
+  rejectedCount: 1,
+  rejectedQueueItemCount: 1,
+  recordOnlyCount: 1,
+  recordOnlyQueueItemCount: 1,
+  trueBlockCount: 1,
+  trueBlockQueueItemCount: 1
+});
 assert.deepStrictEqual(terminalQueue.byAction.block, [terminalBundleBlocked.jobId]);
 assert.deepStrictEqual(terminalQueue.byAction.promote, [terminalBundleCoordinatorReview.jobId]);
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).action, 'rerun');
@@ -754,10 +786,27 @@ assert.deepStrictEqual(coordinatorDrainSummary, {
   activeQueueItemCount: 1,
   terminalQueueItemCount: 1,
   promotedQueueItemCount: 0,
-  blockerQueueItemCount: 0
+  blockerQueueItemCount: 0,
+  admissionPressure: {
+    applyLocalCount: 1,
+    applyLocalQueueItemCount: 1,
+    queueLocalCount: 1,
+    queueLocalQueueItemCount: 1,
+    promoteUpwardCount: 0,
+    promoteUpwardQueueItemCount: 0,
+    rerunCount: 0,
+    rerunQueueItemCount: 0,
+    rejectedCount: 0,
+    rejectedQueueItemCount: 0,
+    recordOnlyCount: 0,
+    recordOnlyQueueItemCount: 0,
+    trueBlockCount: 0,
+    trueBlockQueueItemCount: 0
+  }
 });
 assert.strictEqual(coordinatorDrainWork.summary.activeAssignmentCount, coordinatorDrainSummary.activeAssignmentCount);
 assert.strictEqual(coordinatorDrainWork.summary.queueItemCount, coordinatorDrainSummary.queueItemCount);
+assert.deepStrictEqual(coordinatorDrainWork.summary.admissionPressure, coordinatorDrainSummary.admissionPressure);
 const drainApply = coordinatorDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId);
 assert.strictEqual(drainApply.assignedAction, 'apply-local');
 assert.strictEqual(drainApply.decision, 'applied');
@@ -796,6 +845,8 @@ const promoteDrainSummary = summarizeSwarmCoordinatorAgentDrainWork(promoteDrain
 assert.strictEqual(promoteDrainSummary.activeAssignmentCount, 2);
 assert.strictEqual(promoteDrainSummary.promotedWorkCount, 2);
 assert.strictEqual(promoteDrainSummary.promotedQueueItemCount, 2);
+assert.strictEqual(promoteDrainSummary.admissionPressure.promoteUpwardCount, 2);
+assert.strictEqual(promoteDrainSummary.admissionPressure.promoteUpwardQueueItemCount, 2);
 assert.strictEqual(promoteDrainWork.summary.promotedQueueItemCount, promoteDrainSummary.promotedQueueItemCount);
 const drainPromote = promoteDrainWork.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId);
 assert.strictEqual(drainPromote.assignedAction, 'promote');
@@ -836,11 +887,28 @@ assert.deepStrictEqual(terminalDrainSummary, {
   activeQueueItemCount: 1,
   terminalQueueItemCount: 4,
   promotedQueueItemCount: 1,
-  blockerQueueItemCount: 1
+  blockerQueueItemCount: 1,
+  admissionPressure: {
+    applyLocalCount: 0,
+    applyLocalQueueItemCount: 0,
+    queueLocalCount: 0,
+    queueLocalQueueItemCount: 0,
+    promoteUpwardCount: 1,
+    promoteUpwardQueueItemCount: 1,
+    rerunCount: 1,
+    rerunQueueItemCount: 1,
+    rejectedCount: 1,
+    rejectedQueueItemCount: 1,
+    recordOnlyCount: 1,
+    recordOnlyQueueItemCount: 1,
+    trueBlockCount: 1,
+    trueBlockQueueItemCount: 1
+  }
 });
 assert.strictEqual(terminalDrainWork.summary.activeAssignmentCount, terminalDrainSummary.activeAssignmentCount);
 assert.strictEqual(terminalDrainWork.summary.blockerCount, terminalDrainSummary.blockerCount);
 assert.strictEqual(terminalDrainWork.summary.blockerQueueItemCount, terminalDrainSummary.blockerQueueItemCount);
+assert.deepStrictEqual(terminalDrainWork.summary.admissionPressure, terminalDrainSummary.admissionPressure);
 assert.deepStrictEqual(
   summarizeSwarmCoordinatorAgentDrainWork(JSON.parse(JSON.stringify(terminalDrainWork))),
   terminalDrainSummary

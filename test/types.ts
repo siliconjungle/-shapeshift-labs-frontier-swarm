@@ -74,6 +74,7 @@ import {
   type FrontierSwarmMergeBundle,
   type FrontierSwarmMergeIndex,
   type FrontierSwarmMergeAdmission,
+  type FrontierSwarmMergeAdmissionPressure,
   type FrontierSwarmMergePlan,
   type FrontierSwarmPlan,
   type FrontierSwarmQueueOverlay,
@@ -160,8 +161,11 @@ queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
 admission.admitted satisfies string[];
 hierarchicalQueue.assignments satisfies readonly { scopeId: string; leaseKey: string; action: string }[];
+hierarchicalQueue.summary.admissionPressure.promoteUpwardCount satisfies number;
+hierarchicalQueue.summary.admissionPressure.trueBlockQueueItemCount satisfies number;
 coordinatorDrainWork.leases satisfies readonly { id: string; queueId: string; leaseScope: string; leaseKey: string }[];
 coordinatorDrainWork.assignments satisfies readonly { queueId: string; leaseId: string; leaseScope: string }[];
+coordinatorDrainWork.summary.admissionPressure.applyLocalQueueItemCount satisfies number;
 runStoreShards.shards satisfies readonly { path: string }[];
 contextPack.files satisfies string[];
 contextPack.commands satisfies readonly { command: string }[];
@@ -190,4 +194,5 @@ rebaseReport.entries satisfies readonly { status: string }[];
 usageDecision.ok satisfies boolean;
 lanePlaybook.successfulJobIds satisfies string[];
 patchStackPlan.stacks satisfies readonly { jobIds: string[] }[];
+({} as FrontierSwarmMergeAdmissionPressure).recordOnlyQueueItemCount satisfies number;
 ({} as FrontierSwarmArtifactIndex).summary satisfies { artifactCount: number };

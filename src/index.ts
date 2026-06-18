@@ -2576,6 +2576,23 @@ export type FrontierSwarmMergeQueueAssignmentAction =
   | 'block'
   | string;
 
+export interface FrontierSwarmMergeAdmissionPressure {
+  applyLocalCount: number;
+  applyLocalQueueItemCount: number;
+  queueLocalCount: number;
+  queueLocalQueueItemCount: number;
+  promoteUpwardCount: number;
+  promoteUpwardQueueItemCount: number;
+  rerunCount: number;
+  rerunQueueItemCount: number;
+  rejectedCount: number;
+  rejectedQueueItemCount: number;
+  recordOnlyCount: number;
+  recordOnlyQueueItemCount: number;
+  trueBlockCount: number;
+  trueBlockQueueItemCount: number;
+}
+
 export interface FrontierSwarmMergeQueueScopeInput {
   id: string;
   kind?: FrontierSwarmMergeQueueScopeKind;
@@ -2634,6 +2651,7 @@ export interface FrontierSwarmHierarchicalMergeQueue {
     rejectCount: number;
     blockCount: number;
     recordOnlyCount: number;
+    admissionPressure: FrontierSwarmMergeAdmissionPressure;
   };
   metadata?: JsonObject;
 }
@@ -2698,6 +2716,7 @@ export interface FrontierSwarmCoordinatorAgentDrainWorkConsumerSummary {
   terminalQueueItemCount: number;
   promotedQueueItemCount: number;
   blockerQueueItemCount: number;
+  admissionPressure: FrontierSwarmMergeAdmissionPressure;
 }
 
 export interface FrontierSwarmCoordinatorAgentDrainWork {
@@ -2736,6 +2755,7 @@ export interface FrontierSwarmCoordinatorAgentDrainWork {
     rejectedCount: number;
     recordedCount: number;
     blockedCount: number;
+    admissionPressure: FrontierSwarmMergeAdmissionPressure;
   };
   metadata?: JsonObject;
 }
@@ -4434,6 +4454,7 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
   }
   const byScope = groupJobIdsBy(assignments, (assignment) => assignment.scopeId);
   const byAction = groupJobIdsBy(assignments, (assignment) => assignment.action);
+  const admissionPressure = summarizeSwarmMergeAdmissionPressure(assignments);
   const orderedScopes = Array.from(scopes.values()).sort((left, right) => (
     mergeQueueScopeRank(left.kind) - mergeQueueScopeRank(right.kind)
     || left.id.localeCompare(right.id)
@@ -4460,7 +4481,8 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
       rerunCount: byAction.rerun?.length ?? 0,
       rejectCount: byAction.reject?.length ?? 0,
       blockCount: byAction.block?.length ?? 0,
-      recordOnlyCount: byAction['record-only']?.length ?? 0
+      recordOnlyCount: byAction['record-only']?.length ?? 0,
+      admissionPressure
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
@@ -4606,7 +4628,8 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       rerunCount: assignments.filter((assignment) => assignment.decision === 'rerun').length,
       rejectedCount: assignments.filter((assignment) => assignment.decision === 'rejected').length,
       recordedCount: assignments.filter((assignment) => assignment.decision === 'recorded').length,
-      blockedCount: assignments.filter((assignment) => assignment.decision === 'blocked').length
+      blockedCount: assignments.filter((assignment) => assignment.decision === 'blocked').length,
+      admissionPressure: consumerSummary.admissionPressure
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
@@ -4629,7 +4652,8 @@ export function summarizeSwarmCoordinatorAgentDrainWork(
     activeQueueItemCount: countUniqueDrainQueueItems(activeAssignments),
     terminalQueueItemCount: countUniqueDrainQueueItems(terminalAssignments),
     promotedQueueItemCount: countUniqueDrainQueueItems(work.promotedWork),
-    blockerQueueItemCount: countUniqueDrainQueueItems(blockerAssignments)
+    blockerQueueItemCount: countUniqueDrainQueueItems(blockerAssignments),
+    admissionPressure: summarizeSwarmMergeAdmissionPressure(work.assignments)
   };
 }
 
@@ -5572,6 +5596,76 @@ function coordinatorAgentDrainAssignmentIsTerminal(assignment: FrontierSwarmCoor
 
 function coordinatorAgentDrainAssignmentIsBlocker(assignment: FrontierSwarmCoordinatorAgentDrainAssignment): boolean {
   return assignment.decision === 'blocked' || assignment.assignedAction === 'block';
+}
+
+function summarizeSwarmMergeAdmissionPressure(
+  items: readonly {
+    action?: FrontierSwarmMergeQueueAssignmentAction;
+    assignedAction?: FrontierSwarmMergeQueueAssignmentAction;
+    queueItemIds: readonly string[];
+  }[]
+): FrontierSwarmMergeAdmissionPressure {
+  let applyLocalCount = 0;
+  let queueLocalCount = 0;
+  let promoteUpwardCount = 0;
+  let rerunCount = 0;
+  let rejectedCount = 0;
+  let recordOnlyCount = 0;
+  let trueBlockCount = 0;
+  const applyLocalQueueItemIds = new Set<string>();
+  const queueLocalQueueItemIds = new Set<string>();
+  const promoteUpwardQueueItemIds = new Set<string>();
+  const rerunQueueItemIds = new Set<string>();
+  const rejectedQueueItemIds = new Set<string>();
+  const recordOnlyQueueItemIds = new Set<string>();
+  const trueBlockQueueItemIds = new Set<string>();
+
+  for (const item of items) {
+    const action = item.assignedAction ?? item.action;
+    if (action === 'apply-local') {
+      applyLocalCount += 1;
+      addQueueItemIds(applyLocalQueueItemIds, item.queueItemIds);
+    } else if (action === 'queue-local') {
+      queueLocalCount += 1;
+      addQueueItemIds(queueLocalQueueItemIds, item.queueItemIds);
+    } else if (action === 'promote') {
+      promoteUpwardCount += 1;
+      addQueueItemIds(promoteUpwardQueueItemIds, item.queueItemIds);
+    } else if (action === 'rerun') {
+      rerunCount += 1;
+      addQueueItemIds(rerunQueueItemIds, item.queueItemIds);
+    } else if (action === 'reject') {
+      rejectedCount += 1;
+      addQueueItemIds(rejectedQueueItemIds, item.queueItemIds);
+    } else if (action === 'record-only') {
+      recordOnlyCount += 1;
+      addQueueItemIds(recordOnlyQueueItemIds, item.queueItemIds);
+    } else if (action === 'block') {
+      trueBlockCount += 1;
+      addQueueItemIds(trueBlockQueueItemIds, item.queueItemIds);
+    }
+  }
+
+  return {
+    applyLocalCount,
+    applyLocalQueueItemCount: applyLocalQueueItemIds.size,
+    queueLocalCount,
+    queueLocalQueueItemCount: queueLocalQueueItemIds.size,
+    promoteUpwardCount,
+    promoteUpwardQueueItemCount: promoteUpwardQueueItemIds.size,
+    rerunCount,
+    rerunQueueItemCount: rerunQueueItemIds.size,
+    rejectedCount,
+    rejectedQueueItemCount: rejectedQueueItemIds.size,
+    recordOnlyCount,
+    recordOnlyQueueItemCount: recordOnlyQueueItemIds.size,
+    trueBlockCount,
+    trueBlockQueueItemCount: trueBlockQueueItemIds.size
+  };
+}
+
+function addQueueItemIds(target: Set<string>, queueItemIds: readonly string[]): void {
+  for (const queueItemId of queueItemIds) target.add(queueItemId);
 }
 
 function countUniqueDrainQueueItems(items: readonly { queueItemIds: readonly string[] }[]): number {
