@@ -76,6 +76,8 @@ import {
   type FrontierSwarmMergeAdmission,
   type FrontierSwarmMergeAdmissionPressure,
   type FrontierSwarmMergePlan,
+  type FrontierSwarmMergeQueueAssignment,
+  type FrontierSwarmMergeQueueScope,
   type FrontierSwarmPlan,
   type FrontierSwarmQueueOverlay,
   type FrontierSwarmQueueSnapshot,
@@ -160,11 +162,16 @@ mergeBundle.queueItemIds satisfies string[];
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
 admission.admitted satisfies string[];
-hierarchicalQueue.assignments satisfies readonly { scopeId: string; leaseKey: string; action: string }[];
+hierarchicalQueue.rootScopeId satisfies string;
+hierarchicalQueue.scopes satisfies readonly FrontierSwarmMergeQueueScope[];
+hierarchicalQueue.assignments satisfies readonly FrontierSwarmMergeQueueAssignment[];
+hierarchicalQueue.assignments satisfies readonly { scopeId: string; parentScopeIds: string[]; leaseKey: string; queueItemIds: string[]; action: string }[];
+hierarchicalQueue.byScope satisfies Record<string, string[]>;
 hierarchicalQueue.summary.admissionPressure.promoteUpwardCount satisfies number;
 hierarchicalQueue.summary.admissionPressure.trueBlockQueueItemCount satisfies number;
-coordinatorDrainWork.leases satisfies readonly { id: string; queueId: string; leaseScope: string; leaseKey: string }[];
-coordinatorDrainWork.assignments satisfies readonly { queueId: string; leaseId: string; leaseScope: string }[];
+coordinatorDrainWork.rootQueueId satisfies string;
+coordinatorDrainWork.leases satisfies readonly { id: string; queueId: string; leaseScope: string; leaseKey: string; jobIds: string[] }[];
+coordinatorDrainWork.assignments satisfies readonly { queueId: string; rootQueueId: string; parentQueueIds: string[]; queueItemIds: string[]; leaseId: string; leaseScope: string }[];
 coordinatorDrainWork.activeAssignments satisfies readonly { queueId: string; leaseId: string; leaseScope: string; queueItemIds: string[] }[];
 coordinatorDrainWork.terminalDecisions satisfies readonly { queueId: string; leaseId: string; leaseScope: string; queueItemIds: string[] }[];
 coordinatorDrainWork.blockers satisfies readonly { leaseScope: string; queueItemIds: string[] }[];

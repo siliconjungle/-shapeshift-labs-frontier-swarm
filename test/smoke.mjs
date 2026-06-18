@@ -456,7 +456,9 @@ const unregionedBundle = createSwarmMergeBundle({
 const sameRegionJob = scalePlan.jobs[14];
 const crossScopeJob = scalePlan.jobs[16];
 const highRiskJob = scalePlan.jobs[18];
-assert.ok(sameRegionJob && crossScopeJob && highRiskJob);
+const publicApiJob = scalePlan.jobs[20];
+const unknownRegionJob = scalePlan.jobs[22];
+assert.ok(sameRegionJob && crossScopeJob && highRiskJob && publicApiJob && unknownRegionJob);
 const sameRegionBundle = createSwarmMergeBundle({
   job: sameRegionJob,
   result: {
@@ -493,6 +495,30 @@ const highRiskBundle = createSwarmMergeBundle({
   patchPath: 'agent-runs/high-risk/changes.patch',
   riskLevel: 'high'
 });
+const publicApiBundle = createSwarmMergeBundle({
+  job: publicApiJob,
+  result: {
+    jobId: publicApiJob.id,
+    status: 'verified',
+    changedPaths: ['src/contracts/public-api.ts'],
+    changedRegions: ['contract.public-api'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/public-api/changes.patch',
+  riskLevel: 'low'
+});
+const unknownRegionBundle = createSwarmMergeBundle({
+  job: unknownRegionJob,
+  result: {
+    jobId: unknownRegionJob.id,
+    status: 'verified',
+    changedPaths: ['src/runtime/unknown-region.ts'],
+    changedRegions: ['unknown'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/unknown-region/changes.patch',
+  riskLevel: 'low'
+});
 const regionIndex = createSwarmMergeIndex({ bundles: [regionBundleA, regionBundleB], generatedAt: 6100 });
 assert.strictEqual(regionIndex.summary.conflictCount, 0);
 assert.strictEqual(regionIndex.summary.readyToApplyCount, 2);
@@ -503,6 +529,10 @@ const crossScopeIndex = createSwarmMergeIndex({ bundles: [crossScopeBundle], gen
 assert.strictEqual(crossScopeIndex.summary.conflictCount, 0);
 const highRiskIndex = createSwarmMergeIndex({ bundles: [highRiskBundle], generatedAt: 6170 });
 assert.strictEqual(highRiskIndex.summary.readyToApplyCount, 1);
+const publicApiIndex = createSwarmMergeIndex({ bundles: [publicApiBundle], generatedAt: 6180 });
+assert.strictEqual(publicApiIndex.summary.readyToApplyCount, 1);
+const unknownRegionIndex = createSwarmMergeIndex({ bundles: [unknownRegionBundle], generatedAt: 6190 });
+assert.strictEqual(unknownRegionIndex.summary.readyToApplyCount, 1);
 const pathFallbackIndex = createSwarmMergeIndex({ bundles: [regionBundleA, unregionedBundle], generatedAt: 6200 });
 assert.strictEqual(pathFallbackIndex.summary.conflictCount, 1);
 assert.deepStrictEqual(pathFallbackIndex.entries.find((entry) => entry.jobId === regionBundleA.jobId).conflictingJobIds, [unregionedBundle.jobId]);
@@ -561,6 +591,15 @@ assert.strictEqual(patchStackPlan.summary.jobCount, 2);
 assert.ok(patchStackPlan.stacks.some((stack) => stack.conflicts.length === 1));
 const defaultHierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, generatedAt: 7190 });
 assert.strictEqual(defaultHierarchicalQueue.summary.applyLocalCount, 2);
+assert.strictEqual(defaultHierarchicalQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:repo:*');
+assert.strictEqual(defaultHierarchicalQueue.summary.admissionPressure.applyLocalQueueItemCount, 2);
+assert.deepStrictEqual(
+  defaultHierarchicalQueue.assignments.map((assignment) => assignment.queueItemIds).flat().sort(),
+  [regionBundleA.taskId, regionBundleB.taskId].sort()
+);
+assert.strictEqual(new Set(defaultHierarchicalQueue.assignments.map((assignment) => assignment.scopeId)).size, 2);
+assert.strictEqual(new Set(defaultHierarchicalQueue.assignments.map((assignment) => assignment.leaseKey)).size, 2);
+assert.ok(defaultHierarchicalQueue.assignments.every((assignment) => assignment.leaseKey.startsWith(`merge:semantic:${assignment.lane ?? 'root'}:content.`)));
 const hierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, admission, generatedAt: 7200 });
 assert.strictEqual(hierarchicalQueue.summary.applyLocalCount, 1);
 assert.strictEqual(hierarchicalQueue.summary.queueLocalCount, 1);
@@ -601,6 +640,7 @@ assert.strictEqual(sameRegionQueue.summary.promoteCount, 0);
 assert.strictEqual(new Set(sameRegionQueue.assignments.map((assignment) => assignment.scopeId)).size, 1);
 assert.ok(sameRegionQueue.assignments.every((assignment) => assignment.reasons.includes('same-lease-scope-conflict')));
 assert.strictEqual(new Set(sameRegionQueue.assignments.map((assignment) => assignment.leaseKey)).size, 1);
+assert.strictEqual(sameRegionQueue.summary.admissionPressure.queueLocalQueueItemCount, 2);
 const crossScopeQueue = createSwarmHierarchicalMergeQueue({ index: crossScopeIndex, generatedAt: 7260 });
 const crossScopeAssignment = crossScopeQueue.assignments.find((assignment) => assignment.jobId === crossScopeBundle.jobId);
 assert.strictEqual(crossScopeAssignment.action, 'promote');
@@ -611,6 +651,23 @@ const highRiskAssignment = highRiskQueue.assignments.find((assignment) => assign
 assert.strictEqual(highRiskAssignment.action, 'promote');
 assert.strictEqual(highRiskAssignment.promoteToScopeId, 'root');
 assert.ok(highRiskAssignment.reasons.includes('high-risk'));
+const publicApiQueue = createSwarmHierarchicalMergeQueue({ index: publicApiIndex, generatedAt: 7280 });
+const publicApiAssignment = publicApiQueue.assignments.find((assignment) => assignment.jobId === publicApiBundle.jobId);
+assert.strictEqual(publicApiAssignment.action, 'promote');
+assert.strictEqual(publicApiAssignment.promoteToScopeId, publicApiAssignment.parentScopeIds[0]);
+assert.ok(publicApiAssignment.scopeId.startsWith('semantic-region:'));
+assert.strictEqual(publicApiAssignment.leaseKey, `merge:semantic:${publicApiAssignment.lane ?? 'root'}:contract.public-api`);
+assert.deepStrictEqual(publicApiAssignment.queueItemIds, publicApiBundle.queueItemIds);
+assert.ok(publicApiAssignment.reasons.includes('public-api-or-contract-region'));
+assert.strictEqual(publicApiQueue.summary.admissionPressure.promoteUpwardQueueItemCount, 1);
+const unknownRegionQueue = createSwarmHierarchicalMergeQueue({ index: unknownRegionIndex, generatedAt: 7290 });
+const unknownRegionAssignment = unknownRegionQueue.assignments.find((assignment) => assignment.jobId === unknownRegionBundle.jobId);
+assert.strictEqual(unknownRegionAssignment.action, 'promote');
+assert.strictEqual(unknownRegionQueue.scopes.find((scope) => scope.id === unknownRegionAssignment.scopeId).kind, 'path');
+assert.strictEqual(unknownRegionAssignment.leaseKey, 'merge:path:src/runtime/unknown-region.ts');
+assert.strictEqual(unknownRegionAssignment.promoteToScopeId, unknownRegionAssignment.parentScopeIds[0]);
+assert.ok(unknownRegionAssignment.reasons.includes('unknown-semantic-region'));
+assert.strictEqual(unknownRegionQueue.summary.admissionPressure.promoteUpwardCount, 1);
 const conflictQueue = createSwarmHierarchicalMergeQueue({ index: pathFallbackIndex, generatedAt: 7300 });
 assert.strictEqual(conflictQueue.summary.promoteCount, 2);
 assert.deepStrictEqual(conflictQueue.promotions.map((promotion) => promotion.toScopeId), ['root', 'root']);
