@@ -2710,6 +2710,8 @@ export interface FrontierSwarmMergeQueueRetrySlice {
   kind: FrontierSwarmMergeQueueScopeKind;
   parentScopeIds: string[];
   leaseKey: string;
+  requiredLeaseScopeIds?: string[];
+  requiredLeaseKeys?: string[];
   lane?: string;
   changedPaths: string[];
   changedRegions: string[];
@@ -5727,6 +5729,8 @@ function mergeQueueRetrySliceForScope(
     kind: scope.kind,
     parentScopeIds: mergeQueueParentScopeIds(scope, scopes),
     leaseKey: scope.leaseKey,
+    requiredLeaseScopeIds: [scope.id],
+    requiredLeaseKeys: [scope.leaseKey],
     ...(scope.lane ? { lane: scope.lane } : {}),
     changedPaths: [...scope.changedPaths],
     changedRegions: [...scope.changedRegions],
@@ -5741,6 +5745,8 @@ function cloneMergeQueueRetrySlices(slices: readonly FrontierSwarmMergeQueueRetr
     kind: slice.kind,
     parentScopeIds: [...slice.parentScopeIds],
     leaseKey: slice.leaseKey,
+    ...(slice.requiredLeaseScopeIds?.length ? { requiredLeaseScopeIds: [...slice.requiredLeaseScopeIds] } : {}),
+    ...(slice.requiredLeaseKeys?.length ? { requiredLeaseKeys: [...slice.requiredLeaseKeys] } : {}),
     ...(slice.lane ? { lane: slice.lane } : {}),
     changedPaths: [...slice.changedPaths],
     changedRegions: [...slice.changedRegions],

@@ -731,6 +731,93 @@ assert.deepStrictEqual(
 );
 assert.ok(sameFileSliceDrainWorkA.assignments.every((assignment) => assignment.queueKind === 'semantic-region'));
 assert.ok(sameFileSliceDrainWorkA.assignments.every((assignment) => assignment.requiredLeaseKeys[0] === assignment.leaseScope));
+const syntheticSliceBundleA = createSwarmMergeBundle({
+  result: {
+    jobId: 'synthetic-same-file-slice-alpha',
+    status: 'verified',
+    changedPaths: ['src/synthetic/same-file.ts'],
+    changedRegions: ['slice.alpha'],
+    queueItemIds: ['synthetic-same-file-slice-alpha'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/synthetic-alpha/changes.patch',
+  riskLevel: 'low'
+});
+const syntheticSliceBundleB = createSwarmMergeBundle({
+  result: {
+    jobId: 'synthetic-same-file-slice-beta',
+    status: 'verified',
+    changedPaths: ['src/synthetic/same-file.ts'],
+    changedRegions: ['slice.beta'],
+    queueItemIds: ['synthetic-same-file-slice-beta'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/synthetic-beta/changes.patch',
+  riskLevel: 'low'
+});
+const syntheticSliceIndex = createSwarmMergeIndex({ bundles: [syntheticSliceBundleA, syntheticSliceBundleB], generatedAt: 7199 });
+assert.strictEqual(syntheticSliceIndex.summary.conflictCount, 0);
+assert.strictEqual(syntheticSliceIndex.summary.readyToApplyCount, 2);
+assert.deepStrictEqual(syntheticSliceIndex.byPath['src/synthetic/same-file.ts'].sort(), [
+  syntheticSliceBundleA.jobId,
+  syntheticSliceBundleB.jobId
+].sort());
+const syntheticSliceAdmission = createSwarmMergeAdmission({
+  index: syntheticSliceIndex,
+  maxReady: 2,
+  maxChangedPaths: 1,
+  maxChangedRegions: 2,
+  generatedAt: 7199.1
+});
+assert.deepStrictEqual(syntheticSliceAdmission.admitted.sort(), [syntheticSliceBundleA.jobId, syntheticSliceBundleB.jobId].sort());
+assert.strictEqual(syntheticSliceAdmission.summary.changedPathCount, 1);
+assert.strictEqual(syntheticSliceAdmission.summary.changedRegionCount, 2);
+const syntheticSliceQueue = createSwarmHierarchicalMergeQueue({
+  index: syntheticSliceIndex,
+  admission: syntheticSliceAdmission,
+  generatedAt: 7199.2
+});
+assert.strictEqual(syntheticSliceQueue.summary.applyLocalCount, 2);
+assert.strictEqual(syntheticSliceQueue.summary.promoteCount, 0);
+assert.strictEqual(new Set(syntheticSliceQueue.assignments.map((assignment) => assignment.scopeId)).size, 2);
+assert.strictEqual(new Set(syntheticSliceQueue.assignments.map((assignment) => assignment.leaseKey)).size, 2);
+assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.scopeId.startsWith('semantic-region:')));
+assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.changedPaths[0] === 'src/synthetic/same-file.ts'));
+assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.requiredLeaseKeys[0] === assignment.leaseKey));
+assert.ok(syntheticSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys[0].startsWith('merge:path:')));
+const syntheticOverlapBundle = createSwarmMergeBundle({
+  result: {
+    jobId: 'synthetic-same-file-slice-alpha-overlap',
+    status: 'verified',
+    changedPaths: ['src/synthetic/same-file.ts'],
+    changedRegions: ['slice.alpha'],
+    queueItemIds: ['synthetic-same-file-slice-alpha-overlap'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/synthetic-alpha-overlap/changes.patch',
+  riskLevel: 'low'
+});
+const syntheticOverlapIndex = createSwarmMergeIndex({ bundles: [syntheticSliceBundleA, syntheticOverlapBundle], generatedAt: 7199.3 });
+assert.strictEqual(syntheticOverlapIndex.summary.conflictCount, 1);
+assert.deepStrictEqual(
+  syntheticOverlapIndex.entries.find((entry) => entry.jobId === syntheticOverlapBundle.jobId).conflictingJobIds,
+  [syntheticSliceBundleA.jobId]
+);
+const syntheticOverlapAdmission = createSwarmMergeAdmission({
+  index: syntheticOverlapIndex,
+  maxReady: 2,
+  maxChangedPaths: 1,
+  maxChangedRegions: 1,
+  generatedAt: 7199.4
+});
+assert.deepStrictEqual(syntheticOverlapAdmission.admitted, []);
+assert.ok(syntheticOverlapAdmission.deferred.every((entry) => entry.reasons.includes('conflicting-changes')));
+const syntheticOverlapQueue = createSwarmHierarchicalMergeQueue({ index: syntheticOverlapIndex, generatedAt: 7199.5 });
+assert.strictEqual(syntheticOverlapQueue.summary.queueLocalCount, 2);
+assert.strictEqual(syntheticOverlapQueue.summary.promoteCount, 0);
+assert.strictEqual(new Set(syntheticOverlapQueue.assignments.map((assignment) => assignment.scopeId)).size, 1);
+assert.strictEqual(new Set(syntheticOverlapQueue.assignments.map((assignment) => assignment.leaseKey)).size, 1);
+assert.ok(syntheticOverlapQueue.assignments.every((assignment) => assignment.reasons.includes('same-lease-scope-conflict')));
 const hierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, admission, generatedAt: 7200 });
 assert.strictEqual(hierarchicalQueue.summary.applyLocalCount, 1);
 assert.strictEqual(hierarchicalQueue.summary.queueLocalCount, 1);
@@ -790,6 +877,8 @@ assert.deepStrictEqual(crossScopeAssignment.semanticSliceLeaseKeys.sort(), [
 ]);
 assert.ok(crossScopeAssignment.retrySlices.every((slice) => slice.kind === 'semantic-region'));
 assert.ok(crossScopeAssignment.retrySlices.every((slice) => slice.parentScopeIds.includes('lane:runtime')));
+assert.ok(crossScopeAssignment.retrySlices.every((slice) => slice.requiredLeaseScopeIds[0] === slice.scopeId));
+assert.ok(crossScopeAssignment.retrySlices.every((slice) => slice.requiredLeaseKeys[0] === slice.leaseKey));
 const semanticSliceRetryDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: crossScopeQueue, generatedAt: 7265 });
 const semanticSliceRetryDrainAssignment = semanticSliceRetryDrainWork.assignments.find((assignment) => assignment.jobId === crossScopeBundle.jobId);
 assert.strictEqual(semanticSliceRetryDrainAssignment.assignedAction, 'rerun');
