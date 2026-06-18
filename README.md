@@ -10,6 +10,10 @@ Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and
 
 The queue model is generic. Runners can map scopes to any repository, package, feature, service, file, symbol, or semantic ownership region without baking project-specific package names into the core package.
 
+Caller-provided `scopes` are serialized as opaque queue scopes. Their `id`, `kind`, `leaseKey`, `changedPaths`, `changedRegions`, and `metadata` stay runner-owned, with `kind` defaulting to `custom`; when no custom scope is supplied, queue assignments still derive the default root, lane, semantic-region, and path scopes from the merge index.
+
+This keeps the root coordinator from becoming the only place where work can make progress. A child queue can apply verified work under its own lease, leave clean overflow in `queue-local`, and promote only the items that need a parent decision. Adapters such as `@shapeshift-labs/frontier-swarm-codex` can layer run, collect, Loom, auto-drain, rerun, reject, discovery, and blocker workflows on top of the generic queue data.
+
 
 ## Related Packages
 

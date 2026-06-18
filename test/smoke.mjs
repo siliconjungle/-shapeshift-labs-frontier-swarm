@@ -514,6 +514,7 @@ assert.strictEqual(hierarchicalQueue.summary.applyLocalCount, 1);
 assert.strictEqual(hierarchicalQueue.summary.queueLocalCount, 1);
 assert.strictEqual(hierarchicalQueue.summary.promoteCount, 0);
 assert.strictEqual(hierarchicalQueue.scopes.filter((scope) => scope.kind === 'semantic-region').length, 2);
+assert.strictEqual(hierarchicalQueue.scopes.some((scope) => scope.kind === 'custom'), false);
 assert.strictEqual(
   hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).action,
   'apply-local'
@@ -527,6 +528,33 @@ assert.strictEqual(conflictQueue.summary.promoteCount, 2);
 assert.deepStrictEqual(conflictQueue.promotions.map((promotion) => promotion.toScopeId), ['root', 'root']);
 assert.ok(conflictQueue.byAction.promote.includes(regionBundleA.jobId));
 assert.ok(conflictQueue.byScope['lane:runtime'] === undefined);
+assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'root'));
+assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'lane'));
+assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'semantic-region'));
+assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'path'));
+assert.strictEqual(conflictQueue.scopes.some((scope) => scope.kind === 'custom'), false);
+const customScopeQueue = createSwarmHierarchicalMergeQueue({
+  index: regionIndex,
+  scopes: [{
+    id: 'scope:shared-runtime',
+    parentId: 'root',
+    title: 'Shared runtime queue',
+    changedPaths: ['src/hot/runtime-website-content.ts'],
+    changedRegions: ['content.docs'],
+    leaseKey: 'merge:scope:shared-runtime',
+    metadata: { ownerKind: 'adapter-defined' }
+  }],
+  generatedAt: 7350
+});
+const customScope = customScopeQueue.scopes.find((scope) => scope.id === 'scope:shared-runtime');
+assert.ok(customScope);
+assert.strictEqual(customScope.kind, 'custom');
+assert.strictEqual(customScope.leaseKey, 'merge:scope:shared-runtime');
+assert.deepStrictEqual(customScope.changedPaths, ['src/hot/runtime-website-content.ts']);
+assert.deepStrictEqual(customScope.changedRegions, ['content.docs']);
+assert.deepStrictEqual(customScope.metadata, { ownerKind: 'adapter-defined' });
+assert.deepStrictEqual(customScope.jobIds, []);
+assert.ok(customScopeQueue.assignments.every((assignment) => assignment.scopeId.startsWith('semantic-region:')));
 const sameLaneRuntimeJob = scalePlan.jobs.find((job) => job.id !== regionBundleA.jobId && job.lane === 'runtime');
 assert.ok(sameLaneRuntimeJob);
 const sameLaneUnregionedBundle = createSwarmMergeBundle({
@@ -545,6 +573,70 @@ const sameLaneConflictQueue = createSwarmHierarchicalMergeQueue({
   generatedAt: 7500
 });
 assert.deepStrictEqual(sameLaneConflictQueue.promotions.map((promotion) => promotion.toScopeId), ['lane:runtime', 'lane:runtime']);
+const terminalJobs = [scalePlan.jobs[8], scalePlan.jobs[9], scalePlan.jobs[10], scalePlan.jobs[11]];
+assert.ok(terminalJobs.every(Boolean));
+const terminalBundleStale = createSwarmMergeBundle({
+  job: terminalJobs[0],
+  result: {
+    jobId: terminalJobs[0].id,
+    status: 'verified',
+    changedPaths: ['src/terminal/stale.ts'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/terminal/stale.patch',
+  riskLevel: 'low',
+  staleAgainstHead: true
+});
+const terminalBundleRejected = createSwarmMergeBundle({
+  job: terminalJobs[1],
+  result: {
+    jobId: terminalJobs[1].id,
+    status: 'failed',
+    changedPaths: ['src/terminal/rejected.ts'],
+    verification: [{ status: 1 }]
+  },
+  patchPath: 'agent-runs/terminal/rejected.patch',
+  riskLevel: 'high'
+});
+const terminalBundleDiscovery = createSwarmMergeBundle({
+  job: terminalJobs[2],
+  result: {
+    jobId: terminalJobs[2].id,
+    status: 'completed',
+    changedPaths: []
+  },
+  riskLevel: 'low'
+});
+const terminalBundleBlocked = createSwarmMergeBundle({
+  job: terminalJobs[3],
+  result: {
+    jobId: terminalJobs[3].id,
+    status: 'blocked',
+    changedPaths: ['src/terminal/blocker.ts']
+  },
+  riskLevel: 'high'
+});
+const terminalQueue = createSwarmHierarchicalMergeQueue({
+  index: createSwarmMergeIndex({
+    bundles: [terminalBundleStale, terminalBundleRejected, terminalBundleDiscovery, terminalBundleBlocked],
+    generatedAt: 7550
+  }),
+  generatedAt: 7560
+});
+assert.strictEqual(terminalQueue.summary.rerunCount, 1);
+assert.strictEqual(terminalQueue.summary.rejectCount, 1);
+assert.strictEqual(terminalQueue.summary.recordOnlyCount, 1);
+assert.strictEqual(terminalQueue.summary.blockCount, 1);
+assert.strictEqual(terminalQueue.summary.promoteCount, 0);
+assert.deepStrictEqual(terminalQueue.promotions, []);
+assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).action, 'rerun');
+assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId).action, 'reject');
+assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId).action, 'record-only');
+assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).action, 'block');
+assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).reasons.includes('stale-against-head'));
+assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId).reasons.includes('failed-or-invalid-evidence'));
+assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId).reasons.includes('discovery-only'));
+assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).reasons.includes('true-blocker'));
 
 const decomposed = decomposeSwarmFeature({
   featureId: 'feature-x',
