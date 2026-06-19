@@ -106,6 +106,8 @@ export const FRONTIER_SWARM_PANEL_EVALUATION_KIND = 'frontier.swarm.panel-evalua
 export const FRONTIER_SWARM_PANEL_EVALUATION_VERSION = 1;
 export const FRONTIER_SWARM_CONTINUOUS_POOL_STATE_KIND = 'frontier.swarm.continuous-pool-state';
 export const FRONTIER_SWARM_CONTINUOUS_POOL_STATE_VERSION = 1;
+export const FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_KIND = 'frontier.swarm.contextual-bandit-recommendations';
+export const FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
@@ -10806,7 +10808,14 @@ export function mergeSwarmBacklogs(input: {
 export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanInput): FrontierSwarmBacklogTaskPlan {
   const backlog = isBacklog(input.backlog) ? input.backlog : createSwarmBacklog(input.backlog);
   const extraEntries = (input.tasks ?? []).map((task) => normalizeTask(task)).map(taskToBacklogEntry);
-  const runnable = [...backlog.entries, ...extraEntries].filter((entry) => entry.status === 'ready' || entry.status === 'open');
+  const recursiveSourceIds = new Set(input.recursive
+    ? backlog.entries
+      .filter((entry) => shouldDecomposeBacklogEntry(entry))
+      .map((entry) => entry.id)
+    : []);
+  const runnable = [...backlog.entries, ...extraEntries]
+    .filter((entry) => entry.status === 'ready' || entry.status === 'open')
+    .filter((entry) => !recursiveSourceIds.has(entry.id));
   const tasks = runnable.map((entry) => normalizeTask({
     id: entry.taskId ?? entry.id,
     title: entry.title,
@@ -10824,7 +10833,7 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
     metadata: { backlogEntryId: entry.id, ...(entry.metadata ?? {}) }
   }));
   const decompositionTasks = input.recursive ? backlog.entries
-    .filter((entry) => entry.entryKind === 'feature' || entry.childEntryIds.length > 0)
+    .filter(shouldDecomposeBacklogEntry)
     .map((entry) => normalizeTask({
       id: `${entry.id}:decompose`,
       title: `Decompose ${entry.title}`,
@@ -10854,6 +10863,10 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
     summary: { taskCount: allTasks.length, runnableCount: tasks.length, decompositionCount: decompositionTasks.length },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
+}
+
+function shouldDecomposeBacklogEntry(entry: FrontierSwarmBacklogEntry): boolean {
+  return entry.entryKind === 'feature' || entry.childEntryIds.length > 0;
 }
 
 export type FrontierSwarmModelRoutingMode = 'fill' | 'observe' | 'override' | string;
@@ -10977,7 +10990,11 @@ export function createSwarmModelRoutingFeedback(input: FrontierSwarmModelRouting
 export function createSwarmModelRoutingPolicy(input: FrontierSwarmModelRoutingPolicyInput = {}): FrontierSwarmModelRoutingPolicy {
   const generatedAt = input.generatedAt ?? Date.now();
   const feedback = (input.feedback ?? []).map(createSwarmModelRoutingFeedback);
-  const signals = (input.signals ?? []).map((signal, index) => ({ id: `signal-${index + 1}`, ...signal }));
+  const explicitSignals = (input.signals ?? []).map((signal, index) => ({ id: `signal-${index + 1}`, ...signal }));
+  const signals = [
+    ...explicitSignals,
+    ...feedback.flatMap((entry, index) => modelRoutingSignalsFromFeedback(entry, index))
+  ];
   const preferences = signals.filter((signal) => signal.mode === 'prefer' || signal.mode === 'avoid' || signal.mode === 'override');
   return {
     kind: 'frontier.swarm.model-routing-policy',
@@ -10998,6 +11015,69 @@ export function createSwarmModelRoutingPolicy(input: FrontierSwarmModelRoutingPo
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
+}
+
+function modelRoutingSignalsFromFeedback(
+  feedback: FrontierSwarmModelRoutingFeedback,
+  index: number
+): FrontierSwarmModelRoutingPolicySignal[] {
+  const mode = modelRoutingSignalModeFromFeedback(feedback);
+  if (!mode || !feedback.model || feedback.model === 'unknown') return [];
+  return [{
+    id: `feedback-signal-${index + 1}`,
+    mode,
+    lane: feedback.lane,
+    ...(feedback.workKind ? { workKind: feedback.workKind } : {}),
+    model: feedback.model,
+    confidence: modelRoutingSignalConfidenceFromFeedback(feedback),
+    reason: modelRoutingSignalReasonFromFeedback(feedback, mode),
+    metadata: {
+      feedbackId: feedback.id,
+      ...(feedback.jobId ? { jobId: feedback.jobId } : {}),
+      ...(feedback.taskId ? { taskId: feedback.taskId } : {}),
+      ...(feedback.computeId ? { computeId: feedback.computeId } : {}),
+      ...(feedback.mergeDisposition ? { mergeDisposition: feedback.mergeDisposition } : {}),
+      ...(feedback.mergeReadiness ? { mergeReadiness: feedback.mergeReadiness } : {}),
+      ...(feedback.resultStatus ? { resultStatus: feedback.resultStatus } : {})
+    }
+  }];
+}
+
+function modelRoutingSignalModeFromFeedback(feedback: FrontierSwarmModelRoutingFeedback): FrontierSwarmModelRoutingMode | undefined {
+  const disposition = feedback.mergeDisposition;
+  const readiness = feedback.mergeReadiness;
+  const status = feedback.resultStatus;
+  if (feedback.selected || disposition === 'auto-mergeable' || disposition === 'applied') return 'prefer';
+  if (
+    status === 'failed'
+    || disposition === 'rejected'
+    || disposition === 'stale-against-head'
+    || disposition === 'needs-port'
+    || readiness === 'blocked'
+  ) {
+    return 'avoid';
+  }
+  const band = feedback.evidenceQuality?.band;
+  if (band === 'verified' || band === 'strong') return 'prefer';
+  if (band === 'weak' || band === 'missing' || band === 'none') return 'avoid';
+  return undefined;
+}
+
+function modelRoutingSignalConfidenceFromFeedback(feedback: FrontierSwarmModelRoutingFeedback): FrontierSwarmConfidence {
+  const confidence = feedback.evidenceQuality?.confidence;
+  return confidence === 'high' || confidence === 'medium' || confidence === 'low' ? confidence : 'low';
+}
+
+function modelRoutingSignalReasonFromFeedback(
+  feedback: FrontierSwarmModelRoutingFeedback,
+  mode: FrontierSwarmModelRoutingMode
+): string {
+  const disposition = feedback.mergeDisposition ?? 'unknown-disposition';
+  const readiness = feedback.mergeReadiness ?? 'unknown-readiness';
+  const status = feedback.resultStatus ?? 'unknown-status';
+  return mode === 'prefer'
+    ? `successful routing feedback: ${disposition}/${readiness}/${status}`
+    : `negative routing feedback: ${disposition}/${readiness}/${status}`;
 }
 
 export function createSwarmModelRoutingFeedbackFromBoard(input: { board?: unknown; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmModelRoutingFeedback {
@@ -11077,9 +11157,31 @@ export interface FrontierSwarmStrategyTournamentHistory {
   id: string;
   tournaments: FrontierSwarmStrategyTournament[];
   generatedAt: number;
+  summary: {
+    tournamentCount: number;
+    strategyCount: number;
+    matchCount: number;
+    verifiedCount: number;
+    rejectedCount: number;
+    undefinedCount: number;
+    topStrategyId?: string;
+    topAverageScore?: number;
+  };
   metadata?: JsonObject;
 }
+export interface FrontierSwarmStrategyTournamentComparisonEntry {
+  strategyId: string;
+  status: 'new' | 'removed' | 'regressed' | 'improved' | 'stable' | string;
+  baselineScore?: number;
+  currentScore?: number;
+  scoreDelta: number;
+  baselineSamples?: number;
+  currentSamples?: number;
+}
 export interface FrontierSwarmStrategyTournamentComparison {
+  kind?: 'frontier.swarm.strategy-tournament-comparison';
+  version?: 1;
+  id?: string;
   winnerId?: string;
   tournamentCount: number;
   candidateCount: number;
@@ -11087,7 +11189,111 @@ export interface FrontierSwarmStrategyTournamentComparison {
   currentId?: string;
   scoreDelta?: number;
   regression?: boolean;
+  generatedAt?: number;
+  entries?: FrontierSwarmStrategyTournamentComparisonEntry[];
+  summary?: {
+    strategyCount: number;
+    newCount: number;
+    removedCount: number;
+    regressedCount: number;
+    improvedCount: number;
+    stableCount: number;
+    largestRegression?: number;
+    largestImprovement?: number;
+  };
   metadata?: JsonObject;
+}
+export type FrontierSwarmBanditAlgorithm = 'deterministic-ucb1' | string;
+export type FrontierSwarmBanditTarget = 'strategy' | 'lane' | 'concurrency-key' | string;
+export type FrontierSwarmBanditAction = 'promote' | 'demote' | 'hold' | 'explore' | string;
+export interface FrontierSwarmContextualBanditPolicyInput {
+  algorithm?: FrontierSwarmBanditAlgorithm;
+  explorationWeight?: number;
+  minPromoteMatches?: number;
+  minPromoteVerified?: number;
+  promoteReward?: number;
+  demoteReward?: number;
+  maxNegativeRate?: number;
+  includeTargets?: readonly FrontierSwarmBanditTarget[];
+  metadata?: unknown;
+}
+export interface FrontierSwarmContextualBanditPolicy {
+  algorithm: FrontierSwarmBanditAlgorithm;
+  explorationWeight: number;
+  minPromoteMatches: number;
+  minPromoteVerified: number;
+  promoteReward: number;
+  demoteReward: number;
+  maxNegativeRate: number;
+  includeTargets: FrontierSwarmBanditTarget[];
+  metadata?: JsonObject;
+}
+export interface FrontierSwarmContextualBanditInput {
+  id?: string;
+  tournament?: FrontierSwarmStrategyTournament;
+  history?: FrontierSwarmStrategyTournamentHistory;
+  policy?: FrontierSwarmContextualBanditPolicyInput;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+export interface FrontierSwarmBanditArmRecommendation {
+  id: string;
+  target: FrontierSwarmBanditTarget;
+  key: string;
+  action: FrontierSwarmBanditAction;
+  score: number;
+  rewardMean: number;
+  explorationBonus: number;
+  confidence: number;
+  matchCount: number;
+  totalMatchCount: number;
+  verifiedCount: number;
+  rejectedCount: number;
+  undefinedCount: number;
+  negativeRate: number;
+  strategyIds: string[];
+  lanes: string[];
+  concurrencyKeys: string[];
+  outcomeCounts: Record<string, number>;
+  reasonCodes: string[];
+  metadata?: JsonObject;
+}
+export interface FrontierSwarmContextualBanditRecommendations {
+  kind: typeof FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_KIND;
+  version: typeof FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_VERSION;
+  id: string;
+  generatedAt: number;
+  algorithm: FrontierSwarmBanditAlgorithm;
+  tournamentId?: string;
+  historyId?: string;
+  policy: FrontierSwarmContextualBanditPolicy;
+  recommendations: FrontierSwarmBanditArmRecommendation[];
+  byTarget: Record<string, string[]>;
+  summary: {
+    recommendationCount: number;
+    promoteCount: number;
+    demoteCount: number;
+    exploreCount: number;
+    holdCount: number;
+    totalMatchCount: number;
+    topRecommendationId?: string;
+    topScore?: number;
+  };
+  metadata?: JsonObject;
+}
+
+interface FrontierSwarmBanditArmStats {
+  target: FrontierSwarmBanditTarget;
+  key: string;
+  rewardSum: number;
+  matchCount: number;
+  verifiedCount: number;
+  rejectedCount: number;
+  undefinedCount: number;
+  strategyIds: string[];
+  lanes: string[];
+  concurrencyKeys: string[];
+  outcomeCounts: Record<string, number>;
 }
 
 export function createSwarmTournamentAdaptiveFeedback(input: {
@@ -11189,7 +11395,22 @@ export function createSwarmMergeTournament(input: {
 export function createSwarmStrategyTournamentHistory(input: { id?: string; tournaments?: readonly FrontierSwarmStrategyTournament[]; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmStrategyTournamentHistory {
   const generatedAt = input.generatedAt ?? Date.now();
   const tournaments = cloneJsonValue([...(input.tournaments ?? [])]);
-  return { kind: 'frontier.swarm.strategy-tournament-history', version: 1, id: input.id ?? 'swarm-strategy-tournament-history:' + stableHash([tournaments.map((entry) => entry.id), generatedAt]), tournaments, generatedAt, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
+  const standings = tournaments.flatMap((tournament) => tournament.standings);
+  const scoreByStrategy = new Map<string, number[]>();
+  for (const standing of standings) scoreByStrategy.set(standing.strategyId, [...(scoreByStrategy.get(standing.strategyId) ?? []), standing.score]);
+  const top = Array.from(scoreByStrategy.entries())
+    .map(([strategyId, scores]) => ({ strategyId, averageScore: roundPercent(scores.reduce((sum, score) => sum + score, 0) / Math.max(1, scores.length)) }))
+    .sort((left, right) => right.averageScore - left.averageScore || left.strategyId.localeCompare(right.strategyId))[0];
+  const summary = {
+    tournamentCount: tournaments.length,
+    strategyCount: scoreByStrategy.size,
+    matchCount: tournaments.reduce((sum, tournament) => sum + tournament.summary.matchCount, 0),
+    verifiedCount: tournaments.reduce((sum, tournament) => sum + tournament.summary.verifiedCount, 0),
+    rejectedCount: tournaments.reduce((sum, tournament) => sum + tournament.summary.rejectedCount, 0),
+    undefinedCount: tournaments.reduce((sum, tournament) => sum + tournament.summary.undefinedCount, 0),
+    ...(top ? { topStrategyId: top.strategyId, topAverageScore: top.averageScore } : {})
+  };
+  return { kind: 'frontier.swarm.strategy-tournament-history', version: 1, id: input.id ?? 'swarm-strategy-tournament-history:' + stableHash([tournaments.map((entry) => entry.id), generatedAt]), tournaments, generatedAt, summary, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
 }
 
 export function querySwarmStrategyTournament(tournament: FrontierSwarmStrategyTournament, query: {
@@ -11216,16 +11437,302 @@ export function querySwarmStrategyTournament(tournament: FrontierSwarmStrategyTo
   return { ...tournament, matches, standings: createTournamentStandings(matches), summary: { ...tournament.summary, matchCount: matches.length, strategyCount: uniqueStrings(matches.map((entry) => entry.strategyId)).length, gameCount: uniqueStrings(matches.map((entry) => entry.gameId)).length } };
 }
 
+export function normalizeContextualBanditPolicy(input: FrontierSwarmContextualBanditPolicyInput = {}): FrontierSwarmContextualBanditPolicy {
+  return {
+    algorithm: input.algorithm ?? 'deterministic-ucb1',
+    explorationWeight: nonNegativeNumber(input.explorationWeight, 0.32),
+    minPromoteMatches: positiveInteger(input.minPromoteMatches, 3),
+    minPromoteVerified: positiveInteger(input.minPromoteVerified, 1),
+    promoteReward: clamp01(input.promoteReward ?? 0.72),
+    demoteReward: clamp01(input.demoteReward ?? 0.35),
+    maxNegativeRate: clamp01(input.maxNegativeRate ?? 0.34),
+    includeTargets: uniqueStrings(input.includeTargets ?? ['strategy', 'lane', 'concurrency-key']),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmContextualBanditRecommendations(input: FrontierSwarmContextualBanditInput = {}): FrontierSwarmContextualBanditRecommendations {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const policy = normalizeContextualBanditPolicy(input.policy);
+  const arms = createBanditArms(input, policy);
+  const totalMatchCount = Math.max(1, arms.reduce((sum, arm) => sum + arm.matchCount, 0));
+  const recommendations = arms
+    .map((arm) => recommendBanditArm(arm, policy, totalMatchCount))
+    .sort(compareBanditRecommendations);
+  const top = recommendations[0];
+  return {
+    kind: FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_KIND,
+    version: FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_VERSION,
+    id: input.id ?? 'swarm-contextual-bandit:' + stableHash([input.tournament?.id, input.history?.id, policy, generatedAt]),
+    generatedAt,
+    algorithm: policy.algorithm,
+    ...(input.tournament ? { tournamentId: input.tournament.id } : {}),
+    ...(input.history ? { historyId: input.history.id } : {}),
+    policy,
+    recommendations,
+    byTarget: groupBanditRecommendationsByTarget(recommendations),
+    summary: {
+      recommendationCount: recommendations.length,
+      promoteCount: recommendations.filter((entry) => entry.action === 'promote').length,
+      demoteCount: recommendations.filter((entry) => entry.action === 'demote').length,
+      exploreCount: recommendations.filter((entry) => entry.action === 'explore').length,
+      holdCount: recommendations.filter((entry) => entry.action === 'hold').length,
+      totalMatchCount,
+      ...(top ? { topRecommendationId: top.id, topScore: top.score } : {})
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function createBanditArms(
+  input: FrontierSwarmContextualBanditInput,
+  policy: FrontierSwarmContextualBanditPolicy
+): FrontierSwarmBanditArmStats[] {
+  const arms = new Map<string, FrontierSwarmBanditArmStats>();
+  for (const tournament of input.history?.tournaments ?? (input.tournament ? [input.tournament] : [])) {
+    const candidatesById = new Map(tournament.candidates.map((candidate) => [String(candidate.id ?? candidate.strategyId ?? ''), candidate]));
+    const matchesByStrategy = new Map<string, FrontierSwarmStrategyTournamentMatch[]>();
+    for (const match of tournament.matches) {
+      matchesByStrategy.set(match.strategyId, [...(matchesByStrategy.get(match.strategyId) ?? []), match]);
+    }
+    for (const standing of tournament.standings) {
+      const matches = matchesByStrategy.get(standing.strategyId) ?? [];
+      const candidate = candidatesById.get(standing.strategyId);
+      const lanes = uniqueStrings([
+        readJsonString(candidate, 'lane'),
+        ...matches.flatMap((match) => match.tags).filter((tag) => tag !== 'auto-mergeable' && tag !== 'needs-port' && tag !== 'rejected' && tag !== 'blocked')
+      ]);
+      const concurrencyKeys = uniqueStrings([
+        readJsonString(candidate, 'concurrencyKey'),
+        readJsonString(candidate, 'concurrency-key'),
+        readJsonString(toJsonObject(candidate?.metadata), 'concurrencyKey')
+      ]);
+      const reward = clamp01(standing.score / 100);
+      const base = {
+        rewardSum: reward * standing.samples,
+        matchCount: standing.samples,
+        verifiedCount: verifiedOutcomeCount(standing.outcomeCounts),
+        rejectedCount: rejectedOutcomeCount(standing.outcomeCounts),
+        undefinedCount: Number(standing.outcomeCounts.unknown ?? 0),
+        strategyIds: [standing.strategyId],
+        lanes,
+        concurrencyKeys,
+        outcomeCounts: standing.outcomeCounts
+      };
+      if (policy.includeTargets.includes('strategy')) addBanditArm(arms, 'strategy', standing.strategyId, base);
+      if (policy.includeTargets.includes('lane')) for (const lane of lanes) addBanditArm(arms, 'lane', lane, base);
+      if (policy.includeTargets.includes('concurrency-key')) for (const key of concurrencyKeys) addBanditArm(arms, 'concurrency-key', key, base);
+    }
+  }
+  return Array.from(arms.values()).filter((arm) => arm.matchCount > 0);
+}
+
+function addBanditArm(
+  arms: Map<string, FrontierSwarmBanditArmStats>,
+  target: FrontierSwarmBanditTarget,
+  key: string,
+  input: Omit<FrontierSwarmBanditArmStats, 'target' | 'key'>
+): void {
+  const id = `${target}:${key}`;
+  const current = arms.get(id) ?? emptyBanditArm(target, key);
+  arms.set(id, {
+    ...current,
+    rewardSum: current.rewardSum + input.rewardSum,
+    matchCount: current.matchCount + input.matchCount,
+    verifiedCount: current.verifiedCount + input.verifiedCount,
+    rejectedCount: current.rejectedCount + input.rejectedCount,
+    undefinedCount: current.undefinedCount + input.undefinedCount,
+    strategyIds: uniqueStrings([...current.strategyIds, ...input.strategyIds]),
+    lanes: uniqueStrings([...current.lanes, ...input.lanes]),
+    concurrencyKeys: uniqueStrings([...current.concurrencyKeys, ...input.concurrencyKeys]),
+    outcomeCounts: mergeNumberRecords(current.outcomeCounts, input.outcomeCounts)
+  });
+}
+
+function recommendBanditArm(
+  arm: FrontierSwarmBanditArmStats,
+  policy: FrontierSwarmContextualBanditPolicy,
+  totalMatchCount: number
+): FrontierSwarmBanditArmRecommendation {
+  const rewardMean = arm.matchCount ? arm.rewardSum / arm.matchCount : 0;
+  const explorationBonus = arm.matchCount ? policy.explorationWeight * Math.sqrt(Math.log(totalMatchCount + 1) / arm.matchCount) : policy.explorationWeight;
+  const negativeRate = arm.matchCount ? (arm.rejectedCount + arm.undefinedCount) / arm.matchCount : 0;
+  const confidence = clamp01(Math.min(arm.matchCount / policy.minPromoteMatches, 1) * (1 - negativeRate));
+  const action = banditAction(arm, policy, rewardMean, negativeRate);
+  const reasonCodes = banditReasonCodes(arm, policy, rewardMean, negativeRate, action);
+  const score = roundPercent((rewardMean + explorationBonus) * 100);
+  return {
+    id: 'swarm-bandit-arm:' + stableHash([arm.target, arm.key, arm.matchCount, rewardMean, explorationBonus, action]),
+    target: arm.target,
+    key: arm.key,
+    action,
+    score,
+    rewardMean: roundScore(rewardMean),
+    explorationBonus: roundScore(explorationBonus),
+    confidence: roundScore(confidence),
+    matchCount: arm.matchCount,
+    totalMatchCount,
+    verifiedCount: arm.verifiedCount,
+    rejectedCount: arm.rejectedCount,
+    undefinedCount: arm.undefinedCount,
+    negativeRate: roundScore(negativeRate),
+    strategyIds: arm.strategyIds,
+    lanes: arm.lanes,
+    concurrencyKeys: arm.concurrencyKeys,
+    outcomeCounts: arm.outcomeCounts,
+    reasonCodes
+  };
+}
+
+function banditAction(
+  arm: FrontierSwarmBanditArmStats,
+  policy: FrontierSwarmContextualBanditPolicy,
+  reward: number,
+  negativeRate: number
+): FrontierSwarmBanditAction {
+  if (arm.matchCount < policy.minPromoteMatches) return reward >= policy.demoteReward ? 'explore' : 'hold';
+  if (reward <= policy.demoteReward || negativeRate > policy.maxNegativeRate) return 'demote';
+  if (reward >= policy.promoteReward && arm.verifiedCount >= policy.minPromoteVerified) return 'promote';
+  return 'hold';
+}
+
+function banditReasonCodes(
+  arm: FrontierSwarmBanditArmStats,
+  policy: FrontierSwarmContextualBanditPolicy,
+  reward: number,
+  negativeRate: number,
+  action: FrontierSwarmBanditAction
+): string[] {
+  return uniqueStrings([
+    policy.algorithm,
+    action,
+    arm.matchCount < policy.minPromoteMatches ? 'sample-below-promotion-floor' : undefined,
+    reward >= policy.promoteReward ? 'reward-above-promotion-threshold' : undefined,
+    reward <= policy.demoteReward ? 'reward-below-demotion-threshold' : undefined,
+    negativeRate > policy.maxNegativeRate ? 'negative-rate-above-threshold' : undefined,
+    arm.verifiedCount >= policy.minPromoteVerified ? 'verified-sample-present' : undefined
+  ]);
+}
+
+function emptyBanditArm(target: FrontierSwarmBanditTarget, key: string): FrontierSwarmBanditArmStats {
+  return { target, key, rewardSum: 0, matchCount: 0, verifiedCount: 0, rejectedCount: 0, undefinedCount: 0, strategyIds: [], lanes: [], concurrencyKeys: [], outcomeCounts: {} };
+}
+
+function groupBanditRecommendationsByTarget(recommendations: readonly FrontierSwarmBanditArmRecommendation[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const recommendation of recommendations) out[recommendation.target] = uniqueStrings([...(out[recommendation.target] ?? []), recommendation.id]);
+  return Object.fromEntries(Object.entries(out).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function compareBanditRecommendations(left: FrontierSwarmBanditArmRecommendation, right: FrontierSwarmBanditArmRecommendation): number {
+  return banditActionRank(left.action) - banditActionRank(right.action) || right.score - left.score || left.target.localeCompare(right.target) || left.key.localeCompare(right.key);
+}
+
+function banditActionRank(action: FrontierSwarmBanditAction): number {
+  return { promote: 0, explore: 1, demote: 2, hold: 3 }[action] ?? 4;
+}
+
+function verifiedOutcomeCount(counts: Record<string, number>): number {
+  return Number(counts['auto-mergeable'] ?? 0) + Number(counts['needs-port'] ?? 0) + Number(counts.verified ?? 0) + Number(counts.landed ?? 0);
+}
+
+function rejectedOutcomeCount(counts: Record<string, number>): number {
+  return Number(counts.rejected ?? 0) + Number(counts.blocked ?? 0) + Number(counts['stale-against-head'] ?? 0);
+}
+
+function mergeNumberRecords(left: Record<string, number>, right: Record<string, number>): Record<string, number> {
+  const out = { ...left };
+  for (const [key, value] of Object.entries(right)) out[key] = (out[key] ?? 0) + value;
+  return Object.fromEntries(Object.entries(out).sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey)));
+}
+
+function readJsonString(value: unknown, key: string): string | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) && typeof (value as Record<string, unknown>)[key] === 'string'
+    ? (value as Record<string, string>)[key]
+    : undefined;
+}
+
+function nonNegativeNumber(value: number | undefined, fallback: number): number {
+  return Math.max(0, Number.isFinite(value) ? Number(value) : fallback);
+}
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
+}
+
+function roundPercent(value: number): number {
+  return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+}
+
 export function compareSwarmStrategyTournaments(input: FrontierSwarmStrategyTournamentHistory | readonly FrontierSwarmStrategyTournament[] | { baseline: FrontierSwarmStrategyTournament; current: FrontierSwarmStrategyTournament; scoreThreshold?: number }): FrontierSwarmStrategyTournamentComparison {
   if (!Array.isArray(input) && (input as { baseline?: unknown }).baseline && (input as { current?: unknown }).current) {
     const { baseline, current, scoreThreshold } = input as { baseline: FrontierSwarmStrategyTournament; current: FrontierSwarmStrategyTournament; scoreThreshold?: number };
+    const threshold = Math.abs(scoreThreshold ?? 0);
+    const baselineById = new Map(baseline.standings.map((standing) => [standing.strategyId, standing]));
+    const currentById = new Map(current.standings.map((standing) => [standing.strategyId, standing]));
+    const entries = uniqueStrings([...baselineById.keys(), ...currentById.keys()])
+      .sort()
+      .map((strategyId) => compareTournamentStanding(strategyId, baselineById.get(strategyId), currentById.get(strategyId), threshold));
+    const regressions = entries.map((entry) => entry.scoreDelta).filter((score) => score < 0);
+    const improvements = entries.map((entry) => entry.scoreDelta).filter((score) => score > 0);
     const scoreDelta = (current.summary.topScore ?? 0) - (baseline.summary.topScore ?? 0);
-    return { winnerId: current.winnerId, tournamentCount: 2, candidateCount: baseline.candidates.length + current.candidates.length, baselineId: baseline.id, currentId: current.id, scoreDelta, regression: scoreDelta < -Math.abs(scoreThreshold ?? 0) };
+    return {
+      kind: 'frontier.swarm.strategy-tournament-comparison',
+      version: 1,
+      id: 'swarm-strategy-comparison:' + stableHash([baseline.id, current.id, threshold]),
+      winnerId: current.winnerId,
+      tournamentCount: 2,
+      candidateCount: baseline.candidates.length + current.candidates.length,
+      baselineId: baseline.id,
+      currentId: current.id,
+      generatedAt: Date.now(),
+      scoreDelta,
+      regression: scoreDelta < -threshold,
+      entries,
+      summary: {
+        strategyCount: entries.length,
+        newCount: entries.filter((entry) => entry.status === 'new').length,
+        removedCount: entries.filter((entry) => entry.status === 'removed').length,
+        regressedCount: entries.filter((entry) => entry.status === 'regressed').length,
+        improvedCount: entries.filter((entry) => entry.status === 'improved').length,
+        stableCount: entries.filter((entry) => entry.status === 'stable').length,
+        ...(regressions.length ? { largestRegression: Math.min(...regressions) } : {}),
+        ...(improvements.length ? { largestImprovement: Math.max(...improvements) } : {})
+      }
+    };
   }
   const tournaments: readonly FrontierSwarmStrategyTournament[] = Array.isArray(input)
     ? input as readonly FrontierSwarmStrategyTournament[]
     : (input as FrontierSwarmStrategyTournamentHistory).tournaments;
   return { winnerId: tournaments.find((entry: FrontierSwarmStrategyTournament) => entry.winnerId)?.winnerId, tournamentCount: tournaments.length, candidateCount: tournaments.reduce((sum: number, entry: FrontierSwarmStrategyTournament) => sum + entry.candidates.length, 0) };
+}
+
+function compareTournamentStanding(
+  strategyId: string,
+  baseline: FrontierSwarmStrategyTournamentStanding | undefined,
+  current: FrontierSwarmStrategyTournamentStanding | undefined,
+  threshold: number
+): FrontierSwarmStrategyTournamentComparisonEntry {
+  if (!baseline && current) {
+    return { strategyId, status: 'new', currentScore: current.score, currentSamples: current.samples, scoreDelta: current.score };
+  }
+  if (baseline && !current) {
+    return { strategyId, status: 'removed', baselineScore: baseline.score, baselineSamples: baseline.samples, scoreDelta: -baseline.score };
+  }
+  const baselineScore = baseline?.score ?? 0;
+  const currentScore = current?.score ?? 0;
+  const scoreDelta = roundPercent(currentScore - baselineScore);
+  const status = scoreDelta < -threshold ? 'regressed' : scoreDelta > threshold ? 'improved' : 'stable';
+  return {
+    strategyId,
+    status,
+    baselineScore,
+    currentScore,
+    scoreDelta,
+    ...(baseline ? { baselineSamples: baseline.samples } : {}),
+    ...(current ? { currentSamples: current.samples } : {})
+  };
 }
 
 export interface FrontierSwarmAdaptiveLoadDecision { action: 'increase' | 'decrease' | 'hold' | string; target: string; key?: string; previous?: number; next?: number; reason: string; metadata?: JsonObject }

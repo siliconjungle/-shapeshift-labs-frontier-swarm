@@ -42,6 +42,8 @@ import {
   createSwarmManifest,
   createSwarmMergeBundle,
   createSwarmMergeIndex,
+  createSwarmModelRoutingFeedback,
+  createSwarmModelRoutingPolicy,
   createSwarmModelRoute,
   createSwarmOracleCorpus,
   createSwarmPatchStackPlan,
@@ -403,6 +405,36 @@ assert.deepStrictEqual(priorityQueue.jobs.slice(0, 3).map((job) => job.taskId), 
 assert.strictEqual(priorityQueue.jobs[0].metadata.priorityPolicy.className, 'coordinator-drain');
 assert.strictEqual(priorityQueue.jobs[1].metadata.priorityPolicy.className, 'review');
 assert.strictEqual(priorityQueue.jobs.find((job) => job.taskId === 'speculative-0').metadata.priorityPolicy.className, 'speculative');
+
+const routingPolicy = createSwarmModelRoutingPolicy({
+  feedback: [
+    createSwarmModelRoutingFeedback({
+      lane: 'runtime',
+      workKind: 'implementation',
+      model: 'gpt-5.4-mini',
+      selected: true,
+      mergeDisposition: 'auto-mergeable',
+      mergeReadiness: 'verified-patch',
+      resultStatus: 'completed',
+      evidenceQuality: { band: 'verified', confidence: 'high' }
+    }),
+    createSwarmModelRoutingFeedback({
+      lane: 'harness',
+      workKind: 'evidence',
+      model: 'gpt-5.4-mini',
+      mergeDisposition: 'needs-port',
+      mergeReadiness: 'blocked',
+      resultStatus: 'completed',
+      evidenceQuality: { band: 'weak', confidence: 'medium' }
+    })
+  ]
+});
+assert.strictEqual(routingPolicy.summary.feedbackCount, 2);
+assert.strictEqual(routingPolicy.summary.preferenceCount, 2);
+assert.strictEqual(routingPolicy.summary.preferCount, 1);
+assert.strictEqual(routingPolicy.summary.avoidCount, 1);
+assert.ok(routingPolicy.preferences.some((entry) => entry.mode === 'prefer' && entry.lane === 'runtime'));
+assert.ok(routingPolicy.preferences.some((entry) => entry.mode === 'avoid' && entry.lane === 'harness'));
 
 const classifiedPool = createSwarmContinuousPoolState({
   generatedAt: 12600,
