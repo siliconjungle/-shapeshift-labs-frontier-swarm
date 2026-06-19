@@ -2,7 +2,29 @@
 
 Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and proofs for Frontier agent work.
 
-`frontier-swarm` turns parallel agent work into data: manifests, parent/child swarm layers, compute profiles, lane ownership, task queues, dry-run plans, event streams, changed-path checks, job results, and proof hashes. It does not spawn processes, create git worktrees, call Codex, or talk to queue brokers. Runners attach through structural adapters such as `@shapeshift-labs/frontier-swarm-codex`.
+`frontier-swarm` turns parallel agent work into data: manifests, parent/child swarm layers, compute profiles, model-route recommendations, lane ownership, task queues, dry-run plans, event streams, changed-path checks, job results, and proof hashes. It does not spawn processes, create git worktrees, call Codex, or talk to queue brokers. Runners attach through structural adapters such as `@shapeshift-labs/frontier-swarm-codex`.
+
+## Priority Scheduling
+
+Plans, schedules, and queue snapshots include `metadata.priorityPolicy` using the exported `FRONTIER_SWARM_REVIEW_PRIORITY_POLICY`. The policy puts coordinator-drain and review work in the top priority band, keeps speculative backlog in a lower band, and round-robins lanes inside each band before falling back to the task's numeric `priority`. Lane limits, compute limits, resource quotas, and `concurrencyKey` limits still gate readiness; the priority policy only changes candidate order.
+
+## Hierarchical Merge Queues
+
+`createSwarmHierarchicalMergeQueue()` turns a merge index plus optional admission budget into root, lane, semantic-region, and path queues. Clean admitted work can be applied by the local queue, clean excess work stays queued locally, stale work is marked for rerun, failed evidence is rejected, discovery work is recorded without review debt, true blockers stay blocked, and conflicted or higher-risk work is promoted upward.
+
+Clean auto-mergeable work that spans multiple known semantic regions is returned as a `rerun` assignment with `retrySlices`, `semanticSliceScopeIds`, and `semanticSliceLeaseKeys`. Each retry slice carries its own required lease scope/key so runners can produce independently reviewable same-file slice bundles. If admission has already accepted a still-unsliced cross-scope patch, the `apply-local` assignment remains atomic and carries all `semanticSliceScopeIds` and `semanticSliceLeaseKeys` so runners can acquire every required semantic lease before applying it once. Same-region conflicts still serialize under one local lease, while unknown regions and public-contract/API regions promote to the parent queue for a broader decision.
+
+Queue and coordinator-drain assignments also expose `requiredLeaseScopeIds` and `requiredLeaseKeys`. For independent same-file semantic regions these required leases stay at the semantic-region level, allowing multiple coordinators to acquire different locks for the same changed file. For promoted work, including shared public-contract edits, the required lease is the promotion target such as the lane or root queue, so conflicting contract changes serialize under a parent decision without relying on package-specific names.
+
+The queue model is generic. Runners can map scopes to any repository, package, feature, service, file, symbol, or semantic ownership region without baking project-specific package names into the core package.
+
+Caller-provided `scopes` are serialized as opaque queue scopes. Their `id`, `kind`, `leaseKey`, `changedPaths`, `changedRegions`, and `metadata` stay runner-owned, with `kind` defaulting to `custom`; when no custom scope is supplied, queue assignments still derive the default root, lane, semantic-region, and path scopes from the merge index.
+
+Hierarchical queues also emit `leaseRecords` for root, lane, semantic, path, and custom scopes. These records are generic agent merge-queue infrastructure: they carry the lease key, optional local leader metadata, active and terminal queue item IDs, conflict and retry reasons, parent-promotion state, and terminal decision links back to the queue items they close. Adapters can use those records to let independent semantic scopes make progress concurrently while same-scope work serializes under one lease.
+
+This keeps the root coordinator from becoming the only place where work can make progress. A child queue can apply verified work under its own lease, leave clean overflow in `queue-local`, and promote only the items that need a parent decision. Adapters such as `@shapeshift-labs/frontier-swarm-codex` can layer run, collect, Loom, auto-drain, rerun, reject, discovery, and blocker workflows on top of the generic queue data.
+
+`createSwarmQueueOutcomeModel()` and `collapseSwarmQueueOutcomeDecisions()` provide a repo-agnostic outcome layer for autonomous merge queues. The model separates `terminal`, `continuation`, `coordinator-review`, `human-blocked`, `stale-rerun`, and `conflict` categories so "needs coordinator review" does not get reported as a true human blocker. Queue subjects are collapsed across `queueItemIds`, `taskId`, and `jobId` aliases, and only the latest decision for each subject contributes to visible review debt, blockers, reruns, and conflicts. This lets a newer committed/applied/rejected decision close old review or rerun records without requiring runners to mutate historical queue files.
 
 
 ## Related Packages
@@ -52,7 +74,7 @@ The published Frontier package family is generated from one shared package catal
 - [`@shapeshift-labs/frontier-lang-go`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-go): Go source-language importer package for Frontier Lang semantic documents, including package-level metadata, Go AST adapter helpers, native import results, and semantic sidecar generation for go/ast File or Package trees.
 - [`@shapeshift-labs/frontier-lang-csharp`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-csharp): C# Roslyn source-language importer package for Frontier Lang semantic documents, including package-level metadata, Roslyn adapter helpers, native import results, and semantic sidecar generation for SyntaxTree/SyntaxNode-shaped ASTs.
 - [`@shapeshift-labs/frontier-lang-clang`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-clang): Clang AST source-language importer package for Frontier Lang semantic documents, including package-level metadata, Clang AST JSON adapter helpers, native import results, and semantic sidecar generation for C/C++ translation units.
-- [`@shapeshift-labs/frontier-lang-cli`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-cli): Command line interface for parsing, checking, hashing, and emitting Frontier Lang projects.
+- [`@shapeshift-labs/frontier-lang-cli`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-cli): Command line interface for parsing, checking, hashing, emitting, native source import/projection, semantic slicing, and corpus roundtrip evidence for Frontier Lang projects.
 - [`@shapeshift-labs/frontier-lang`](https://www.npmjs.com/package/@shapeshift-labs/frontier-lang): Umbrella package for Frontier Lang kernel, parser, checker, compiler facade, universal AST helpers, projection adapters, and source-language importer adapters.
 - [`@shapeshift-labs/frontier-kv`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv): Serializable in-memory key/value state for Frontier apps, including TTL, versioned compare-and-set, batched patch mutations, scans, watchers, snapshots, JSONL event evidence, and replay verification.
 - [`@shapeshift-labs/frontier-kv-locks`](https://www.npmjs.com/package/@shapeshift-labs/frontier-kv-locks): Lease-style lock records on top of Frontier KV, including acquire, renew, release, fencing tokens, expiration, owner evidence, and replayable lock events.
@@ -98,6 +120,7 @@ The published Frontier package family is generated from one shared package catal
 - [`@shapeshift-labs/frontier-realtime-server`](https://www.npmjs.com/package/@shapeshift-labs/frontier-realtime-server): Authoritative realtime room, tick, command validation, rate-limit, session, and snapshot-history runtime.
 - [`@shapeshift-labs/frontier-realtime-websocket`](https://www.npmjs.com/package/@shapeshift-labs/frontier-realtime-websocket): WebSocket client, wire, and Node room-server transport for Frontier realtime.
 - [`@shapeshift-labs/frontier-game`](https://www.npmjs.com/package/@shapeshift-labs/frontier-game): Game-facing entity, component, player, room, ownership, spatial interest, rollback, physics, and replication helpers above realtime.
+- [`@shapeshift-labs/loom`](https://www.npmjs.com/package/@shapeshift-labs/loom): Repo-level semantic collaboration CLI for .loom workspaces, including init, scan, status, graph snapshots, projection plans, Frontier Lang delegation, Frontier Swarm delegation, and Frontier Framework delegation.
 
 Package source repositories:
 
@@ -191,6 +214,7 @@ Package source repositories:
 - [`siliconjungle/-shapeshift-labs-frontier-realtime-server`](https://github.com/siliconjungle/-shapeshift-labs-frontier-realtime-server)
 - [`siliconjungle/-shapeshift-labs-frontier-realtime-websocket`](https://github.com/siliconjungle/-shapeshift-labs-frontier-realtime-websocket)
 - [`siliconjungle/-shapeshift-labs-frontier-game`](https://github.com/siliconjungle/-shapeshift-labs-frontier-game)
+- [`siliconjungle/-shapeshift-labs-loom`](https://github.com/siliconjungle/-shapeshift-labs-loom)
 
 ## Install
 
@@ -237,70 +261,6 @@ const tasks = defineSwarmTasks([{
 const plan = createSwarmPlan(manifest, tasks, { limit: 4 });
 ```
 
-## Strategy Tournaments
-
-Use strategy tournaments when several workers, merge policies, proof searches, or projection routes need to be compared by more than raw completion status. The records are runtime-neutral JSON: discovery/search cost is separate from the verification certificate, undefined outcomes stay explicit, and standings are deterministic.
-
-```ts
-import {
-  createSwarmPayoffVector,
-  createSwarmStrategyTournament,
-  createSwarmStrategyTournamentHistory,
-  compareSwarmStrategyTournaments,
-  createSwarmTournamentAdaptiveFeedback,
-  createSwarmAdaptiveLoadPlan
-} from '@shapeshift-labs/frontier-swarm';
-
-const tournament = createSwarmStrategyTournament({
-  strategies: [
-    { id: 'trace-first', family: 'oracle-search' },
-    { id: 'patch-first', family: 'implementation' }
-  ],
-  games: [
-    { id: 'merge-admission', objective: 'prefer replayable verified patches' }
-  ],
-  matches: [{
-    payoff: createSwarmPayoffVector({
-      strategyId: 'trace-first',
-      gameId: 'merge-admission',
-      outcome: 'verified',
-      components: {
-        correctness: 1,
-        evidence: 0.9,
-        reviewCost: { value: 0.2, direction: 'minimize', weight: 0.5 }
-      },
-      search: { attempts: 8, durationMs: 12000, tokens: 24000 },
-      certificate: { commands: ['npm test'], durationMs: 1500 }
-    })
-  }]
-});
-
-const history = createSwarmStrategyTournamentHistory({
-  tournaments: [tournament]
-});
-
-const comparison = compareSwarmStrategyTournaments({
-  baseline: tournament,
-  current: tournament,
-  scoreThreshold: 5
-});
-
-const feedback = createSwarmTournamentAdaptiveFeedback({
-  tournament,
-  history,
-  comparison,
-  scoreFloor: 40
-});
-
-const adaptive = createSwarmAdaptiveLoadPlan({
-  mode: 'balanced',
-  tournamentFeedback: feedback,
-  maxLimits: { maxReadyJobs: 8 }
-});
-```
-
-`history` tracks strategy performance across runs, `comparison` highlights regressions and improvements between two tournaments, and `feedback` can be passed into `createSwarmAdaptiveLoadPlan` as replayable observations. Feedback maps landed/verified outcomes to healthy throughput and noisy, stale, regressed, or discovery-only outcomes to deterministic reduction signals; when strategy or match metadata includes `lane` or `concurrencyKey`, the adaptive planner can adjust those specific scheduler limits without reading mutable tournament state. This makes prompt styles, workspace modes, evidence requirements, and merge policies comparable as strategies instead of treating every worker bundle as a one-off result.
-
 ## 1000-Agent Control Plane
 
 Large swarms need a control plane, not just a flat worker loop. `frontier-swarm` now exports deterministic data helpers for that layer:
@@ -346,7 +306,6 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmReviewPlan` samples or requires reviewer assignments,
 - `createSwarmMergePlan` blocks jobs with failed checks, required reviews, ownership violations, or conflicting changed paths,
 - job results include merge-readiness classification: `discovery-only`, `patch-candidate`, `verified-patch`, `rejected`, or `blocked`,
-- job results, merge bundles, queue overlays, and merge indexes can carry `semanticImport` summaries for imported symbols, semantic dependency relations, semantic ownership regions, proof/spec obligations, paradigm semantics/lowering records, source projection/native compile readiness, and empty sidecar detection,
 - `ownershipRegions` allow hot files to be split into semantic regions such as `content.docs.*` or `adminSettings.quota.*`; merge conflict detection compares explicit changed regions when both sides report them and falls back to path conflicts when either side omits regions,
 - `createSwarmMergeBundle` builds a compact worker `merge.json` shape with touched owned files, patch path, evidence, verification, queue items satisfied, risk, and disposition,
 - `createSwarmQueueOverlay` and `deriveSwarmQueueStatus` keep central queue files immutable while deriving status from worker result overlays,
@@ -356,76 +315,17 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmReviewerLanePlan` turns risky/conflicting merge bundles into reviewer-lane tasks,
 - `createSwarmRunStoreShards` describes sharded event/result/checkpoint paths for large run stores,
 - `createSwarmMergeAdmission` limits ready merges by count, touched paths/regions, and risk budget,
-- `createSwarmCoordinatorDashboard` and `querySwarmCoordinatorDashboard` combine merge index entries, queue overlays, evidence indexes, admission decisions, duplicate groups, semantic sidecar/dependency summaries, source citations, and worker liveness into one coordinator-query surface with a compact merge score per job,
-- `createSwarmAdaptiveLoadPlan` treats declared concurrency/resource values as maximums and derives lower effective caps from deterministic observations such as browser/resource contention, stale patches, merge conflicts, empty semantic sidecars, log noise, discovery-only overproduction, failed evidence, and healthy throughput,
 - `createSwarmPatchStackPlan` clusters compatible bundles into candidate patch stacks by lane, path, region, disposition, and risk so reviewers can evaluate batches instead of individual worker directories,
 - `createSwarmContextPack` gives workers compact task context: relevant files, API maps, known failures, focused/oracle commands, expected evidence, exclusions, evidence schema, playbooks, and explicit dead ends to avoid,
 - `createSwarmOracleCorpus` indexes deterministic reference artifacts such as traces, snapshots, classifications, expected outputs, or fixtures without assuming a project domain,
 - `createSwarmReplayBundle`, `createSwarmParityOracle`, `createSwarmDivergenceReport`, `createSwarmObservabilityPoint`, `createSwarmWatchpointPlan`, and `createSwarmDebugHandoff` model the trace-to-debug workflow: replay finds the narrow window, watchpoints/debug handoff explain the state at that point,
-- `createSwarmTraceShard`, `createSwarmTraceIndex`, and `querySwarmTraceIndex` turn worker trace findings into sortable evidence: row windows, source hypotheses, executable ownership regions, focused tests, reference evidence, and unresolved divergence signals,
 - `createSwarmReferenceOraclePlan` and `createSwarmReferenceOracleResponse` describe reusable reference services for ports, migrations, parity checks, and cross-implementation comparisons,
 - `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, and `createSwarmBottleneckReport` keep traces/logs useful without making instrumentation the bottleneck,
 - `createSwarmEvidenceIndex` / `querySwarmEvidenceIndex` and `createSwarmBlackboard` / `querySwarmBlackboard` provide storage-neutral status surfaces for coordinator dashboards, accepted facts, known divergences, rejected theories, and active ownership,
 - `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`, `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`, and `createSwarmUsageGovernor` cover the merge/review/scheduling tools needed to scale from feature swarms to larger migration and porting swarms,
+- `createSwarmModelRoute` and `createSwarmPanelEvaluation` score runtime-neutral compute candidates from task metadata, model price catalogs, token mix, budget caps, time pressure, and outcome history, then explain single-cheap, single-deep, panel, or tournament routes,
 - `createSwarmLanePlaybook` turns successful prior bundles into persistent lane-specific guidance with commands, hot paths, evidence patterns, and avoid-investigating notes,
 - `decomposeSwarmFeature` creates an initial task queue for feature work across lanes.
-
-## Trace Shards
-
-Trace shards are the generic form of “the worker found the narrow window.” They are not emulator-specific: a row window can be CPU cycles, log rows, replay steps, API events, migration records, or UI interaction frames. The important part is that the shard connects evidence to source hypotheses and executable ownership regions.
-
-```ts
-import {
-  createSwarmCoordinatorDashboard,
-  createSwarmMergeBundle,
-  createSwarmTraceIndex,
-  createSwarmTraceShard,
-  querySwarmTraceIndex
-} from '@shapeshift-labs/frontier-swarm';
-
-const traceShard = createSwarmTraceShard({
-  jobId: 'runtime-worker-12',
-  lane: 'runtime',
-  subject: 'parser-port',
-  rowWindows: [{ start: 6240, end: 6250, firstDivergenceAt: 6243, deltaFields: ['result.value'] }],
-  hypotheses: [{
-    sourcePath: 'src/parser.ts',
-    symbol: 'parseExpression',
-    region: 'parser.expression',
-    confidence: 'high',
-    reason: 'reference trace diverges immediately after expression precedence handling'
-  }],
-  executableOwnershipRegions: [{
-    id: 'parser.expression',
-    sourcePath: 'src/parser.ts',
-    symbol: 'parseExpression',
-    affectedTests: ['npm run test:parser -- --case precedence'],
-    conflictingAssumptions: ['operators are parsed left-to-right']
-  }],
-  focusedTests: ['npm run test:parser -- --case precedence'],
-  referenceEvidence: [{ path: 'agent-runs/runtime-worker-12/reference-trace.jsonl', kind: 'trace' }]
-});
-
-const bundle = createSwarmMergeBundle({
-  result: {
-    jobId: 'runtime-worker-12',
-    status: 'verified',
-    changedPaths: ['src/parser.ts'],
-    changedRegions: ['parser.expression'],
-    verification: [{ status: 0 }]
-  },
-  patchPath: 'agent-runs/runtime-worker-12/changes.patch',
-  traceShards: [traceShard]
-});
-
-const traceIndex = createSwarmTraceIndex({ bundles: [bundle] });
-const expressionFindings = querySwarmTraceIndex(traceIndex, { region: 'parser.expression', minConfidence: 0.9 });
-
-const dashboard = createSwarmCoordinatorDashboard({ bundles: [bundle] });
-const traceReadyJobs = dashboard.jobs.filter((job) => job.traceSummary?.shardCount);
-```
-
-Merge scoring uses trace shards as review evidence, not automatic correctness. Focused tests, reference evidence, and executable regions raise confidence; unresolved divergences and conflicting assumptions lower the score until a coordinator or review worker resolves them.
 
 ## Hierarchical Compute
 
@@ -439,6 +339,32 @@ Higher swarm layers can choose compute for lower layers without binding the core
 
 That lets a parent swarm route implementation jobs to a deep model while evidence or inspection jobs use a faster profile.
 
+## Model Routing
+
+`createSwarmModelRoute` is advisory: it does not replace manifest compute resolution, but it lets runners choose the cheapest capable profile by default and escalate when task risk, uncertainty, impact, outcome history, budget, or latency pressure justify it.
+
+```ts
+import { createSwarmModelRoute } from '@shapeshift-labs/frontier-swarm';
+
+const route = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'routing-policy-change',
+    lane: 'runtime',
+    targetRefs: ['src/router.ts'],
+    metadata: { risk: 'high', uncertainty: 'unknown', impact: 'high' }
+  },
+  tokenEstimate: { inputTokens: 10000, cachedInputTokens: 2000, outputTokens: 2000 },
+  priceCatalog: {
+    fast: { compute: 'fast', inputUsdPerUnit: 0.2, cachedInputUsdPerUnit: 0.02, outputUsdPerUnit: 1, unitTokens: 1000000 },
+    deep: { compute: 'deep', inputUsdPerUnit: 5, cachedInputUsdPerUnit: 0.5, outputUsdPerUnit: 30, unitTokens: 1000000 }
+  },
+  panel: { enabled: true, minRiskScore: 0.7, maxMembers: 2, fuserComputeId: 'deep' }
+});
+```
+
+The returned record includes scored candidates, estimated cost and latency, price/outcome telemetry fallbacks, panel confidence lift, residual risk, and a human-readable explanation for `single-cheap`, `single-deep`, `panel`, or `tournament` recommendations.
+
 ## Surface
 
 - `defineSwarmManifest`, `createSwarmManifest`
@@ -448,6 +374,7 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `createSwarmPlan`, `createSwarmRun`
 - `createSwarmSchedule`, `createSwarmLeases`
 - `createSwarmQueueSnapshot`, `createSwarmRunCheckpoint`
+- `FRONTIER_SWARM_REVIEW_PRIORITY_POLICY`
 - `createSwarmQueueOverlay`, `deriveSwarmQueueStatus`
 - `createSwarmEventStream`, `createSwarmMailbox`, `routeSwarmEventToMailboxes`
 - `checkSwarmBudget`
@@ -459,7 +386,6 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `createSwarmPatchStackPlan`
 - `createSwarmContextPack`, `createSwarmOracleCorpus`, `createSwarmLanePlaybook`
 - `createSwarmReplayBundle`, `createSwarmParityOracle`, `createSwarmDivergenceReport`, `createSwarmObservabilityPoint`
-- `createSwarmTraceShard`, `createSwarmTraceIndex`, `querySwarmTraceIndex`
 - `createSwarmWatchpointPlan`, `createSwarmDebugHandoff`
 - `createSwarmReferenceOraclePlan`, `createSwarmReferenceOracleResponse`
 - `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, `createSwarmBottleneckReport`
@@ -467,7 +393,7 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`
 - `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`
 - `createSwarmUsageGovernor`, `checkSwarmUsageGovernor`
-- `createSwarmAdaptiveLoadPlan`, `createSwarmScheduleInputFromAdaptiveLoadPlan`
+- `createSwarmModelRoute`, `createSwarmPanelEvaluation`
 - `classifySwarmMergeReadiness`, `classifySwarmMergeDisposition`
 - `resolveSwarmChangedRegions`, `checkSwarmRegionOwnership`
 - `decomposeSwarmFeature`
@@ -485,7 +411,7 @@ Run the package-local benchmark:
 npm run bench
 ```
 
-The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, adaptive load planning, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, replay/debug/evidence helper creation, trace index/query creation, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
+The benchmark writes `benchmarks/results/frontier-swarm-package-bench-latest.json` when run from the monorepo. These are Frontier-only package measurements for plan creation, manifest validation, hierarchical compute resolution, ownership checks, scheduling/leases, queue snapshots, queue overlays, merge bundles, merge indexes, merge admission, hotspot reports, context packs, oracle corpora, replay/debug/evidence helper creation, lane playbooks, patch stack plans, event routing, run checkpoints, JSONL, and proof hashing.
 
 ## Source Repository
 

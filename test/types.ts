@@ -15,11 +15,7 @@ import {
   querySwarmEvidenceIndex,
   createSwarmBlackboard,
   querySwarmBlackboard,
-  createSwarmCoordinatorDashboard,
-  createSwarmAdaptiveLoadPlan,
-  createSwarmScheduleInputFromAdaptiveLoadPlan,
-  createSwarmContextualBanditRecommendations,
-  querySwarmCoordinatorDashboard,
+  createSwarmCoordinatorAgentDrainWork,
   createSwarmReferenceOraclePlan,
   createSwarmReferenceOracleResponse,
   createSwarmArtifactRoutingPlan,
@@ -38,9 +34,8 @@ import {
   createSwarmQueueOverlay,
   createSwarmReviewPlan,
   createSwarmMergeIndex,
-  createSwarmMergeTournament,
-  createSwarmTournamentAdaptiveFeedback,
   createSwarmMergeAdmission,
+  createSwarmHierarchicalMergeQueue,
   createSwarmMergePlan,
   createSwarmMergeBundle,
   createSwarmRunStoreShards,
@@ -57,18 +52,17 @@ import {
   type FrontierSwarmBottleneckReport,
   type FrontierSwarmBudgetDecision,
   type FrontierSwarmCompute,
-  type FrontierSwarmCoordinatorDashboard,
-  type FrontierSwarmAdaptiveLoadPlan,
-  type FrontierSwarmAdaptiveTournamentFeedbackInput,
-  type FrontierSwarmContextualBanditRecommendations,
   type FrontierSwarmContextPack,
   type FrontierSwarmDebugHandoff,
   type FrontierSwarmDivergenceReport,
   type FrontierSwarmEvidenceIndex,
   type FrontierSwarmFixtureCatalog,
+  type FrontierSwarmCoordinatorAgentDrainWork,
+  type FrontierSwarmCoordinatorAgentRootQueueSelectionPressure,
   type FrontierSwarmInstrumentationBudgetDecision,
   type FrontierSwarmInstrumentationBudget,
   type FrontierSwarmManifest,
+  type FrontierSwarmHierarchicalMergeQueue,
   type FrontierSwarmOracleCorpus,
   type FrontierSwarmParityOracle,
   type FrontierSwarmProgressModel,
@@ -80,10 +74,12 @@ import {
   type FrontierSwarmPatchStackPlan,
   type FrontierSwarmMergeBundle,
   type FrontierSwarmMergeIndex,
-  type FrontierSwarmStrategyTournament,
-  type FrontierSwarmTournamentAdaptiveFeedback,
   type FrontierSwarmMergeAdmission,
+  type FrontierSwarmMergeAdmissionPressure,
   type FrontierSwarmMergePlan,
+  type FrontierSwarmMergeQueueAssignment,
+  type FrontierSwarmMergeQueueRetrySlice,
+  type FrontierSwarmMergeQueueScope,
   type FrontierSwarmPlan,
   type FrontierSwarmQueueOverlay,
   type FrontierSwarmQueueSnapshot,
@@ -91,7 +87,6 @@ import {
   type FrontierSwarmReviewPlan,
   type FrontierSwarmSchedule,
   type FrontierSwarmSchedulerRecommendations,
-  type FrontierSwarmSemanticImportSummary,
   type FrontierSwarmEventStream,
   type FrontierSwarmTask,
   type FrontierSwarmUsageGovernor,
@@ -124,23 +119,11 @@ const checkpoint = createSwarmRunCheckpoint(run);
 const reviewPlan: FrontierSwarmReviewPlan = createSwarmReviewPlan({ plan, run, reviewers: ['reviewer'] });
 const mergePlan: FrontierSwarmMergePlan = createSwarmMergePlan({ plan, run, reviewPlan });
 const mergeBundle: FrontierSwarmMergeBundle = createSwarmMergeBundle({ job: plan.jobs[0], result: run.results[0] });
-const semanticSummary: FrontierSwarmSemanticImportSummary = createSwarmMergeBundle({
-  result: {
-    jobId: 'semantic',
-    status: 'completed',
-    semanticImport: { total: 1, dependencies: { total: 1, calls: 1, predicates: ['calls'] }, semanticSidecars: { ownershipRegions: 1 }, proofSpec: { obligations: 1, discharged: 1 }, paradigmSemantics: { loweringRecords: 1, hasLowering: true }, sourceProjections: { preserved: 1 }, nativeCompiles: { emitted: 1 } }
-  }
-}).semanticImport!;
-semanticSummary.proofSpec.obligations satisfies number;
-semanticSummary.dependencies.calls satisfies number;
-semanticSummary.paradigmSemantics.hasLowering satisfies boolean;
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
-const styleTournament: FrontierSwarmStrategyTournament = createSwarmMergeTournament({ bundles: [mergeBundle], strategyMode: 'style' });
-const banditRecommendations: FrontierSwarmContextualBanditRecommendations = createSwarmContextualBanditRecommendations({ tournament: styleTournament });
-const tournamentFeedback: FrontierSwarmTournamentAdaptiveFeedback = createSwarmTournamentAdaptiveFeedback({ tournament: styleTournament });
-const structuralTournamentFeedback: FrontierSwarmAdaptiveTournamentFeedbackInput = tournamentFeedback;
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
+const hierarchicalQueue: FrontierSwarmHierarchicalMergeQueue = createSwarmHierarchicalMergeQueue({ index: mergeIndex, admission });
+const coordinatorDrainWork: FrontierSwarmCoordinatorAgentDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: hierarchicalQueue });
 const runStoreShards: FrontierSwarmRunStoreShards = createSwarmRunStoreShards({ plan });
 const contextPack: FrontierSwarmContextPack = createSwarmContextPack({ job: plan.jobs[0] });
 const oracleCorpus: FrontierSwarmOracleCorpus = createSwarmOracleCorpus({ artifacts: [{ id: 'oracle', path: 'oracle.json' }] });
@@ -154,7 +137,6 @@ const instrumentationDecision: FrontierSwarmInstrumentationBudgetDecision = chec
 const bottleneckReport: FrontierSwarmBottleneckReport = createSwarmBottleneckReport({ sources: [{ text: 'merge conflict' }] });
 const evidenceIndex: FrontierSwarmEvidenceIndex = createSwarmEvidenceIndex({ entries: [{ topic: 'timing', path: 'evidence.json' }] });
 const blackboard: FrontierSwarmBlackboard = createSwarmBlackboard({ entries: [{ topic: 'fact', text: 'known divergence' }] });
-const coordinatorDashboard: FrontierSwarmCoordinatorDashboard = createSwarmCoordinatorDashboard({ plan, run, mergeIndex, evidenceIndex });
 const referencePlan: FrontierSwarmReferenceOraclePlan = createSwarmReferenceOraclePlan({ targets: [{ id: 'reference', role: 'reference' }] });
 const referenceResponse: FrontierSwarmReferenceOracleResponse = createSwarmReferenceOracleResponse({ planId: referencePlan.id });
 const artifactRoutingPlan: FrontierSwarmArtifactRoutingPlan = createSwarmArtifactRoutingPlan({ artifacts: [{ path: 'changes.patch' }] });
@@ -167,17 +149,6 @@ const usageGovernor: FrontierSwarmUsageGovernor = createSwarmUsageGovernor({ max
 const usageDecision: FrontierSwarmUsageGovernorDecision = checkSwarmUsageGovernor(usageGovernor, { activeWorkers: 1 });
 const lanePlaybook: FrontierSwarmLanePlaybook = createSwarmLanePlaybook({ lane: 'runtime', successfulBundles: [mergeBundle] });
 const patchStackPlan: FrontierSwarmPatchStackPlan = createSwarmPatchStackPlan({ index: mergeIndex });
-const adaptiveLoadPlan: FrontierSwarmAdaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
-  plan,
-  run,
-  mergeIndex,
-  tournamentFeedback: structuralTournamentFeedback,
-  mode: 'balanced',
-  maxLimits: { maxReadyJobs: 4 },
-  currentLimits: { maxReadyJobs: 4 },
-  observations: [{ kind: 'semantic-empty', jobId: plan.jobs[0].id, lane: plan.jobs[0].lane }]
-});
-const adaptiveSchedule = createSwarmSchedule(createSwarmScheduleInputFromAdaptiveLoadPlan(plan, adaptiveLoadPlan, { run }));
 
 plan.jobs[0].allowedWrites satisfies string[];
 compute.model satisfies string | undefined;
@@ -190,16 +161,39 @@ budget.ok satisfies boolean;
 reviewPlan.assignments satisfies readonly { jobId: string }[];
 mergePlan.ready satisfies string[];
 mergeBundle.queueItemIds satisfies string[];
-semanticSummary.semanticSidecars.ownershipRegions satisfies number;
-semanticSummary.dependencies.total satisfies number;
-semanticSummary.nativeCompiles.emitted satisfies number;
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
-styleTournament.summary.strategyCount satisfies number;
-banditRecommendations.summary.promoteCount satisfies number;
-tournamentFeedback.observations satisfies readonly { kind: string }[];
-structuralTournamentFeedback.generatedAt satisfies number | undefined;
 admission.admitted satisfies string[];
+hierarchicalQueue.rootScopeId satisfies string;
+hierarchicalQueue.scopes satisfies readonly FrontierSwarmMergeQueueScope[];
+hierarchicalQueue.assignments satisfies readonly FrontierSwarmMergeQueueAssignment[];
+hierarchicalQueue.assignments satisfies readonly { scopeId: string; parentScopeIds: string[]; leaseKey: string; queueItemIds: string[]; action: string }[];
+hierarchicalQueue.assignments[0]?.retrySlices satisfies FrontierSwarmMergeQueueRetrySlice[] | undefined;
+hierarchicalQueue.assignments[0]?.semanticSliceScopeIds satisfies string[] | undefined;
+hierarchicalQueue.assignments[0]?.semanticSliceLeaseKeys satisfies string[] | undefined;
+hierarchicalQueue.assignments[0]?.parentDecisionRegions satisfies string[] | undefined;
+hierarchicalQueue.assignments[0]?.unknownRegions satisfies string[] | undefined;
+hierarchicalQueue.byScope satisfies Record<string, string[]>;
+hierarchicalQueue.summary.admissionPressure.promoteUpwardCount satisfies number;
+hierarchicalQueue.summary.admissionPressure.trueBlockQueueItemCount satisfies number;
+coordinatorDrainWork.rootQueueId satisfies string;
+coordinatorDrainWork.leases satisfies readonly { id: string; queueId: string; leaseScope: string; leaseKey: string; jobIds: string[] }[];
+coordinatorDrainWork.assignments satisfies readonly { queueId: string; rootQueueId: string; parentQueueIds: string[]; queueItemIds: string[]; leaseId: string; leaseScope: string }[];
+coordinatorDrainWork.assignments[0]?.retrySlices satisfies FrontierSwarmMergeQueueRetrySlice[] | undefined;
+coordinatorDrainWork.assignments[0]?.semanticSliceLeaseKeys satisfies string[] | undefined;
+coordinatorDrainWork.activeAssignments satisfies readonly { queueId: string; leaseId: string; leaseScope: string; queueItemIds: string[] }[];
+coordinatorDrainWork.terminalDecisions satisfies readonly { queueId: string; leaseId: string; leaseScope: string; queueItemIds: string[] }[];
+coordinatorDrainWork.terminalDecisions[0]?.retrySlices satisfies FrontierSwarmMergeQueueRetrySlice[] | undefined;
+coordinatorDrainWork.blockers satisfies readonly { leaseScope: string; queueItemIds: string[] }[];
+coordinatorDrainWork.byDecision satisfies Record<string, string[]>;
+coordinatorDrainWork.byClassification satisfies Record<string, string[]>;
+coordinatorDrainWork.byLeaseScope satisfies Record<string, string[]>;
+coordinatorDrainWork.summary.admissionPressure.applyLocalQueueItemCount satisfies number;
+coordinatorDrainWork.summary.rootQueueSelectionPressure satisfies FrontierSwarmCoordinatorAgentRootQueueSelectionPressure;
+coordinatorDrainWork.summary.rootQueueSelectionPressure.rootQueueId satisfies string;
+coordinatorDrainWork.summary.rootQueueSelectionPressure.promotedJobIds satisfies string[];
+coordinatorDrainWork.summary.rootQueueSelectionPressure.byReason satisfies Record<string, string[]>;
+coordinatorDrainWork.summary.rootQueueSelectionPressure.admissionPressure.promoteUpwardQueueItemCount satisfies number;
 runStoreShards.shards satisfies readonly { path: string }[];
 contextPack.files satisfies string[];
 contextPack.commands satisfies readonly { command: string }[];
@@ -217,7 +211,6 @@ instrumentationDecision.ok satisfies boolean;
 bottleneckReport.classifications satisfies readonly { kind: string }[];
 querySwarmEvidenceIndex(evidenceIndex, { topic: 'timing' }).summary.entryCount satisfies number;
 querySwarmBlackboard(blackboard, { topic: 'fact' }).summary.entryCount satisfies number;
-querySwarmCoordinatorDashboard(coordinatorDashboard, { hasSemanticImport: false }).summary.jobCount satisfies number;
 referencePlan.targets satisfies readonly { id: string }[];
 referenceResponse.targetResults satisfies readonly { targetId: string }[];
 artifactRoutingPlan.routes satisfies readonly { bucket: string }[];
@@ -229,6 +222,5 @@ rebaseReport.entries satisfies readonly { status: string }[];
 usageDecision.ok satisfies boolean;
 lanePlaybook.successfulJobIds satisfies string[];
 patchStackPlan.stacks satisfies readonly { jobIds: string[] }[];
-adaptiveLoadPlan.effectiveLimits.maxReadyJobs satisfies number | undefined;
-adaptiveSchedule.ready satisfies readonly { jobId: string }[];
+({} as FrontierSwarmMergeAdmissionPressure).recordOnlyQueueItemCount satisfies number;
 ({} as FrontierSwarmArtifactIndex).summary satisfies { artifactCount: number };
