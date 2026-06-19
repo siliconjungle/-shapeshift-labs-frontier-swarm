@@ -1521,7 +1521,7 @@ export interface FrontierSwarmJobResult {
   mergeDisposition: FrontierSwarmMergeDisposition;
   verification: FrontierSwarmVerificationResult[];
   semanticImport?: unknown;
-  traceShards: unknown[];
+  traceShards?: unknown[];
   lastMessage?: string;
   error?: string;
   metadata?: JsonObject;
@@ -1583,7 +1583,7 @@ export interface FrontierSwarmMergeBundle {
   commandsFailed: FrontierSwarmVerificationResult[];
   queueItemIds: string[];
   semanticImport?: unknown;
-  traceShards: unknown[];
+  traceShards?: unknown[];
   branchName?: string;
   commit?: string;
   staleAgainstHead: boolean;
