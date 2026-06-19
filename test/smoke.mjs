@@ -9,6 +9,9 @@ import {
   FRONTIER_SWARM_PANEL_EVALUATION_KIND,
   FRONTIER_SWARM_PRIORITY_POLICY_KIND,
   FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS,
   FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND,
   checkSwarmOwnership,
   classifySwarmMergeDisposition,
@@ -203,6 +206,33 @@ assert.strictEqual(createSwarmSemanticOwnershipStableKey({
   exportName: 'add'
 }), 'exported-declaration:function:add:add');
 assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'default-export',
+  declarationKind: 'function',
+  name: 'default',
+  exportName: 'build'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND}:function:build:build`);
+const namespaceExportKey = createSwarmSemanticOwnershipStableKey({
+  kind: 'namespace-export',
+  source: './math.ts',
+  name: 'math'
+});
+const namespaceExportAliasKey = createSwarmSemanticOwnershipStableKey({
+  kind: 'namespace-export',
+  source: './math.ts',
+  name: 'default',
+  exportName: 'math'
+});
+const reExportKey = createSwarmSemanticOwnershipStableKey({
+  kind: 're-export',
+  source: './math.ts',
+  name: 'math'
+});
+assert.strictEqual(namespaceExportKey, `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND}:./math.ts:math`);
+assert.strictEqual(namespaceExportAliasKey, namespaceExportKey);
+assert.strictEqual(reExportKey, 're-export:./math.ts:math');
+assert.notStrictEqual(namespaceExportKey, reExportKey);
+assert.strictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS.namespaceExport, FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
   kind: 'type',
   declarationKind: 'type-alias',
   name: 'MathNumber'
@@ -229,6 +259,13 @@ assert.strictEqual(createSwarmSemanticOwnershipRegionId({
   declarationKind: 'type-alias',
   name: 'MathNumber'
 }), 'src/types.ts#semanticOwnershipRegion:type-declaration:type-alias:MathNumber:MathNumber');
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/index.ts',
+  kind: 'namespace-export',
+  source: './math.ts',
+  name: 'default',
+  exportName: 'math'
+}), `src/index.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND}:./math.ts:math`);
 assert.strictEqual(createSwarmSemanticOwnershipRegionId({
   file: 'src/cli.ts',
   kind: 'cli-command',

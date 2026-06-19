@@ -355,6 +355,23 @@ export interface FrontierSwarmSemanticOwnershipRegionIdInput {
   testCase?: string;
 }
 
+export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND = 'exported-declaration';
+export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND = 'namespace-export';
+export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND = 'type-declaration';
+export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND = 'cli-command';
+export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND = 'docs-section';
+export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND = 'fixture-family';
+export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND = 'test-case';
+export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS = Object.freeze({
+  export: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
+  namespaceExport: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
+  type: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
+  cliCommand: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND,
+  docsSection: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND,
+  fixtureFamily: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND,
+  testCase: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND
+} as const);
+
 export interface FrontierSwarmLaneInput {
   id: string;
   title?: string;
@@ -4320,35 +4337,43 @@ export function checkSwarmOwnership(job: FrontierSwarmJob, changedPaths: readonl
 
 export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemanticOwnershipStableKeyInput): string {
   if (input.kind === 'named-export' || input.kind === 'default-export' || input.kind === 'exported-declaration' || input.kind === 'export') {
+    const name = semanticOwnershipExportName(input);
     return semanticOwnershipStableKey(
-      'exported-declaration',
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
       input.declarationKind ?? 'anonymous',
-      input.name ?? input.exportName ?? 'default',
+      name,
       input.exportName ?? input.name ?? 'default'
     );
   }
-  if (input.kind === 're-export' || input.kind === 'namespace-export') {
-    return semanticOwnershipStableKey('re-export', input.source ?? 'unknown-source', input.name ?? input.exportName ?? '*');
+  if (input.kind === 're-export') {
+    return semanticOwnershipStableKey('re-export', input.source ?? 'unknown-source', semanticOwnershipExportName(input, '*'));
+  }
+  if (input.kind === 'namespace-export') {
+    return semanticOwnershipStableKey(
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
+      input.source ?? 'unknown-source',
+      semanticOwnershipExportName(input, '*')
+    );
   }
   if (input.kind === 'type') {
     return semanticOwnershipStableKey(
-      'type-declaration',
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
       input.declarationKind ?? 'anonymous',
       input.name ?? input.exportName ?? 'default',
       input.exportName ?? input.name ?? 'default'
     );
   }
   if (input.kind === 'cli-command') {
-    return semanticOwnershipStableKey('cli-command', input.command ?? input.name ?? 'unknown-command');
+    return semanticOwnershipStableKey(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND, input.command ?? input.name ?? 'unknown-command');
   }
   if (input.kind === 'docs-section') {
-    return semanticOwnershipStableKey('docs-section', input.section ?? input.name ?? 'unknown-section');
+    return semanticOwnershipStableKey(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND, input.section ?? input.name ?? 'unknown-section');
   }
   if (input.kind === 'fixture-family') {
-    return semanticOwnershipStableKey('fixture-family', input.family ?? input.name ?? 'unknown-family');
+    return semanticOwnershipStableKey(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND, input.family ?? input.name ?? 'unknown-family');
   }
   if (input.kind === 'test-case') {
-    return semanticOwnershipStableKey('test-case', input.testCase ?? input.name ?? 'unknown-test-case');
+    return semanticOwnershipStableKey(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND, input.testCase ?? input.name ?? 'unknown-test-case');
   }
   return semanticOwnershipStableKey(input.kind, input.declarationKind ?? input.source ?? input.command ?? input.section ?? input.family ?? input.testCase ?? input.name ?? input.exportName ?? 'default');
 }
@@ -12189,6 +12214,14 @@ function semanticOwnershipStableKey(kind: string, ...parts: string[]): string {
 
 function semanticOwnershipRegionId(file: string, stableKey: string): string {
   return file + '#semanticOwnershipRegion:' + stableKey;
+}
+
+function semanticOwnershipExportName(input: Pick<FrontierSwarmSemanticOwnershipStableKeyInput, 'name' | 'exportName'>, fallback = 'default'): string {
+  const name = input.name?.trim();
+  if (name && name !== 'default') return name;
+  const exportName = input.exportName?.trim();
+  if (exportName) return exportName;
+  return fallback;
 }
 
 function stableIdPart(value: string): string {

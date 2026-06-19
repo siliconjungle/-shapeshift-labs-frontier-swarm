@@ -22,6 +22,7 @@ import {
   createSwarmSchedulerRecommendations,
   createSwarmFixtureCatalog,
   createSwarmProgressModel,
+  createSwarmSemanticOwnershipStableKey,
   createSwarmAutoReviewReport,
   createSwarmRebaseReport,
   createSwarmUsageGovernor,
@@ -143,6 +144,7 @@ const artifactRoutingPlan: FrontierSwarmArtifactRoutingPlan = createSwarmArtifac
 const schedulerRecommendations: FrontierSwarmSchedulerRecommendations = createSwarmSchedulerRecommendations({ schedule });
 const fixtureCatalog: FrontierSwarmFixtureCatalog = createSwarmFixtureCatalog({ fixtures: [{ id: 'logged-in' }] });
 const progressModel: FrontierSwarmProgressModel = createSwarmProgressModel({ items: [{ id: 'route', status: 'implemented' }] });
+const namespaceExportStableKey = createSwarmSemanticOwnershipStableKey({ kind: 'namespace-export', source: './math.ts', name: 'math' });
 const autoReviewReport: FrontierSwarmAutoReviewReport = createSwarmAutoReviewReport({ bundles: [mergeBundle] });
 const rebaseReport: FrontierSwarmRebaseReport = createSwarmRebaseReport({ mergeIndex });
 const usageGovernor: FrontierSwarmUsageGovernor = createSwarmUsageGovernor({ maxWorkers: 20 });
@@ -217,6 +219,7 @@ artifactRoutingPlan.routes satisfies readonly { bucket: string }[];
 schedulerRecommendations.recommendations satisfies readonly { action: string }[];
 fixtureCatalog.fixtures satisfies readonly { id: string }[];
 progressModel.byStatus satisfies Record<string, string[]>;
+namespaceExportStableKey satisfies string;
 autoReviewReport.findings satisfies readonly { kind: string }[];
 rebaseReport.entries satisfies readonly { status: string }[];
 usageDecision.ok satisfies boolean;
