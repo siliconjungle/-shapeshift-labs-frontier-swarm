@@ -7541,6 +7541,7 @@ function conflictMap(results: readonly FrontierSwarmJobResult[]): Map<string, Se
 
 function queueOverlayStatusFromBundle(bundle: FrontierSwarmMergeBundle): FrontierSwarmQueueOverlayStatus {
   if (bundle.staleAgainstHead || bundle.disposition === 'stale-against-head') return 'stale-against-head';
+  if (bundleHasNoActionableFailureEvidence(bundle)) return 'discovery-only';
   if (bundle.disposition === 'rejected' || bundle.disposition === 'blocked' || bundle.status === 'failed' || bundle.commandsFailed.length > 0) {
     return 'failed-evidence';
   }
@@ -7554,12 +7555,39 @@ function queueOverlayStatusFromBundle(bundle: FrontierSwarmMergeBundle): Frontie
 
 function queueOverlayStatusFromResult(result: FrontierSwarmJobResult): FrontierSwarmQueueOverlayStatus {
   if (result.mergeDisposition === 'stale-against-head') return 'stale-against-head';
+  if (resultHasNoActionableFailureEvidence(result)) return 'discovery-only';
   if (result.status === 'failed' || result.exitCode !== undefined && result.exitCode !== 0 || result.ownershipViolations.length > 0) return 'failed-evidence';
   if (result.mergeDisposition === 'auto-mergeable') return 'ready-to-apply';
   if (result.mergeDisposition === 'needs-port') return 'needs-human-port';
   if (result.mergeDisposition === 'discovery-only') return 'discovery-only';
   if (result.status === 'blocked') return 'blocked';
   return 'unknown';
+}
+
+function bundleHasNoActionableFailureEvidence(bundle: FrontierSwarmMergeBundle): boolean {
+  const failed = bundle.status === 'failed'
+    || bundle.disposition === 'rejected'
+    || bundle.mergeReadiness === 'rejected';
+  if (!failed) return false;
+  if (bundle.changedPaths.length > 0 || bundle.ownershipViolations.length > 0 || bundle.commandsFailed.length > 0) return false;
+  if (bundle.patchPath) return false;
+  return bundle.reasons.some((reason) => {
+    const normalized = reason.toLowerCase();
+    return normalized.includes('no-source-changes')
+      || normalized.includes('no source changes')
+      || normalized.includes('non-actionable-worker-output')
+      || normalized.includes('failed-output-recorded');
+  });
+}
+
+function resultHasNoActionableFailureEvidence(result: FrontierSwarmJobResult): boolean {
+  const failed = result.status === 'failed'
+    || result.exitCode !== undefined && result.exitCode !== 0
+    || result.mergeDisposition === 'rejected'
+    || result.mergeReadiness === 'rejected';
+  if (!failed) return false;
+  if (result.changedPaths.length > 0 || result.ownershipViolations.length > 0 || result.patchPath) return false;
+  return !result.verification.some((entry) => entry.required !== false && entry.status !== undefined && entry.status !== 0);
 }
 
 function queueJobStatusFromOverlay(entry: FrontierSwarmQueueOverlayEntry): FrontierSwarmQueueJobStatus {

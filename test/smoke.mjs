@@ -1753,6 +1753,55 @@ assert.strictEqual(queueSnapshot.jobs[0].metadata.verificationGates[0].metadata.
 assert.strictEqual(queueSnapshot.jobs[0].metadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
 const queueOverlay = createSwarmQueueOverlay({ runId: scaleRun.id, bundles: [mergeBundle], generatedAt: 8100 });
 assert.strictEqual(queueOverlay.summary.needsHumanPortCount, 1);
+const failedNoSourceOverlay = createSwarmQueueOverlay({
+  runId: scaleRun.id,
+  results: [{
+    jobId: 'failed-no-source-worker',
+    status: 'failed',
+    exitCode: 1,
+    changedPaths: [],
+    evidencePaths: ['agent-runs/scale/failed-no-source/evidence.json'],
+    queueItemIds: ['failed-no-source-worker']
+  }],
+  generatedAt: 8101
+});
+assert.strictEqual(failedNoSourceOverlay.summary.failedEvidenceCount, 0);
+assert.strictEqual(failedNoSourceOverlay.summary.discoveryOnlyCount, 1);
+assert.strictEqual(failedNoSourceOverlay.entries[0].status, 'discovery-only');
+const failedNoSourceBundle = createSwarmMergeBundle({
+  runId: scaleRun.id,
+  result: {
+    jobId: 'failed-no-source-bundle',
+    status: 'failed',
+    exitCode: 1,
+    changedPaths: [],
+    evidencePaths: ['agent-runs/scale/failed-no-source-bundle/evidence.json'],
+    queueItemIds: ['failed-no-source-bundle']
+  }
+});
+const failedNoSourceBundleOverlay = createSwarmQueueOverlay({
+  runId: scaleRun.id,
+  bundles: [failedNoSourceBundle],
+  generatedAt: 8102
+});
+assert.strictEqual(failedNoSourceBundleOverlay.summary.failedEvidenceCount, 0);
+assert.strictEqual(failedNoSourceBundleOverlay.summary.discoveryOnlyCount, 1);
+assert.strictEqual(failedNoSourceBundleOverlay.entries[0].status, 'discovery-only');
+const failedActionableOverlay = createSwarmQueueOverlay({
+  runId: scaleRun.id,
+  results: [{
+    jobId: 'failed-with-source-worker',
+    status: 'failed',
+    exitCode: 1,
+    changedPaths: ['src/outside.ts'],
+    ownershipViolations: ['src/outside.ts'],
+    evidencePaths: ['agent-runs/scale/failed-with-source/evidence.json'],
+    queueItemIds: ['failed-with-source-worker']
+  }],
+  generatedAt: 8103
+});
+assert.strictEqual(failedActionableOverlay.summary.failedEvidenceCount, 1);
+assert.strictEqual(failedActionableOverlay.entries[0].status, 'failed-evidence');
 const derivedQueue = deriveSwarmQueueStatus({ snapshot: queueSnapshot, overlays: [queueOverlay], generatedAt: 8200 });
 assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).status, 'blocked');
 const checkpoint = createSwarmRunCheckpoint({ run: scaleRun, sequence: 1, savedAt: 9000 });
