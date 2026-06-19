@@ -4337,7 +4337,7 @@ export function checkSwarmOwnership(job: FrontierSwarmJob, changedPaths: readonl
 
 export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemanticOwnershipStableKeyInput): string {
   if (input.kind === 'named-export' || input.kind === 'default-export' || input.kind === 'exported-declaration' || input.kind === 'export') {
-    const name = semanticOwnershipExportName(input);
+    const name = semanticOwnershipExportDeclarationName(input);
     return semanticOwnershipStableKey(
       FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
       input.declarationKind ?? 'anonymous',
@@ -4346,13 +4346,13 @@ export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemant
     );
   }
   if (input.kind === 're-export') {
-    return semanticOwnershipStableKey('re-export', input.source ?? 'unknown-source', semanticOwnershipExportName(input, '*'));
+    return semanticOwnershipStableKey('re-export', input.source ?? 'unknown-source', semanticOwnershipExportClauseName(input, '*'));
   }
   if (input.kind === 'namespace-export') {
     return semanticOwnershipStableKey(
       FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
       input.source ?? 'unknown-source',
-      semanticOwnershipExportName(input, '*')
+      semanticOwnershipExportClauseName(input, '*')
     );
   }
   if (input.kind === 'type') {
@@ -12216,10 +12216,20 @@ function semanticOwnershipRegionId(file: string, stableKey: string): string {
   return file + '#semanticOwnershipRegion:' + stableKey;
 }
 
-function semanticOwnershipExportName(input: Pick<FrontierSwarmSemanticOwnershipStableKeyInput, 'name' | 'exportName'>, fallback = 'default'): string {
+function semanticOwnershipExportDeclarationName(input: Pick<FrontierSwarmSemanticOwnershipStableKeyInput, 'name' | 'exportName'>, fallback = 'default'): string {
   const name = input.name?.trim();
   if (name && name !== 'default') return name;
   const exportName = input.exportName?.trim();
+  if (exportName) return exportName;
+  return fallback;
+}
+
+function semanticOwnershipExportClauseName(input: Pick<FrontierSwarmSemanticOwnershipStableKeyInput, 'name' | 'exportName'>, fallback = '*'): string {
+  const name = input.name?.trim();
+  const exportName = input.exportName?.trim();
+  if (name && name !== 'default') return name;
+  if (exportName && exportName !== 'default') return exportName;
+  if (name) return name;
   if (exportName) return exportName;
   return fallback;
 }

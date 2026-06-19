@@ -227,9 +227,16 @@ const reExportKey = createSwarmSemanticOwnershipStableKey({
   source: './math.ts',
   name: 'math'
 });
+const defaultReExportRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/index.ts',
+  kind: 're-export',
+  source: './math.ts',
+  name: 'default'
+});
 assert.strictEqual(namespaceExportKey, `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND}:./math.ts:math`);
 assert.strictEqual(namespaceExportAliasKey, namespaceExportKey);
 assert.strictEqual(reExportKey, 're-export:./math.ts:math');
+assert.strictEqual(defaultReExportRegionId, 'src/index.ts#semanticOwnershipRegion:re-export:./math.ts:default');
 assert.notStrictEqual(namespaceExportKey, reExportKey);
 assert.strictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS.namespaceExport, FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND);
 assert.strictEqual(createSwarmSemanticOwnershipStableKey({
