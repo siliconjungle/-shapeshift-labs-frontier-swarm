@@ -3238,6 +3238,7 @@ export type FrontierSwarmQueueOutcome =
 export const FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS = [
   'applied',
   'committed',
+  'superseded',
   'evidence-only',
   'no-change',
   'generated-by-collector',
@@ -3246,6 +3247,7 @@ export const FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS = [
   'rerun',
   'rejected',
   'conflict-blocked',
+  'human-question',
   'human-blocked',
   'coordinator-review'
 ] as const;
@@ -6110,7 +6112,7 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
   if (explicitCategory) {
     category = explicitCategory;
   } else if (
-    queueOutcomeHas(search, 'committed', 'applied', 'superseded', 'rejected', 'recorded', 'closed')
+    queueOutcomeHas(search, 'committed', 'applied', 'superseded', 'no-change', 'nochange', 'no-op', 'noop', 'unchanged', 'rejected', 'recorded', 'closed')
     || action === 'apply-local'
     || action === 'reject'
     || action === 'record-only'
@@ -6162,7 +6164,14 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
     category = 'continuation';
   }
 
-  const outcome = input.outcome?.trim() || defaultQueueOutcomeForCategory(category, input, search);
+  const explicitOutcome = input.outcome?.trim();
+  const outcome = explicitOutcome && !(
+    (category === 'conflict' && (explicitOutcome === 'conflict' || explicitOutcome === 'merge-conflict'))
+    || (category === 'human-blocked' && (explicitOutcome === 'blocked' || explicitOutcome === 'human-blocked'))
+    || (category === 'stale-rerun' && explicitOutcome === 'stale-rerun')
+  )
+    ? canonicalizeSwarmQueueOutcome(explicitOutcome) ?? defaultQueueOutcomeForCategory(category, input, search)
+    : defaultQueueOutcomeForCategory(category, input, search);
   const terminal = category === 'terminal';
   return {
     category,
@@ -6171,7 +6180,7 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
     closesSubject: terminal,
     coordinatorReview: category === 'coordinator-review',
     humanBlocked: category === 'human-blocked',
-    staleOrRerun: category === 'stale-rerun' || outcome === 'rerun',
+    staleOrRerun: category === 'stale-rerun',
     conflict: category === 'conflict',
     reviewDebt: category === 'coordinator-review' || category === 'conflict'
   };
@@ -6382,6 +6391,7 @@ function terminalOutcomeLabelFromText(value: string | undefined): FrontierSwarmT
   if (!token) return undefined;
   if (token === 'applied' || token === 'apply-local' || token === 'apply') return 'applied';
   if (token === 'committed' || token === 'commit') return 'committed';
+  if (token === 'superseded') return 'superseded';
   if (token === 'evidence-only' || token === 'evidenceonly' || token === 'evidence') return 'evidence-only';
   if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
   if (token === 'generated-by-collector' || token === 'collector-generated' || token === 'generated-collector') return 'generated-by-collector';
@@ -6390,7 +6400,7 @@ function terminalOutcomeLabelFromText(value: string | undefined): FrontierSwarmT
   if (token === 'rerun' || token === 're-run' || token === 'retry' || token === 'needs-rerun' || token === 'stale-rerun') return 'rerun';
   if (token === 'rejected' || token === 'reject' || token === 'failed' || token === 'failure') return 'rejected';
   if (token === 'conflict-blocked' || token === 'merge-conflict' || token === 'textual-conflict' || token === 'conflict') return 'conflict-blocked';
-  if (token === 'human-blocked' || token === 'human-question' || token === 'blocked') return 'human-blocked';
+  if (token === 'human-question' || token === 'human-blocked' || token === 'blocked') return 'human-question';
   if (token === 'coordinator-review' || token === 'needs-port' || token === 'escalated' || token === 'review') return 'coordinator-review';
   return token;
 }
@@ -6470,12 +6480,12 @@ export function normalizeSwarmTerminalOutcome(
             : conflictBlocked
               ? 'conflict-blocked'
               : humanBlocked
-                ? 'human-blocked'
+                ? 'human-question'
                 : coordinatorReview
                   ? 'coordinator-review'
                   : explicitLabel ?? 'unknown';
 
-  const category: FrontierSwarmTerminalOutcomeCategory = label === 'applied' || label === 'committed' || label === 'evidence-only' || label === 'no-change' || label === 'generated-by-collector'
+  const category: FrontierSwarmTerminalOutcomeCategory = label === 'applied' || label === 'committed' || label === 'superseded' || label === 'evidence-only' || label === 'no-change' || label === 'generated-by-collector'
     ? 'success'
     : label === 'patch-missing' || label === 'bundle-missing'
       ? 'incomplete'
@@ -6483,7 +6493,7 @@ export function normalizeSwarmTerminalOutcome(
         ? 'rerun'
         : label === 'rejected'
           ? 'rejected'
-          : label === 'conflict-blocked' || label === 'human-blocked'
+          : label === 'conflict-blocked' || label === 'human-question' || label === 'human-blocked'
             ? 'blocked'
             : label === 'coordinator-review'
               ? 'review'
@@ -8486,16 +8496,16 @@ function defaultQueueOutcomeForCategory(
   const action = input.assignedAction ?? input.action;
   if (category === 'terminal') {
     if (queueOutcomeHas(search, 'committed')) return 'committed';
-    if (action === 'rerun' || input.decision === 'rerun') return 'rerun';
     if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied')) return 'applied';
     if (input.decision === 'superseded' || queueOutcomeHas(search, 'superseded')) return 'superseded';
+    if (input.decision === 'no-change' || queueOutcomeHas(search, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')) return 'no-change';
     if (action === 'reject' || input.decision === 'rejected' || input.disposition === 'rejected' || queueOutcomeHas(search, 'rejected')) return 'rejected';
     if (action === 'record-only' || input.decision === 'recorded' || input.mergeReadiness === 'discovery-only' || queueOutcomeHas(search, 'recorded')) return 'recorded';
-    return 'closed';
+    return 'no-change';
   }
-  if (category === 'stale-rerun') return queueOutcomeHas(search, 'stale') ? 'stale-rerun' : 'rerun';
-  if (category === 'human-blocked') return 'human-blocked';
-  if (category === 'conflict') return 'conflict';
+  if (category === 'stale-rerun') return 'rerun';
+  if (category === 'human-blocked') return 'human-question';
+  if (category === 'conflict') return 'conflict-blocked';
   if (category === 'coordinator-review') {
     if (input.decision === 'escalated' || action === 'promote') return 'escalated';
     if (input.disposition === 'needs-port' || queueOutcomeHas(search, 'needs-port', 'needs-human-port')) return 'needs-port';
@@ -8509,6 +8519,22 @@ function defaultQueueOutcomeForCategory(
     return 'continued';
   }
   return category;
+}
+
+function canonicalizeSwarmQueueOutcome(value: string): FrontierSwarmQueueOutcome | undefined {
+  const token = normalizeSwarmTerminalOutcomeText(value);
+  if (!token) return undefined;
+  if (token === 'applied' || token === 'apply-local' || token === 'apply') return 'applied';
+  if (token === 'committed' || token === 'commit') return 'committed';
+  if (token === 'superseded') return 'superseded';
+  if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
+  if (token === 'rejected' || token === 'reject' || token === 'failed' || token === 'failure') return 'rejected';
+  if (token === 'rerun' || token === 're-run' || token === 'retry' || token === 'needs-rerun' || token === 'stale-rerun') return 'rerun';
+  if (token === 'conflict-blocked' || token === 'merge-conflict' || token === 'textual-conflict' || token === 'conflict') return 'conflict-blocked';
+  if (token === 'human-question' || token === 'human-blocked' || token === 'blocked') return 'human-question';
+  if (token === 'recorded') return 'recorded';
+  if (token === 'closed') return 'closed';
+  return undefined;
 }
 
 function queueOutcomeInputsFromMergeQueue(queue: FrontierSwarmHierarchicalMergeQueue): FrontierSwarmQueueOutcomeDecisionInput[] {

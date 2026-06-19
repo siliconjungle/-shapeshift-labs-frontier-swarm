@@ -1896,10 +1896,36 @@ assert.strictEqual(
   classifySwarmQueueOutcome({ decision: 'queued', reasons: ['conflicting-changes'], conflictingJobIds: ['other-job'] }).category,
   'conflict'
 );
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'human-question', reasons: ['needs-human-answer'] }).outcome,
+  'human-question'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'rerun', reasons: ['stale-against-head'] }).outcome,
+  'rerun'
+);
+assert.deepStrictEqual(
+  [
+    classifySwarmQueueOutcome({ category: 'terminal', outcome: 'applied', terminal: true }).outcome,
+    classifySwarmQueueOutcome({ category: 'terminal', outcome: 'committed', terminal: true }).outcome,
+    classifySwarmQueueOutcome({ category: 'terminal', outcome: 'superseded', terminal: true }).outcome,
+    classifySwarmQueueOutcome({ category: 'terminal', outcome: 'no-change', terminal: true }).outcome
+  ],
+  ['applied', 'committed', 'superseded', 'no-change']
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ category: 'conflict', outcome: 'merge-conflict', reasons: ['conflicting-changes'], conflictingJobIds: ['other-job'] }).outcome,
+  'conflict-blocked'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ category: 'human-blocked', outcome: 'human-blocked', reasons: ['human-question'] }).outcome,
+  'human-question'
+);
 
 const normalizedTerminalOutcomes = [
   normalizeSwarmTerminalOutcome('applied'),
   normalizeSwarmTerminalOutcome('committed'),
+  normalizeSwarmTerminalOutcome('superseded'),
   normalizeSwarmTerminalOutcome({ label: 'evidence only' }),
   normalizeSwarmTerminalOutcome({ status: 'no change' }),
   normalizeSwarmTerminalOutcome({ generatedByCollector: true }),
@@ -1908,12 +1934,14 @@ const normalizedTerminalOutcomes = [
   normalizeSwarmTerminalOutcome({ decision: 'rerun' }),
   normalizeSwarmTerminalOutcome({ outcome: 'rejected' }),
   normalizeSwarmTerminalOutcome({ label: 'conflict blocked' }),
+  normalizeSwarmTerminalOutcome({ decision: 'human-question' }),
   normalizeSwarmTerminalOutcome({ status: 'human blocked' }),
   normalizeSwarmTerminalOutcome({ decision: 'coordinator review' })
 ];
 assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.label), [
   'applied',
   'committed',
+  'superseded',
   'evidence-only',
   'no-change',
   'generated-by-collector',
@@ -1922,7 +1950,8 @@ assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.label
   'rerun',
   'rejected',
   'conflict-blocked',
-  'human-blocked',
+  'human-question',
+  'human-question',
   'coordinator-review'
 ]);
 assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.success), [
@@ -1931,6 +1960,8 @@ assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.succe
   true,
   true,
   true,
+  true,
+  false,
   false,
   false,
   false,
@@ -1953,7 +1984,8 @@ assert.strictEqual(terminalOutcomeModel.summary.staleRerunCount, 1);
 assert.strictEqual(terminalOutcomeModel.summary.visibleReviewDebtCount, 1);
 assert.strictEqual(terminalOutcomeModel.visibleHumanBlockers[0].jobId, terminalBundleBlocked.jobId);
 assert.strictEqual(terminalOutcomeModel.visibleReruns[0].jobId, terminalBundleStale.jobId);
-assert.strictEqual(terminalOutcomeModel.visibleReruns[1].jobId, terminalBundleOwnershipViolation.jobId);
+assert.strictEqual(terminalOutcomeModel.visibleReruns.length, 1);
+assert.strictEqual(terminalOutcomeModel.latestDecisions.find((decision) => decision.jobId === terminalBundleOwnershipViolation.jobId)?.decision, 'rerun');
 assert.strictEqual(terminalOutcomeModel.visibleReviewDebt[0].jobId, terminalBundleCoordinatorReview.jobId);
 
 const queueAliasCollapse = collapseSwarmQueueOutcomeDecisions([
