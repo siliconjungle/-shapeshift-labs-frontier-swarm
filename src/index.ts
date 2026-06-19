@@ -7559,10 +7559,10 @@ function queueOverlayStatusFromBundle(bundle: FrontierSwarmMergeBundle): Frontie
 
 function queueOverlayStatusFromResult(result: FrontierSwarmJobResult): FrontierSwarmQueueOverlayStatus {
   if (result.mergeDisposition === 'stale-against-head') return 'stale-against-head';
-  if (result.status === 'failed' || result.exitCode !== undefined && result.exitCode !== 0 || result.ownershipViolations.length > 0) return 'failed-evidence';
   if (result.mergeDisposition === 'auto-mergeable') return 'ready-to-apply';
   if (result.mergeDisposition === 'needs-port') return 'needs-human-port';
   if (result.mergeDisposition === 'discovery-only') return 'discovery-only';
+  if (result.status === 'failed' || result.exitCode !== undefined && result.exitCode !== 0 || result.ownershipViolations.length > 0) return 'failed-evidence';
   if (result.status === 'blocked') return 'blocked';
   return 'unknown';
 }

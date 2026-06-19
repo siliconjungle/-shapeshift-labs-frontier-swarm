@@ -1727,6 +1727,21 @@ const queueOverlay = createSwarmQueueOverlay({ runId: scaleRun.id, bundles: [mer
 assert.strictEqual(queueOverlay.summary.needsHumanPortCount, 1);
 const derivedQueue = deriveSwarmQueueStatus({ snapshot: queueSnapshot, overlays: [queueOverlay], generatedAt: 8200 });
 assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).status, 'blocked');
+
+let discoveryOnlyRun = createSwarmRun({ plan: scalePlan, startedAt: 8210 });
+discoveryOnlyRun = completeSwarmJob(discoveryOnlyRun, {
+  jobId: scalePlan.jobs[1].id,
+  status: 'blocked',
+  exitCode: 1,
+  changedPaths: [],
+  ownershipViolations: [],
+  mergeDisposition: 'discovery-only',
+  mergeReadiness: 'discovery-only'
+});
+const discoveryOnlyOverlay = createSwarmQueueOverlay({ runId: discoveryOnlyRun.id, results: discoveryOnlyRun.results, generatedAt: 8220 });
+assert.strictEqual(discoveryOnlyOverlay.entries[0].status, 'discovery-only');
+assert.strictEqual(discoveryOnlyOverlay.summary.failedEvidenceCount, 0);
+assert.strictEqual(discoveryOnlyOverlay.summary.discoveryOnlyCount, 1);
 const checkpoint = createSwarmRunCheckpoint({ run: scaleRun, sequence: 1, savedAt: 9000 });
 assert.strictEqual(checkpoint.runId, scaleRun.id);
 assert.strictEqual(checkpoint.resultCount, 1);
