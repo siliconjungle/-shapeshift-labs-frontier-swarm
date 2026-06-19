@@ -174,6 +174,13 @@ const semanticFunctionRegionId = createSwarmSemanticOwnershipRegionId({
   name: 'add',
   exportName: 'add'
 });
+const semanticFunctionAliasRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/math.ts',
+  kind: 'named-export',
+  declarationKind: 'function',
+  name: 'add',
+  exportName: 'sum'
+});
 const semanticMethodRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/math.ts',
   kind: 'named-export',
@@ -221,13 +228,30 @@ const semanticReExportAliasRegionId = createSwarmSemanticOwnershipRegionId({
   name: 'math',
   exportName: 'default'
 });
+const semanticReExportDefaultRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/index.ts',
+  kind: 're-export',
+  source: './math.ts',
+  name: 'default'
+});
+const semanticNamespaceExportDefaultRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/index.ts',
+  kind: 'namespace-export',
+  source: './math.ts',
+  name: 'default'
+});
 assert.strictEqual(semanticFunctionRegionId, 'src/math.ts#semanticOwnershipRegion:exported-declaration:function:add:add');
+assert.strictEqual(semanticFunctionAliasRegionId, semanticFunctionRegionId);
 assert.strictEqual(semanticFunctionRegionId, semanticDefaultExportRegionId);
 assert.strictEqual(semanticNamespaceExportRegionId, 'src/index.ts#semanticOwnershipRegion:namespace-export:./math.ts:math');
 assert.strictEqual(semanticNamespaceExportAliasRegionId, semanticNamespaceExportRegionId);
 assert.strictEqual(semanticReExportRegionId, 'src/index.ts#semanticOwnershipRegion:re-export:./math.ts:math');
 assert.strictEqual(semanticReExportAliasRegionId, semanticReExportRegionId);
+assert.strictEqual(semanticReExportDefaultRegionId, 'src/index.ts#semanticOwnershipRegion:re-export:./math.ts:default');
+assert.strictEqual(semanticNamespaceExportDefaultRegionId, 'src/index.ts#semanticOwnershipRegion:namespace-export:./math.ts:default');
 assert.notStrictEqual(semanticNamespaceExportRegionId, semanticReExportRegionId);
+assert.notStrictEqual(semanticReExportDefaultRegionId, semanticReExportRegionId);
+assert.notStrictEqual(semanticNamespaceExportDefaultRegionId, semanticNamespaceExportRegionId);
 assert.strictEqual(createSwarmSemanticOwnershipStableKey({
   kind: 'type',
   declarationKind: 'type-alias',
@@ -312,6 +336,267 @@ const semanticImport = {
     readiness: { ready: 1 }
   }
 };
+const semanticExportImport = {
+  records: [
+    {
+      path: 'src/math.ts',
+      status: 'imported',
+      mergeCandidate: {
+        exports: [
+          {
+            kind: 'named-export',
+            declarationKind: 'function',
+            name: 'add',
+            exportName: 'sum'
+          },
+          {
+            kind: 'default-export',
+            declarationKind: 'function',
+            name: 'default',
+            exportName: 'add'
+          }
+        ]
+      }
+    },
+    {
+      path: 'src/index.ts',
+      status: 'imported',
+      mergeCandidate: {
+        exports: [
+          {
+            kind: 're-export',
+            source: './math.ts',
+            name: 'math'
+          },
+          {
+            kind: 'namespace-export',
+            source: './math.ts',
+            name: 'math'
+          }
+        ]
+      }
+    }
+  ],
+  summary: {
+    total: 2,
+    selected: 2,
+    eligible: 2,
+    omitted: 0,
+    maxFiles: 2,
+    maxBytes: 2048,
+    imported: 2,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 2,
+    sourceMapMappingCount: 4,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 2, symbols: 4, occurrences: 4, relations: 0, facts: 0 },
+    readiness: { ready: 2 }
+  }
+};
+const semanticDefaultExportImport = {
+  total: 1,
+  selected: 1,
+  imported: 1,
+  errors: 0,
+  sourceMapMappingCount: 2,
+  records: [
+    {
+      path: 'src/index.ts',
+      status: 'imported',
+      mergeCandidate: {
+        reExports: [
+          {
+            source: './math.ts',
+            name: 'default'
+          }
+        ],
+        namespaceExports: [
+          {
+            source: './math.ts',
+            name: 'default'
+          }
+        ]
+      }
+    }
+  ],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 2,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 2, occurrences: 2, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const semanticInferredExportImport = {
+  records: [
+    {
+      path: 'src/math.ts',
+      status: 'imported',
+      mergeCandidate: {
+        namedExports: [
+          {
+            declarationKind: 'function',
+            name: 'add',
+            exportName: 'add'
+          },
+          {
+            declarationKind: 'function',
+            name: 'default',
+            exportName: 'add'
+          }
+        ],
+        defaultExports: [
+          {
+            declarationKind: 'function',
+            name: 'default',
+            exportName: 'add'
+          }
+        ]
+      }
+    },
+    {
+      path: 'src/index.ts',
+      status: 'imported',
+      mergeCandidate: {
+        reExports: [
+          {
+            source: './math.ts',
+            name: 'math'
+          }
+        ],
+        namespaceExports: [
+          {
+            source: './math.ts',
+            name: 'math'
+          }
+        ]
+      }
+    }
+  ],
+  summary: {
+    total: 2,
+    selected: 2,
+    eligible: 2,
+    omitted: 0,
+    maxFiles: 2,
+    maxBytes: 2048,
+    imported: 2,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 2,
+    sourceMapMappingCount: 4,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 2, symbols: 4, occurrences: 4, relations: 0, facts: 0 },
+    readiness: { ready: 2 }
+  }
+};
+const semanticNamespaceOnlyExportImport = {
+  records: [{
+    path: 'src/index.ts',
+    status: 'imported',
+    mergeCandidate: {
+      namespaceExports: [
+        {
+          source: './math.ts',
+          name: 'math'
+        }
+      ]
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const semanticReExportOnlyImport = {
+  records: [{
+    path: 'src/index.ts',
+    status: 'imported',
+    mergeCandidate: {
+      reExports: [
+        {
+          source: './math.ts',
+          name: 'math'
+        }
+      ]
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const semanticDefaultOnlyExportImport = {
+  records: [{
+    path: 'src/math.ts',
+    status: 'imported',
+    mergeCandidate: {
+      defaultExports: [
+        {
+          declarationKind: 'function',
+          name: 'default',
+          exportName: 'add'
+        }
+      ]
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
 
 const semanticManifest = createSwarmManifest({
   compute: [{ id: 'deep', kind: 'codex', model: 'gpt-5.5', reasoningEffort: 'xhigh' }],
@@ -358,6 +643,77 @@ assert.deepStrictEqual(resolveSwarmChangedRegions(semanticPlan.jobs[0], ['src/ma
   semanticFunctionRegionId,
   semanticMethodRegionId
 ].sort());
+const semanticExportTasks = defineSwarmTasks([{
+  id: 'export-regions',
+  lane: 'runtime',
+  targetRefs: ['src/math.ts', 'src/index.ts'],
+  ownershipRegions: [
+    {
+      id: semanticFunctionRegionId,
+      globs: ['src/math.ts'],
+      selectors: [semanticFunctionRegionId]
+    },
+    {
+      id: semanticDefaultExportRegionId,
+      globs: ['src/math.ts'],
+      selectors: [semanticDefaultExportRegionId]
+    },
+    {
+      id: semanticNamespaceExportRegionId,
+      globs: ['src/index.ts'],
+      selectors: [semanticNamespaceExportRegionId]
+    },
+    {
+      id: semanticReExportRegionId,
+      globs: ['src/index.ts'],
+      selectors: [semanticReExportRegionId]
+    }
+  ],
+  changedRegions: [semanticBroadRegionId]
+}]);
+const semanticExportPlan = createSwarmPlan(semanticManifest, semanticExportTasks);
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/math.ts', 'src/index.ts'], semanticExportImport).sort(), [
+  semanticFunctionRegionId,
+  semanticNamespaceExportRegionId,
+  semanticReExportRegionId
+].sort());
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/math.ts', 'src/index.ts'], semanticInferredExportImport).sort(), [
+  semanticFunctionRegionId,
+  semanticNamespaceExportRegionId,
+  semanticReExportRegionId
+].sort());
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/index.ts'], semanticNamespaceOnlyExportImport), [
+  semanticNamespaceExportRegionId
+]);
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/index.ts'], semanticReExportOnlyImport), [
+  semanticReExportRegionId
+]);
+const semanticDefaultExportTasks = defineSwarmTasks([{
+  id: 'default-export-regions',
+  lane: 'runtime',
+  targetRefs: ['src/index.ts'],
+  ownershipRegions: [
+    {
+      id: semanticReExportDefaultRegionId,
+      globs: ['src/index.ts'],
+      selectors: [semanticReExportDefaultRegionId]
+    },
+    {
+      id: semanticNamespaceExportDefaultRegionId,
+      globs: ['src/index.ts'],
+      selectors: [semanticNamespaceExportDefaultRegionId]
+    }
+  ],
+  changedRegions: [semanticBroadRegionId]
+}]);
+const semanticDefaultExportPlan = createSwarmPlan(semanticManifest, semanticDefaultExportTasks);
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticDefaultExportPlan.jobs[0], ['src/index.ts'], semanticDefaultExportImport).sort(), [
+  semanticNamespaceExportDefaultRegionId,
+  semanticReExportDefaultRegionId
+].sort());
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/math.ts'], semanticDefaultOnlyExportImport), [
+  semanticDefaultExportRegionId
+]);
 const semanticBundle = createSwarmMergeBundle({
   job: semanticPlan.jobs[0],
   result: {
@@ -387,14 +743,14 @@ assert.strictEqual(semanticQueue.scopes.filter((scope) => scope.kind === 'semant
 assert.strictEqual(semanticQueue.assignments[0].scopeId, 'lane:runtime');
 assert.strictEqual(semanticQueue.assignments[0].semanticSliceScopeIds.length, 3);
 assert.deepStrictEqual(semanticQueue.assignments[0].semanticSliceScopeIds.sort(), [
-  'semantic-region:fnv1a32:1ca3b68c',
+  'semantic-region:fnv1a32:1507761e',
   'semantic-region:fnv1a32:303865d9',
   'semantic-region:fnv1a32:4a50e0fd'
 ].sort());
 assert.deepStrictEqual(semanticQueue.assignments[0].semanticSliceLeaseKeys.sort(), [
   'merge:semantic:runtime:src/math.ts#semanticOwnershipRegion:exported-declaration:arrow-function:multiply:multiply',
   'merge:semantic:runtime:src/math.ts#semanticOwnershipRegion:exported-declaration:function:add:add',
-  'merge:semantic:runtime:src/math.ts#semanticOwnershipRegion:exported-declaration:method:Calculator.increment:increment'
+  'merge:semantic:runtime:src/math.ts#semanticOwnershipRegion:exported-declaration:method:Calculator.increment:Calculator.increment'
 ].sort());
 const sameFileIndependentExportFormatRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/math.ts',
@@ -586,9 +942,9 @@ assert.deepStrictEqual(
   sameFileIndependentExportQueue.assignments.map((assignment) => assignment.requiredLeaseKeys[0]).sort(),
   sameFileIndependentExportQueue.assignments.map((assignment) => assignment.leaseKey).sort()
 );
-assert.strictEqual(sameFileIndependentExportQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic-region').length, 2);
+assert.strictEqual(sameFileIndependentExportQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic').length, 2);
 assert.deepStrictEqual(
-  sameFileIndependentExportQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic-region').map((record) => record.leaseKey).sort(),
+  sameFileIndependentExportQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic').map((record) => record.leaseKey).sort(),
   sameFileIndependentExportQueue.assignments.map((assignment) => assignment.leaseKey).sort()
 );
 
@@ -1649,7 +2005,7 @@ assert.strictEqual(patchStackPlan.summary.jobCount, 2);
 assert.ok(patchStackPlan.stacks.some((stack) => stack.conflicts.length === 1));
 const defaultHierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, generatedAt: 7190 });
 assert.strictEqual(defaultHierarchicalQueue.summary.applyLocalCount, 2);
-assert.strictEqual(defaultHierarchicalQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:root');
+assert.strictEqual(defaultHierarchicalQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:*');
 assert.strictEqual(defaultHierarchicalQueue.summary.admissionPressure.applyLocalQueueItemCount, 2);
 assert.deepStrictEqual(
   defaultHierarchicalQueue.assignments.map((assignment) => assignment.queueItemIds).flat().sort(),
@@ -1678,29 +2034,9 @@ assert.deepStrictEqual(
   sameFileSliceQueue.assignments.map((assignment) => assignment.requiredLeaseKeys[0]).sort(),
   sameFileSliceQueue.assignments.map((assignment) => assignment.leaseKey).sort()
 );
-assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:root:root')));
+assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:root:*')));
 assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:lane:runtime')));
 assert.strictEqual(sameFileSliceQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
-const genericRootBundle = createSwarmMergeBundle({
-  result: {
-    jobId: 'generic-root-bundle',
-    status: 'verified',
-    changedPaths: ['src/generic.ts'],
-    changedRegions: ['scope.region'],
-    queueItemIds: ['generic-root-bundle'],
-    verification: [{ status: 0 }]
-  },
-  patchPath: 'agent-runs/generic-root/changes.patch',
-  riskLevel: 'low'
-});
-const genericRootQueue = createSwarmHierarchicalMergeQueue({
-  index: createSwarmMergeIndex({ bundles: [genericRootBundle], generatedAt: 7196.5 }),
-  rootScopeId: 'scope:root',
-  generatedAt: 7196.6
-});
-assert.strictEqual(genericRootQueue.rootScopeId, 'scope:root');
-assert.strictEqual(genericRootQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:scope:root');
-assert.ok(genericRootQueue.assignments.every((assignment) => assignment.leaseKey.startsWith('merge:semantic:scope:root:')));
 const sameFileSliceDrainWorkA = createSwarmCoordinatorAgentDrainWork({
   queue: sameFileSliceQueue,
   coordinatorId: 'coordinator-a',
@@ -1779,7 +2115,7 @@ assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.scope
 assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.changedPaths[0] === 'src/synthetic/same-file.ts'));
 assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.requiredLeaseKeys[0] === assignment.leaseKey));
 assert.ok(syntheticSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys[0].startsWith('merge:path:')));
-const syntheticSemanticLeaseRecords = syntheticSliceQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic-region');
+const syntheticSemanticLeaseRecords = syntheticSliceQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic');
 assert.strictEqual(syntheticSemanticLeaseRecords.length, 2);
 assert.strictEqual(new Set(syntheticSemanticLeaseRecords.map((record) => record.leaseKey)).size, 2);
 assert.ok(syntheticSemanticLeaseRecords.every((record) => record.scopeKind === 'semantic-region'));
@@ -1829,7 +2165,7 @@ assert.strictEqual(syntheticOverlapQueue.summary.promoteCount, 0);
 assert.strictEqual(new Set(syntheticOverlapQueue.assignments.map((assignment) => assignment.scopeId)).size, 1);
 assert.strictEqual(new Set(syntheticOverlapQueue.assignments.map((assignment) => assignment.leaseKey)).size, 1);
 assert.ok(syntheticOverlapQueue.assignments.every((assignment) => assignment.reasons.includes('same-lease-scope-conflict')));
-const syntheticOverlapSemanticLeaseRecords = syntheticOverlapQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic-region');
+const syntheticOverlapSemanticLeaseRecords = syntheticOverlapQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic');
 assert.strictEqual(syntheticOverlapSemanticLeaseRecords.length, 1);
 assert.deepStrictEqual(
   syntheticOverlapSemanticLeaseRecords[0].activeQueueItemIds.sort(),
@@ -2022,7 +2358,7 @@ assert.deepStrictEqual(conflictQueue.scopeTree.scopeIdsByKind.custom, []);
 const conflictLeaseScopeClasses = new Set(conflictQueue.leaseRecords.map((record) => record.scopeClass));
 assert.ok(conflictLeaseScopeClasses.has('root'));
 assert.ok(conflictLeaseScopeClasses.has('lane'));
-assert.ok(conflictLeaseScopeClasses.has('semantic-region'));
+assert.ok(conflictLeaseScopeClasses.has('semantic'));
 assert.ok(conflictLeaseScopeClasses.has('path'));
 const rootConflictLeaseRecord = conflictQueue.leaseRecords.find((record) => record.scopeClass === 'root');
 assert.strictEqual(rootConflictLeaseRecord.promotion.state, 'receiving-promoted');
@@ -2565,10 +2901,6 @@ assert.strictEqual(
   'no-change'
 );
 assert.strictEqual(
-  classifySwarmQueueOutcome({ category: 'terminal', decision: 'recorded', terminal: true }).outcome,
-  'no-change'
-);
-assert.strictEqual(
   classifySwarmQueueOutcome({ decision: 'rerun', reasons: ['stale-against-head'] }).category,
   'stale-rerun'
 );
@@ -2626,8 +2958,6 @@ assert.strictEqual(
   }).category,
   'continuation'
 );
-assert.strictEqual(normalizeSwarmTerminalOutcome({ outcome: 'recorded' }).label, 'no-change');
-assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'closed' }).label, 'no-change');
 
 const normalizedTerminalOutcomes = [
   normalizeSwarmTerminalOutcome('applied'),

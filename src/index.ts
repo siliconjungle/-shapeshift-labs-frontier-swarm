@@ -3036,7 +3036,7 @@ export type FrontierSwarmHierarchicalQueueLeaseScopeClass =
   | 'parent'
   | 'child'
   | 'lane'
-  | 'semantic-region'
+  | 'semantic'
   | 'path'
   | 'custom'
   | string;
@@ -4360,7 +4360,7 @@ export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemant
       FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
       input.declarationKind ?? 'anonymous',
       name,
-      input.exportName ?? input.name ?? 'default'
+      name
     );
   }
   if (input.kind === 're-export') {
@@ -4474,16 +4474,45 @@ const SEMANTIC_IMPORT_HINT_KEYS = new Set([
   'changedRegions',
   'conflictKeys',
   'declarationKinds',
+  'defaultExports',
   'exportNames',
+  'exports',
+  'namedExports',
   'names',
   'ownedRegions',
   'reasons',
+  'reExports',
   'regions',
+  'namespaceExports',
   'selectors',
   'symbols',
   'touchedSemanticNodes',
   'touchedSymbols'
 ]);
+
+const SEMANTIC_IMPORT_EXPORT_CONTAINER_KEYS = new Set([
+  'defaultExports',
+  'exports',
+  'namedExports',
+  'namespaceExports',
+  'reExports'
+]);
+
+const SEMANTIC_IMPORT_EXPORT_KINDS = new Set([
+  'named-export',
+  'default-export',
+  're-export',
+  'namespace-export',
+  'exported-declaration',
+  'export'
+]);
+
+const SEMANTIC_IMPORT_EXPORT_KIND_BY_CONTAINER_KEY: Record<string, string> = {
+  defaultExports: 'default-export',
+  namedExports: 'named-export',
+  namespaceExports: 'namespace-export',
+  reExports: 're-export'
+};
 
 function semanticImportHintsForPath(semanticImport: FrontierSwarmSemanticImportSummary, file: string): string[] {
   const records = semanticImportRecords(semanticImport);
@@ -4492,7 +4521,10 @@ function semanticImportHintsForPath(semanticImport: FrontierSwarmSemanticImportS
   return uniqueStrings(sources.flatMap((source) => semanticImportHintStringsForValue(
     'mergeCandidate' in source && source.mergeCandidate !== undefined
       ? source.mergeCandidate
-      : source
+      : source,
+    undefined,
+    0,
+    file
   )));
 }
 
@@ -4513,24 +4545,108 @@ function semanticImportRecordPath(record: Record<string, unknown>): string | und
         : undefined;
 }
 
-function semanticImportHintStringsForValue(value: unknown, key?: string, depth = 0): string[] {
+function semanticImportHintStringsForValue(value: unknown, key?: string, depth = 0, file?: string): string[] {
   if (value === undefined || value === null) return [];
   if (typeof value === 'string') {
     const normalized = value.trim();
     return key && SEMANTIC_IMPORT_HINT_KEYS.has(key) && normalized ? [normalized] : [];
   }
   if (depth >= 4 || typeof value !== 'object') return [];
-  if (Array.isArray(value)) return value.flatMap((item) => semanticImportHintStringsForValue(item, key, depth + 1));
-  return Object.entries(value as Record<string, unknown>).flatMap(([nextKey, nextValue]) => (
-    semanticImportHintStringsForValue(nextValue, nextKey, depth + 1)
-  ));
+  if (Array.isArray(value)) return value.flatMap((item) => semanticImportHintStringsForValue(item, key, depth + 1, file));
+  const objectValue = value as Record<string, unknown>;
+  const hints: string[] = [];
+  const exportMetadata = semanticImportExportMetadata(objectValue, key, file);
+  if (exportMetadata.length > 0) {
+    hints.push(...exportMetadata);
+  }
+  for (const [nextKey, nextValue] of Object.entries(objectValue)) {
+    if (SEMANTIC_IMPORT_HINT_KEYS.has(nextKey) || SEMANTIC_IMPORT_EXPORT_CONTAINER_KEYS.has(nextKey)) {
+      hints.push(...semanticImportHintStringsForValue(nextValue, nextKey, depth + 1, file));
+    }
+  }
+  return uniqueStrings(hints);
 }
 
 const SEMANTIC_IMPORT_CONFLICT_HINT_KEYS = new Set([
   'exportNames',
+  'exportName',
   'symbols',
   'touchedSymbols'
 ]);
+
+function semanticImportExportMetadata(value: Record<string, unknown>, key?: string, file?: string): string[] {
+  const kind = semanticImportExportKind(value, key);
+  const hasExportishMetadata = kind !== undefined
+    || key !== undefined && SEMANTIC_IMPORT_EXPORT_CONTAINER_KEYS.has(key)
+    || semanticImportStringValue(value.exportName) !== undefined
+    || semanticImportStringValue(value.declarationKind) !== undefined
+    || semanticImportStringValue(value.source) !== undefined
+    || semanticImportStringValue(value.sourcePath) !== undefined;
+  if (!hasExportishMetadata) return [];
+  const hints: string[] = [];
+  const name = semanticImportStringValue(value.name);
+  const exportName = semanticImportStringValue(value.exportName);
+  const declarationKind = semanticImportStringValue(value.declarationKind);
+  const source = semanticImportStringValue(value.source) ?? semanticImportStringValue(value.sourcePath);
+  if (name) hints.push(name);
+  if (exportName) hints.push(exportName);
+  if (declarationKind) hints.push(declarationKind);
+  if (source) hints.push(source);
+  if (file !== undefined && kind && SEMANTIC_IMPORT_EXPORT_KINDS.has(kind)) {
+    const regionId = semanticImportRegionIdFromMetadata(file, kind, name, exportName, declarationKind, source);
+    if (regionId) hints.push(regionId);
+  }
+  if (kind) hints.push(kind);
+  return hints;
+}
+
+function semanticImportExportKind(value: Record<string, unknown>, key?: string): string | undefined {
+  const explicitKind = semanticImportStringValue(value.kind);
+  if (explicitKind) return explicitKind;
+  if (key !== undefined && Object.prototype.hasOwnProperty.call(SEMANTIC_IMPORT_EXPORT_KIND_BY_CONTAINER_KEY, key)) {
+    return SEMANTIC_IMPORT_EXPORT_KIND_BY_CONTAINER_KEY[key];
+  }
+  const source = semanticImportStringValue(value.source) ?? semanticImportStringValue(value.sourcePath);
+  if (source) {
+    return 're-export';
+  }
+  const name = semanticImportStringValue(value.name);
+  const exportName = semanticImportStringValue(value.exportName);
+  const declarationKind = semanticImportStringValue(value.declarationKind);
+  if (name || exportName || declarationKind) {
+    if (name === 'default' || exportName === 'default') return 'default-export';
+    return 'named-export';
+  }
+  return undefined;
+}
+
+function semanticImportRegionIdFromMetadata(
+  file: string,
+  kind: string,
+  name?: string,
+  exportName?: string,
+  declarationKind?: string,
+  source?: string
+): string | undefined {
+  try {
+    return createSwarmSemanticOwnershipRegionId({
+      file,
+      kind,
+      ...(name ? { name } : {}),
+      ...(exportName ? { exportName } : {}),
+      ...(declarationKind ? { declarationKind } : {}),
+      ...(source ? { source } : {})
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function semanticImportStringValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
 
 function semanticMergeConflictKeys(semanticImport: FrontierSwarmSemanticImportSummary): string[] {
   const records = semanticImportRecords(semanticImport);
@@ -4559,6 +4675,11 @@ function semanticRegionSelectorMatchesHint(selector: string, hint: string): bool
   const normalizedSelector = selector.trim();
   const normalizedHint = hint.trim();
   if (!normalizedSelector || !normalizedHint) return false;
+  const selectorIsSemanticRegionId = normalizedSelector.includes('#semanticOwnershipRegion:');
+  const hintIsSemanticRegionId = normalizedHint.includes('#semanticOwnershipRegion:');
+  if (selectorIsSemanticRegionId || hintIsSemanticRegionId) {
+    return normalizedSelector === normalizedHint;
+  }
   if (normalizedSelector === normalizedHint) return true;
   if (matchesGlob(normalizedHint, normalizedSelector) || matchesGlob(normalizedSelector, normalizedHint)) return true;
   const selectorLeaf = normalizedSelector.split('.').pop();
@@ -6599,17 +6720,7 @@ function terminalOutcomeLabelFromText(value: string | undefined): FrontierSwarmT
   if (token === 'applied' || token === 'apply-local' || token === 'apply') return 'applied';
   if (token === 'committed' || token === 'commit') return 'committed';
   if (token === 'evidence-only' || token === 'evidenceonly' || token === 'evidence') return 'evidence-only';
-  if (
-    token === 'no-change'
-    || token === 'nochange'
-    || token === 'no-op'
-    || token === 'noop'
-    || token === 'unchanged'
-    || token === 'recorded'
-    || token === 'record-only'
-    || token === 'recordonly'
-    || token === 'closed'
-  ) return 'no-change';
+  if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
   if (token === 'generated-by-collector' || token === 'collector-generated' || token === 'generated-collector') return 'generated-by-collector';
   if (token === 'patch-missing' || token === 'missing-patch' || token === 'patchmissing') return 'patch-missing';
   if (token === 'bundle-missing' || token === 'missing-bundle' || token === 'bundlemissing') return 'bundle-missing';
@@ -7565,6 +7676,7 @@ function semanticOwnershipExportName(input: Pick<FrontierSwarmSemanticOwnershipS
   if (name && name !== 'default') return name;
   const exportName = input.exportName?.trim();
   if (exportName) return exportName;
+  if (name === 'default') return 'default';
   return fallback;
 }
 
@@ -7618,7 +7730,7 @@ function ensureMergeQueueScope(
 }
 
 function mergeQueueRootLeaseKey(rootScopeId: string): string {
-  return `merge:root:${rootScopeId}`;
+  return rootScopeId === 'root' ? 'merge:root:*' : `merge:root:${rootScopeId}`;
 }
 
 function mergeQueueScopesForEntry(
@@ -7656,7 +7768,7 @@ function mergeQueueScopesForEntry(
     ...(entry.lane ? { lane: entry.lane } : {}),
     changedPaths: entry.changedPaths,
     changedRegions: [region],
-    leaseKey: `merge:semantic:${entry.lane ?? rootScopeId}:${region}`
+    leaseKey: `merge:semantic:${entry.lane ?? 'root'}:${region}`
   }));
   const shouldCreatePathScopes = changedRegions.length === 0 || unknownRegions.length > 0;
   const pathScopes = shouldCreatePathScopes
@@ -7864,7 +7976,7 @@ function hierarchicalQueueTerminalDecisionLink(
 }
 
 function hierarchicalQueueLeaseScopeClass(kind: FrontierSwarmMergeQueueScopeKind): FrontierSwarmHierarchicalQueueLeaseScopeClass {
-  if (kind === 'semantic-region' || kind === 'semantic') return 'semantic-region';
+  if (kind === 'semantic-region' || kind === 'semantic') return 'semantic';
   if (kind === 'root' || kind === 'parent' || kind === 'child' || kind === 'lane' || kind === 'path') return kind;
   return 'custom';
 }
@@ -8798,14 +8910,9 @@ function defaultQueueOutcomeForCategory(
     if (queueOutcomeHas(search, 'committed')) return 'committed';
     if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied')) return 'applied';
     if (input.decision === 'superseded' || queueOutcomeHas(search, 'superseded')) return 'superseded';
-    if (
-      action === 'record-only'
-      || input.decision === 'recorded'
-      || input.decision === 'closed'
-      || input.mergeReadiness === 'discovery-only'
-      || queueOutcomeHas(search, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged', 'recorded', 'record-only', 'recordonly', 'closed')
-    ) return 'no-change';
+    if (input.decision === 'no-change' || queueOutcomeHas(search, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')) return 'no-change';
     if (action === 'reject' || input.decision === 'rejected' || input.disposition === 'rejected' || queueOutcomeHas(search, 'rejected')) return 'rejected';
+    if (action === 'record-only' || input.decision === 'recorded' || input.mergeReadiness === 'discovery-only' || queueOutcomeHas(search, 'recorded')) return 'recorded';
     return 'no-change';
   }
   if (category === 'stale-rerun') return 'rerun';
@@ -8832,21 +8939,13 @@ function canonicalizeSwarmQueueOutcome(value: string): FrontierSwarmQueueOutcome
   if (token === 'applied' || token === 'apply-local' || token === 'apply') return 'applied';
   if (token === 'committed' || token === 'commit') return 'committed';
   if (token === 'superseded') return 'superseded';
-  if (
-    token === 'no-change'
-    || token === 'nochange'
-    || token === 'no-op'
-    || token === 'noop'
-    || token === 'unchanged'
-    || token === 'recorded'
-    || token === 'record-only'
-    || token === 'recordonly'
-    || token === 'closed'
-  ) return 'no-change';
+  if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
   if (token === 'rejected' || token === 'reject' || token === 'failed' || token === 'failure') return 'rejected';
   if (token === 'rerun' || token === 're-run' || token === 'retry' || token === 'needs-rerun' || token === 'stale-rerun') return 'rerun';
   if (token === 'conflict-blocked' || token === 'merge-conflict' || token === 'textual-conflict' || token === 'conflict') return 'conflict-blocked';
   if (token === 'human-question' || token === 'human-blocked' || token === 'blocked') return 'human-question';
+  if (token === 'recorded') return 'recorded';
+  if (token === 'closed') return 'closed';
   return undefined;
 }
 

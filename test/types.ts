@@ -520,6 +520,121 @@ const semanticInferredExportImport: FrontierSwarmSemanticImportSummary = {
     readiness: { ready: 2 }
   }
 };
+const semanticNamespaceOnlyExportImport: FrontierSwarmSemanticImportSummary = {
+  total: 1,
+  selected: 1,
+  imported: 1,
+  errors: 0,
+  sourceMapMappingCount: 1,
+  records: [
+    {
+      path: 'src/index.ts',
+      status: 'imported',
+      mergeCandidate: {
+        namespaceExports: [
+          {
+            source: './math.ts',
+            name: 'math'
+          }
+        ]
+      }
+    }
+  ],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const semanticReExportOnlyImport: FrontierSwarmSemanticImportSummary = {
+  total: 1,
+  selected: 1,
+  imported: 1,
+  errors: 0,
+  sourceMapMappingCount: 1,
+  records: [
+    {
+      path: 'src/index.ts',
+      status: 'imported',
+      mergeCandidate: {
+        reExports: [
+          {
+            source: './math.ts',
+            name: 'math'
+          }
+        ]
+      }
+    }
+  ],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const semanticDefaultOnlyExportImport: FrontierSwarmSemanticImportSummary = {
+  total: 1,
+  selected: 1,
+  imported: 1,
+  errors: 0,
+  sourceMapMappingCount: 1,
+  records: [
+    {
+      path: 'src/math.ts',
+      status: 'imported',
+      mergeCandidate: {
+        defaultExports: [
+          {
+            declarationKind: 'function',
+            name: 'default',
+            exportName: 'add'
+          }
+        ]
+      }
+    }
+  ],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
 const semanticTask: FrontierSwarmTask = defineSwarmTasks([{
   id: 'math-exports',
   lane: 'runtime',
@@ -596,6 +711,10 @@ const exportChangedRegionIds = resolveSwarmChangedRegions(semanticExportPlan.job
 exportChangedRegionIds satisfies string[];
 const inferredExportChangedRegionIds = resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/math.ts', 'src/index.ts'], semanticInferredExportImport);
 inferredExportChangedRegionIds satisfies string[];
+const namespaceOnlyExportChangedRegionIds = resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/index.ts'], semanticNamespaceOnlyExportImport);
+namespaceOnlyExportChangedRegionIds satisfies string[];
+const reExportOnlyChangedRegionIds = resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/index.ts'], semanticReExportOnlyImport);
+reExportOnlyChangedRegionIds satisfies string[];
 const semanticDefaultExportTask: FrontierSwarmTask = defineSwarmTasks([{
   id: 'default-export-regions',
   lane: 'runtime',
@@ -617,6 +736,8 @@ const semanticDefaultExportTask: FrontierSwarmTask = defineSwarmTasks([{
 const semanticDefaultExportPlan = createSwarmPlan(semanticManifest, [semanticDefaultExportTask]);
 const defaultExportChangedRegionIds = resolveSwarmChangedRegions(semanticDefaultExportPlan.jobs[0], ['src/index.ts'], semanticDefaultExportImport);
 defaultExportChangedRegionIds satisfies string[];
+const defaultOnlyExportChangedRegionIds = resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/math.ts'], semanticDefaultOnlyExportImport);
+defaultOnlyExportChangedRegionIds satisfies string[];
 const autoReviewReport: FrontierSwarmAutoReviewReport = createSwarmAutoReviewReport({ bundles: [mergeBundle] });
 const rebaseReport: FrontierSwarmRebaseReport = createSwarmRebaseReport({ mergeIndex });
 const usageGovernor: FrontierSwarmUsageGovernor = createSwarmUsageGovernor({ maxWorkers: 20 });
