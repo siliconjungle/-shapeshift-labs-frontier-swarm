@@ -6,6 +6,18 @@ Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and
 
 Verification gate metadata stays plain JSON. `mergeSwarmMetadata(...)` preserves `metadata.verificationGates` across task normalization, queue jobs, merge bundles, merge indexes, and coordinator drain assignments, and package-scoped gate descriptors can carry `metadata.packageId`, `metadata.packagePath`, and `metadata.packageName` without pulling in Codex-specific runtime code.
 
+## Package Contract Skew 08
+
+Keep aggregate package changes and standalone main remotes on the same catalog snapshot. The safe publish-main sequence is:
+
+1. land the aggregate package change first,
+2. regenerate the package-family README content from the shared catalog instead of copying older monolithic or split-package prose,
+3. run the package-local gate for the changed surface,
+4. push the standalone `main` remote only after the generated docs and the package gate agree with the aggregate branch,
+5. if a standalone remote still shows stale package-layout wording, refresh it from the catalog-backed source rather than preserving the drift.
+
+This prevents later publish-only patches from reintroducing stale monolithic/split package drift.
+
 ## Semantic Ownership Keys
 
 Semantic ownership regions use stable, repo-agnostic key prefixes. The package exports the canonical prefixes as `FRONTIER_SWARM_SEMANTIC_OWNERSHIP_KEYS` and also exposes `createSwarmSemanticOwnershipKey(...)` for composing region selectors.
@@ -56,11 +68,11 @@ Queue-local conflict decisions stay in the `continuation` bucket, so routine con
 
 This keeps the root coordinator from becoming the only place where work can make progress. A child queue can apply verified work under its own lease, leave clean overflow in `queue-local`, and promote only the items that need a parent decision. Adapters such as `@shapeshift-labs/frontier-swarm-codex` can layer run, collect, Loom, auto-drain, rerun, reject, discovery, and blocker workflows on top of the generic queue data.
 
-`createSwarmQueueOutcomeModel()` and `collapseSwarmQueueOutcomeDecisions()` provide a repo-agnostic outcome layer for autonomous merge queues. The model separates `terminal`, `continuation`, `coordinator-review`, `human-blocked`, `stale-rerun`, and `conflict` categories so "needs coordinator review" does not get reported as a true human blocker. Queue subjects are collapsed across `queueItemIds`, `taskId`, and `jobId` aliases, and only the latest decision for each subject contributes to visible review debt, blockers, reruns, and conflicts. This lets a newer committed/applied/rejected decision close old review or rerun records without requiring runners to mutate historical queue files.
+`createSwarmQueueOutcomeModel()` and `collapseSwarmQueueOutcomeDecisions()` provide a repo-agnostic outcome layer for autonomous merge queues. The model separates `terminal`, `continuation`, `coordinator-review`, `human-blocked`, `stale-rerun`, and `conflict` categories so "needs coordinator review" does not get reported as a true human blocker. Queue subjects are collapsed across `queueItemIds`, `taskId`, and `jobId` aliases, and only the latest decision for each subject contributes to visible review debt, blockers, reruns, and conflicts. This lets a newer committed/applied/checked/rejected decision close old review or rerun records without requiring runners to mutate historical queue files.
 
-Queue decisions that resolve to conflict, stale rerun, or human review normalize to explicit `conflict-blocked`, `rerun`, and `human-question` terminal labels, while record-only and closed outcomes collapse to `no-change`, so queue items always have a concrete terminal outcome instead of falling through to an ambiguous internal state.
+Queue decisions that resolve to conflict, stale rerun, checked completion, or human review normalize to explicit `conflict-blocked`, `rerun`, `checked`, and `human-question` terminal labels, while record-only and closed outcomes collapse to `no-change`, so queue items always have a concrete terminal outcome instead of falling through to an ambiguous internal state.
 
-`normalizeSwarmTerminalOutcome()` keeps terminal labels explicit and stable across bundle, collector, and queue surfaces. It normalizes `applied`, `committed`, `superseded`, `evidence-only`, `no-change`, and `generated-by-collector` as success states; `patch-missing` and `bundle-missing` as incomplete result states; and `rerun`, `rejected`, `conflict-blocked`, `human-question`, and `coordinator-review` as distinct terminal outcomes for downstream routing. `human-blocked` remains accepted as a legacy alias.
+`normalizeSwarmTerminalOutcome()` keeps terminal labels explicit and stable across bundle, collector, and queue surfaces. It normalizes `applied`, `committed`, `checked`, `superseded`, `evidence-only`, `no-change`, and `generated-by-collector` as success states; `patch-missing` and `bundle-missing` as incomplete result states; and `rerun`, `rejected`, `conflict-blocked`, `human-question`, and `coordinator-review` as distinct terminal outcomes for downstream routing. `human-blocked` remains accepted as a legacy alias, while `coordinator-review` stays review-only and does not count as a human blocker.
 
 `reconcileSwarmTerminalState()` adapts older runner bucket snapshots such as `ready`, `review`, `stale`, and `failed` to the newer autonomous decision ledger. A later committed, applied, superseded, or no-change decision for the same queue item, task, or job moves the subject into resolved `done` output instead of leaving it in review debt. Rejected, rerun, conflict-blocked, and human-question decisions remain visible in terminal output, and `human-blocked` stays as a compatibility alias, but they are not counted as ordinary failed worker results.
 
@@ -345,7 +357,7 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmMergePlan` blocks jobs with failed checks, required reviews, ownership violations, or conflicting changed paths,
 - job results include merge-readiness classification: `discovery-only`, `patch-candidate`, `verified-patch`, `rejected`, or `blocked`,
 - `ownershipRegions` allow hot files to be split into semantic regions such as `content.docs.*` or `adminSettings.quota.*`; merge conflict detection compares explicit changed regions when both sides report them and falls back to path conflicts when either side omits regions,
-- `createSwarmMergeBundle` builds a compact worker `merge.json` shape with touched owned files, patch path, evidence, verification, queue items satisfied, risk, and disposition,
+- `createSwarmMergeBundle` builds a compact worker `merge.json` shape with touched owned files, patch path, evidence, verification command metadata (`name`, `command`, `commandLine`, `cwd`, `status`, `required`, `durationMs`, and category hints), queue items satisfied, risk, and disposition, and keeps evidence-only bundles distinct from bundles that actually contain passing checks,
 - `createSwarmQueueOverlay` and `deriveSwarmQueueStatus` keep central queue files immutable while deriving status from worker result overlays,
 - `mergeSwarmMetadata` keeps task and queue metadata data-only while carrying verification gate descriptors forward through queue, bundle, and drain transformations,
 - `createSwarmMergeIndex` records stale/patch status and region-aware conflicts so coordinators can review ready bundles before reading every worker directory,
@@ -363,6 +375,7 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmEvidenceIndex` / `querySwarmEvidenceIndex` and `createSwarmBlackboard` / `querySwarmBlackboard` provide storage-neutral status surfaces for coordinator dashboards, accepted facts, known divergences, rejected theories, and active ownership,
 - `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`, `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`, and `createSwarmUsageGovernor` cover the merge/review/scheduling tools needed to scale from feature swarms to larger migration and porting swarms,
 - `createSwarmModelRoute` and `createSwarmPanelEvaluation` score runtime-neutral compute candidates from task metadata, model price catalogs, token mix, budget caps, time pressure, and outcome history, then explain single-cheap, single-deep, panel, or tournament routes,
+- `createSwarmOptimizationSummary` keeps routing, panel, fusion, tournament, RSI-style feedback, model diversity, and consumed-feedback telemetry in a storage-neutral summary that distinguishes unavailable telemetry from real zero counts,
 - `createSwarmLanePlaybook` turns successful prior bundles into persistent lane-specific guidance with commands, hot paths, evidence patterns, and avoid-investigating notes,
 - `decomposeSwarmFeature` creates an initial task queue for feature work across lanes.
 
@@ -402,9 +415,11 @@ const route = createSwarmModelRoute({
 });
 ```
 
-`FRONTIER_SWARM_TASK_MODEL_PROFILES` records the default task-kind profile catalog, and `resolveSwarmTaskModelProfile(task)` chooses the profile from `task.workKind`. Each profile captures the expected model tier, cost band, context shape, strengths, and known failure modes for that kind of task. `createSwarmModelRoute` exposes the resolved `taskProfile` on the route record so callers can explain the routing decision without hardcoding task-kind logic.
+`FRONTIER_SWARM_TASK_MODEL_PROFILES` records the default task-kind profile catalog, and `resolveSwarmTaskModelProfile(task)` chooses the profile from `task.workKind`. Each profile captures the expected model tier, cost band, context shape, strengths, and known failure modes for that kind of task. The built-in catalog is model-agnostic: callers can supply their own profile models or compute catalog, and `createSwarmModelRoute` keeps the selected compute separate from the task-kind hint. The route scorer then combines task kind, risk, observed history, token price, and latency so implementation/review/oracle work stays on cheaper candidates unless the history says the cheap route is failing, while public API and other high-risk merge work can still escalate.
 
 `createSwarmModelRoutingFeedback` and `createSwarmModelRoutingPolicy` cover the serializable feedback/policy layer above the model router, and `createSwarmPlan(..., { routingMode, routingPolicy, routingContext })` now preserves that routing state on the returned plan for continuation code.
+
+`createSwarmOptimizationSummary` gives runners a generic evidence record for routing decisions, panel/fusion decisions, tournament observations, RSI-style routing feedback, model diversity, and whether any feedback was consumed. Telemetry can be omitted entirely when unavailable or emitted with real zero counts when the run observed nothing.
 
 The returned record includes scored candidates, estimated cost and latency, price/outcome telemetry fallbacks, panel confidence lift, residual risk, and a human-readable explanation for `single-cheap`, `single-deep`, `panel`, or `tournament` recommendations.
 
@@ -434,6 +449,7 @@ The returned record includes scored candidates, estimated cost and latency, pric
 - `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, `createSwarmBottleneckReport`
 - `createSwarmEvidenceIndex`, `querySwarmEvidenceIndex`, `createSwarmBlackboard`, `querySwarmBlackboard`
 - `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`
+- `createSwarmOptimizationSummary`
 - `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`
 - `createSwarmUsageGovernor`, `checkSwarmUsageGovernor`
 - `createSwarmModelRoutingFeedback`, `createSwarmModelRoutingPolicy`

@@ -104,12 +104,23 @@ export const FRONTIER_SWARM_MODEL_ROUTE_KIND = 'frontier.swarm.model-route';
 export const FRONTIER_SWARM_MODEL_ROUTE_VERSION = 1;
 export const FRONTIER_SWARM_PANEL_EVALUATION_KIND = 'frontier.swarm.panel-evaluation';
 export const FRONTIER_SWARM_PANEL_EVALUATION_VERSION = 1;
+export const FRONTIER_SWARM_OPTIMIZATION_SUMMARY_KIND = 'frontier.swarm.optimization-summary';
+export const FRONTIER_SWARM_OPTIMIZATION_SUMMARY_VERSION = 1;
 export const FRONTIER_SWARM_CONTINUOUS_POOL_STATE_KIND = 'frontier.swarm.continuous-pool-state';
 export const FRONTIER_SWARM_CONTINUOUS_POOL_STATE_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
 export const FRONTIER_SWARM_DEFAULT_REASONING_EFFORT = 'xhigh';
+export const FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS = [
+  'build',
+  'typecheck',
+  'smoke',
+  'unit',
+  'fuzz',
+  'browser',
+  'oracle'
+] as const;
 
 export type FrontierSwarmComputeKind = 'codex' | 'shell' | 'human' | 'external' | string;
 export type FrontierSwarmReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | string;
@@ -241,6 +252,7 @@ export type FrontierSwarmContinuousPoolRefillAction =
   | 'lease-queued'
   | 'start-speculative-backlog'
   | string;
+export type FrontierSwarmVerificationCategory = (typeof FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS)[number] | string;
 
 export interface FrontierSwarmComputeInput {
   id: string;
@@ -362,6 +374,7 @@ export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND = 'cl
 export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND = 'docs-section';
 export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND = 'fixture-family';
 export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND = 'test-case';
+const SEMANTIC_OWNERSHIP_TYPE_DECLARATION_KINDS = new Set(['interface', 'type-alias', 'enum', 'generic-declaration']);
 
 export interface FrontierSwarmLaneInput {
   id: string;
@@ -933,6 +946,40 @@ export interface FrontierSwarmModelRoute {
     panelCostUsd?: number;
     panelLatencyMs?: number;
   };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmOptimizationSummaryCounts {
+  modelRouteDecisionCount: number;
+  panelDecisionCount: number;
+  fusionDecisionCount: number;
+  tournamentObservationCount: number;
+  routingFeedbackCount: number;
+  modelDiversityCount: number;
+  feedbackConsumed: boolean;
+}
+
+export interface FrontierSwarmOptimizationSummaryInput {
+  id?: string;
+  telemetryAvailable?: boolean;
+  modelRouteDecisionCount?: number;
+  panelDecisionCount?: number;
+  fusionDecisionCount?: number;
+  tournamentObservationCount?: number;
+  routingFeedbackCount?: number;
+  modelDiversityCount?: number;
+  feedbackConsumed?: boolean;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmOptimizationSummary {
+  kind: typeof FRONTIER_SWARM_OPTIMIZATION_SUMMARY_KIND;
+  version: typeof FRONTIER_SWARM_OPTIMIZATION_SUMMARY_VERSION;
+  id: string;
+  generatedAt: number;
+  telemetryAvailable: boolean;
+  summary?: FrontierSwarmOptimizationSummaryCounts;
   metadata?: JsonObject;
 }
 
@@ -1547,22 +1594,28 @@ export interface FrontierSwarmJobResultInput {
 export interface FrontierSwarmVerificationResultInput {
   name?: string;
   command?: readonly string[];
+  commandLine?: string;
+  cwd?: string;
   status?: number;
   durationMs?: number;
   stdoutTail?: readonly string[];
   stderrTail?: readonly string[];
   required?: boolean;
+  category?: FrontierSwarmVerificationCategory;
   metadata?: unknown;
 }
 
 export interface FrontierSwarmVerificationResult {
   name: string;
   command: string[];
+  commandLine?: string;
+  cwd?: string;
   status?: number;
   durationMs?: number;
   stdoutTail: string[];
   stderrTail: string[];
   required: boolean;
+  category?: FrontierSwarmVerificationCategory;
   metadata?: JsonObject;
 }
 
@@ -3250,6 +3303,7 @@ export type FrontierSwarmQueueOutcomeCategory =
 export type FrontierSwarmQueueTerminalOutcome =
   | 'applied'
   | 'committed'
+  | 'checked'
   | 'superseded'
   | 'no-change'
   | 'rejected'
@@ -3275,6 +3329,7 @@ export type FrontierSwarmQueueOutcome =
 export const FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS = [
   'applied',
   'committed',
+  'checked',
   'superseded',
   'evidence-only',
   'no-change',
@@ -4078,7 +4133,6 @@ export const FRONTIER_SWARM_TASK_MODEL_PROFILES: readonly FrontierSwarmTaskModel
     workKind: 'agent-task',
     modelTier: 'balanced',
     costBand: 'medium',
-    model: FRONTIER_SWARM_DEFAULT_MODEL,
     context: 'General agent work with mixed implementation and investigation context, where the safest default is a compact but capable model.',
     strengths: ['balanced reasoning', 'narrow patch synthesis', 'staying within the supplied task scope'],
     failureModes: ['can underperform on very large investigations', 'may need escalation for broad cross-file reasoning']
@@ -4087,16 +4141,14 @@ export const FRONTIER_SWARM_TASK_MODEL_PROFILES: readonly FrontierSwarmTaskModel
     workKind: 'implementation',
     modelTier: 'cheap',
     costBand: 'low',
-    model: 'gpt-5.4-mini',
-    context: 'Narrow repository edits with explicit ownership, local tests, and bounded acceptance criteria.',
+    context: 'Narrow repository edits with explicit ownership, local tests, and bounded acceptance criteria. Start on the cheaper tier and only escalate when history shows misses.',
     strengths: ['small patch synthesis', 'tight scope control', 'fast iteration on concrete code changes'],
-    failureModes: ['can miss wider architectural context', 'may need a deeper model for multi-step refactors']
+    failureModes: ['can miss wider architectural context', 'may need a deeper model for multi-step refactors or repeated failures']
   },
   {
     workKind: 'planning',
     modelTier: 'balanced',
     costBand: 'medium',
-    model: FRONTIER_SWARM_DEFAULT_MODEL,
     context: 'Task decomposition, lane shaping, and work breakdown before implementation starts.',
     strengths: ['structured decomposition', 'lane mapping', 'turning ambiguity into an actionable queue'],
     failureModes: ['can over-plan when the right move is a quick implementation', 'may need downstream validation']
@@ -4105,8 +4157,7 @@ export const FRONTIER_SWARM_TASK_MODEL_PROFILES: readonly FrontierSwarmTaskModel
     workKind: 'evidence',
     modelTier: 'cheap',
     costBand: 'low',
-    model: 'gpt-5.4-mini',
-    context: 'Evidence collection, harness execution, and compact status capture.',
+    context: 'Evidence collection, harness execution, and compact status capture. Favor the cheaper tier unless the evidence repeatedly fails to converge.',
     strengths: ['concise tool use', 'fast command-driven iteration', 'keeping logs compact'],
     failureModes: ['can miss subtle root causes without more context', 'may overfit to the first failing probe']
   },
@@ -4114,8 +4165,7 @@ export const FRONTIER_SWARM_TASK_MODEL_PROFILES: readonly FrontierSwarmTaskModel
     workKind: 'benchmark',
     modelTier: 'cheap',
     costBand: 'low',
-    model: 'gpt-5.4-mini',
-    context: 'Perf-sensitive or repeatable benchmark work where steady execution matters more than broad synthesis.',
+    context: 'Perf-sensitive or repeatable benchmark work where steady execution matters more than broad synthesis. Keep the routing cost-aware unless the benchmark keeps regressing.',
     strengths: ['repeatable command orchestration', 'careful measurement hygiene', 'low overhead loops'],
     failureModes: ['can waste budget on instrumentation churn', 'may need a deeper model for optimization strategy']
   },
@@ -4123,34 +4173,30 @@ export const FRONTIER_SWARM_TASK_MODEL_PROFILES: readonly FrontierSwarmTaskModel
     workKind: 'debug',
     modelTier: 'deep',
     costBand: 'high',
-    model: FRONTIER_SWARM_DEFAULT_MODEL,
     context: 'Trace-heavy diagnosis where the best answer comes from correlating symptoms across files, logs, or runtime state.',
     strengths: ['root-cause isolation', 'multi-step reasoning over evidence', 'following causal chains'],
     failureModes: ['can require richer traces than were supplied', 'may be too expensive for trivial fixes']
   },
   {
     workKind: 'review',
-    modelTier: 'deep',
-    costBand: 'high',
-    model: FRONTIER_SWARM_DEFAULT_MODEL,
-    context: 'Patch review, regression hunting, and semantic comparison against existing behavior.',
+    modelTier: 'cheap',
+    costBand: 'low',
+    context: 'Patch review, regression hunting, and semantic comparison against existing behavior. Bias to a cheaper mini model first, then escalate when the patch history or risk says the cheap route is failing.',
     strengths: ['cross-file consistency checks', 'spotting missing tests', 'finding policy or ownership regressions'],
-    failureModes: ['can over-index on style nits', 'often unnecessary for tiny mechanical changes']
+    failureModes: ['can over-index on style nits', 'often unnecessary for tiny mechanical changes unless the evidence says to go deeper']
   },
   {
     workKind: 'oracle',
-    modelTier: 'deep',
-    costBand: 'high',
-    model: FRONTIER_SWARM_DEFAULT_MODEL,
-    context: 'Reference-oracle work that compares outputs, traces, or fixtures against a stable baseline.',
+    modelTier: 'cheap',
+    costBand: 'low',
+    context: 'Reference-oracle work that compares outputs, traces, or fixtures against a stable baseline. Start cheap and only climb when the oracle keeps disagreeing.',
     strengths: ['precise comparison', 'fixture-aware reasoning', 'keeping the oracle contract explicit'],
-    failureModes: ['needs stable fixtures or traces', 'can be brittle if the oracle itself is noisy']
+    failureModes: ['needs stable fixtures or traces', 'can be brittle if the oracle itself is noisy or the cheaper tier keeps missing the signal']
   },
   {
     workKind: 'research',
     modelTier: 'deep',
     costBand: 'high',
-    model: FRONTIER_SWARM_DEFAULT_MODEL,
     context: 'Source passes and research synthesis where broad context and synthesis matter more than quick turnarounds.',
     strengths: ['broad evidence gathering', 'synthesis across sources', 'turning unknowns into a structured summary'],
     failureModes: ['can drift into speculation', 'usually slower than a task-specific implementation pass']
@@ -4168,7 +4214,6 @@ export function resolveSwarmTaskModelProfile(
     workKind: task.workKind,
     modelTier: 'balanced',
     costBand: 'medium',
-    model: FRONTIER_SWARM_DEFAULT_MODEL,
     context: 'General-purpose task work with mixed context, where the router should stay conservative until task-specific telemetry says otherwise.',
     strengths: ['balanced reasoning', 'general task handling', 'safe default routing'],
     failureModes: ['may need escalation for wider investigations', 'can underperform on deeply specialized tasks']
@@ -4189,6 +4234,7 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
   const uncertaintyScore = inferRoutingDimension(task, 'uncertainty', outcomeHistory.length === 0 ? 0.12 : 0);
   const impactScore = inferRoutingDimension(task, 'impact');
   const timePressureScore = normalizeTimePressureScore(input.timePressure ?? readRoutingMetadataValue(task.metadata, ['timePressure', 'urgency']));
+  const taskBias = taskRoutingBias(taskProfile);
   const rawCandidates = computes.map((compute) => createRawModelRouteCandidate({
     compute,
     requiredCapabilities,
@@ -4207,13 +4253,21 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
   const budgetCapable = capable.filter((candidate) => candidate.budgetOk);
   const usable = budgetCapable.length ? budgetCapable : capable.length ? capable : candidates;
   const cheapestCapable = [...usable].sort(compareCandidatesByCost)[0] ?? candidates[0];
-  const riskDemand = clamp01(riskScore * 0.42 + uncertaintyScore * 0.33 + impactScore * 0.25);
+  const riskDemand = clamp01(riskScore * 0.42 + uncertaintyScore * 0.33 + impactScore * 0.25 + taskBias.riskDemand);
   const ranked = [...usable].sort(compareModelRouteCandidates);
   const qualityThreshold = routingQualityThreshold(riskDemand);
   const cheapestHasPoorHistory = !!cheapestCapable && cheapestCapable.historyScore < 0.45 && cheapestCapable.outcomeKnown;
-  const selected = riskDemand < 0.46 && !cheapestHasPoorHistory
+  const cheapestRouteThreshold = taskProfile.costBand === 'low'
+    ? 0.52
+    : taskProfile.costBand === 'high'
+      ? 0.38
+      : 0.46;
+  const preferredCandidates = cheapestHasPoorHistory && cheapestCapable
+    ? ranked.filter((candidate) => candidate.compute.id !== cheapestCapable.compute.id)
+    : ranked;
+  const selected = riskDemand < cheapestRouteThreshold && !cheapestHasPoorHistory
     ? cheapestCapable
-    : ranked.find((candidate) => candidate.qualityScore >= qualityThreshold) ?? ranked[0] ?? cheapestCapable;
+    : preferredCandidates.find((candidate) => candidate.qualityScore >= qualityThreshold) ?? preferredCandidates[0] ?? cheapestCapable;
   if (!selected) throw new Error('No model route candidates available');
   const panel = createSwarmPanelEvaluation({
     candidates,
@@ -4235,13 +4289,17 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
   const recommendedComputeIds = route === 'panel' || route === 'tournament'
     ? panel.memberComputeIds
     : [selected.compute.id];
-  const reasons = modelRouteReasons(route, selected, cheapestCapable, panel, {
-    riskDemand,
-    qualityThreshold,
-    budgetCapped,
-    missingTelemetry: candidates.some((candidate) => !candidate.priceKnown || !candidate.outcomeKnown),
-    taskProfile
-  });
+  const reasons = uniqueStrings([
+    ...taskBias.reasons,
+    ...modelRouteReasons(route, selected, cheapestCapable, panel, {
+      riskDemand,
+      qualityThreshold,
+      budgetCapped,
+      missingTelemetry: candidates.some((candidate) => !candidate.priceKnown || !candidate.outcomeKnown),
+      taskProfile,
+      cheapestHistoryPoor: cheapestHasPoorHistory
+    })
+  ]);
   return {
     kind: FRONTIER_SWARM_MODEL_ROUTE_KIND,
     version: FRONTIER_SWARM_MODEL_ROUTE_VERSION,
@@ -4274,6 +4332,21 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
+}
+
+function taskRoutingBias(taskProfile: FrontierSwarmTaskModelProfile): { riskDemand: number; reasons: string[] } {
+  const reasons: string[] = [];
+  let riskDemand = 0;
+  if (taskProfile.costBand === 'low' || taskProfile.modelTier === 'cheap') {
+    riskDemand -= 0.12;
+    reasons.push(`Task kind ${taskProfile.workKind} defaults to a cheaper model tier.`);
+  } else if (taskProfile.costBand === 'high' || taskProfile.modelTier === 'deep') {
+    riskDemand += 0.1;
+    reasons.push(`Task kind ${taskProfile.workKind} can justify a deeper model tier.`);
+  } else {
+    reasons.push(`Task kind ${taskProfile.workKind} stays near the middle tier unless risk or history changes the route.`);
+  }
+  return { riskDemand: roundRouteScore(riskDemand), reasons };
 }
 
 export function createSwarmPanelEvaluation(input: FrontierSwarmPanelEvaluationInput = {}): FrontierSwarmPanelEvaluation {
@@ -4343,6 +4416,36 @@ export function createSwarmPanelEvaluation(input: FrontierSwarmPanelEvaluationIn
       confidenceLift,
       residualRiskScore
     },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmOptimizationSummary(input: FrontierSwarmOptimizationSummaryInput = {}): FrontierSwarmOptimizationSummary {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const hasTelemetry = input.modelRouteDecisionCount !== undefined
+    || input.panelDecisionCount !== undefined
+    || input.fusionDecisionCount !== undefined
+    || input.tournamentObservationCount !== undefined
+    || input.routingFeedbackCount !== undefined
+    || input.modelDiversityCount !== undefined
+    || input.feedbackConsumed !== undefined;
+  const telemetryAvailable = hasTelemetry || input.telemetryAvailable === true;
+  const summary = telemetryAvailable ? {
+    modelRouteDecisionCount: input.modelRouteDecisionCount ?? 0,
+    panelDecisionCount: input.panelDecisionCount ?? 0,
+    fusionDecisionCount: input.fusionDecisionCount ?? 0,
+    tournamentObservationCount: input.tournamentObservationCount ?? 0,
+    routingFeedbackCount: input.routingFeedbackCount ?? 0,
+    modelDiversityCount: input.modelDiversityCount ?? 0,
+    feedbackConsumed: input.feedbackConsumed ?? false
+  } : undefined;
+  return {
+    kind: FRONTIER_SWARM_OPTIMIZATION_SUMMARY_KIND,
+    version: FRONTIER_SWARM_OPTIMIZATION_SUMMARY_VERSION,
+    id: input.id ?? 'swarm-optimization-summary:' + stableHash([telemetryAvailable, summary, generatedAt]),
+    generatedAt,
+    telemetryAvailable,
+    ...(summary ? { summary } : {}),
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
 }
@@ -4477,6 +4580,15 @@ export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemant
       name
     );
   }
+  const typeDeclarationKind = semanticOwnershipTypeDeclarationKind(input.kind);
+  if (input.kind === 'type' || typeDeclarationKind) {
+    return semanticOwnershipStableKey(
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
+      input.kind === 'type' ? input.declarationKind ?? 'anonymous' : input.declarationKind ?? typeDeclarationKind ?? 'anonymous',
+      input.name ?? input.exportName ?? 'default',
+      input.exportName ?? input.name ?? 'default'
+    );
+  }
   if (input.kind === 're-export') {
     return semanticOwnershipStableKey('re-export', input.source ?? 'unknown-source', semanticOwnershipExportName(input, '*'));
   }
@@ -4485,14 +4597,6 @@ export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemant
       FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
       input.source ?? 'unknown-source',
       semanticOwnershipExportName(input, '*')
-    );
-  }
-  if (input.kind === 'type') {
-    return semanticOwnershipStableKey(
-      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
-      input.declarationKind ?? 'anonymous',
-      input.name ?? input.exportName ?? 'default',
-      input.exportName ?? input.name ?? 'default'
     );
   }
   if (input.kind === 'cli-command') {
@@ -4612,6 +4716,12 @@ const SEMANTIC_IMPORT_EXPORT_CONTAINER_KEYS = new Set([
   'reExports'
 ]);
 
+const SEMANTIC_IMPORT_FUNCTION_LIKE_DECLARATION_KINDS = new Set([
+  'function',
+  'method',
+  'arrow-function'
+]);
+
 const SEMANTIC_IMPORT_EXPORT_KINDS = new Set([
   'named-export',
   'default-export',
@@ -4689,25 +4799,36 @@ const SEMANTIC_IMPORT_CONFLICT_HINT_KEYS = new Set([
 ]);
 
 function semanticImportExportMetadata(value: Record<string, unknown>, key?: string, file?: string): string[] {
+  const explicitKind = semanticImportStringValue(value.kind);
+  const declarationKind = semanticImportStringValue(value.declarationKind)
+    ?? (explicitKind !== undefined && SEMANTIC_IMPORT_FUNCTION_LIKE_DECLARATION_KINDS.has(explicitKind) ? explicitKind : undefined);
   const kind = semanticImportExportKind(value, key);
   const hasExportishMetadata = kind !== undefined
     || key !== undefined && SEMANTIC_IMPORT_EXPORT_CONTAINER_KEYS.has(key)
     || semanticImportStringValue(value.exportName) !== undefined
-    || semanticImportStringValue(value.declarationKind) !== undefined
+    || declarationKind !== undefined
     || semanticImportStringValue(value.source) !== undefined
     || semanticImportStringValue(value.sourcePath) !== undefined;
   if (!hasExportishMetadata) return [];
   const hints: string[] = [];
   const name = semanticImportStringValue(value.name);
   const exportName = semanticImportStringValue(value.exportName);
-  const declarationKind = semanticImportStringValue(value.declarationKind);
   const source = semanticImportStringValue(value.source) ?? semanticImportStringValue(value.sourcePath);
   if (name) hints.push(name);
   if (exportName) hints.push(exportName);
   if (declarationKind) hints.push(declarationKind);
   if (source) hints.push(source);
-  if (file !== undefined && kind && SEMANTIC_IMPORT_EXPORT_KINDS.has(kind)) {
-    const regionId = semanticImportRegionIdFromMetadata(file, kind, name, exportName, declarationKind, source);
+  const typeDeclarationKind = semanticOwnershipTypeDeclarationKind(kind);
+  const regionKind = kind === 'type' || (kind !== undefined && SEMANTIC_IMPORT_EXPORT_KINDS.has(kind))
+    ? kind
+    : typeDeclarationKind
+      ? 'type'
+      : undefined;
+  const regionDeclarationKind = regionKind === 'type'
+    ? declarationKind ?? typeDeclarationKind
+    : declarationKind;
+  if (file !== undefined && regionKind) {
+    const regionId = semanticImportRegionIdFromMetadata(file, regionKind, name, exportName, regionDeclarationKind, source);
     if (regionId) hints.push(regionId);
   }
   if (kind) hints.push(kind);
@@ -4716,7 +4837,9 @@ function semanticImportExportMetadata(value: Record<string, unknown>, key?: stri
 
 function semanticImportExportKind(value: Record<string, unknown>, key?: string): string | undefined {
   const explicitKind = semanticImportStringValue(value.kind);
-  if (explicitKind) return explicitKind;
+  if (explicitKind) {
+    return SEMANTIC_IMPORT_FUNCTION_LIKE_DECLARATION_KINDS.has(explicitKind) ? 'named-export' : explicitKind;
+  }
   if (key !== undefined && Object.prototype.hasOwnProperty.call(SEMANTIC_IMPORT_EXPORT_KIND_BY_CONTAINER_KEY, key)) {
     return SEMANTIC_IMPORT_EXPORT_KIND_BY_CONTAINER_KEY[key];
   }
@@ -6552,7 +6675,7 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
   if (explicitCategory) {
     category = explicitCategory;
   } else if (
-    queueOutcomeHas(search, 'committed', 'applied', 'superseded', 'no-change', 'nochange', 'no-op', 'noop', 'unchanged', 'rejected', 'recorded', 'closed')
+    queueOutcomeHas(search, 'committed', 'applied', 'checked', 'superseded', 'no-change', 'nochange', 'no-op', 'noop', 'unchanged', 'rejected', 'recorded', 'closed')
     || action === 'apply-local'
     || action === 'reject'
     || action === 'record-only'
@@ -6599,7 +6722,7 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
     category = 'coordinator-review';
   } else if (
     input.terminal === true
-    || queueOutcomeHas(search, 'terminal')
+    || queueOutcomeHas(search, 'terminal', 'checked')
   ) {
     category = 'terminal';
   } else {
@@ -6833,6 +6956,7 @@ function terminalOutcomeLabelFromText(value: string | undefined): FrontierSwarmT
   if (!token) return undefined;
   if (token === 'applied' || token === 'apply-local' || token === 'apply') return 'applied';
   if (token === 'committed' || token === 'commit') return 'committed';
+  if (token === 'checked' || token === 'check') return 'checked';
   if (token === 'evidence-only' || token === 'evidenceonly' || token === 'evidence') return 'evidence-only';
   if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
   if (token === 'generated-by-collector' || token === 'collector-generated' || token === 'generated-collector') return 'generated-by-collector';
@@ -6933,7 +7057,7 @@ export function normalizeSwarmTerminalOutcome(
                   ? 'coordinator-review'
                   : explicitLabel ?? 'unknown';
 
-  const category: FrontierSwarmTerminalOutcomeCategory = label === 'applied' || label === 'committed' || label === 'superseded' || label === 'evidence-only' || label === 'no-change' || label === 'generated-by-collector'
+  const category: FrontierSwarmTerminalOutcomeCategory = label === 'applied' || label === 'committed' || label === 'checked' || label === 'superseded' || label === 'evidence-only' || label === 'no-change' || label === 'generated-by-collector'
     ? 'success'
     : label === 'patch-missing' || label === 'bundle-missing'
       ? 'incomplete'
@@ -7821,6 +7945,10 @@ function semanticOwnershipExportName(input: Pick<FrontierSwarmSemanticOwnershipS
   if (exportName) return exportName;
   if (name === 'default') return 'default';
   return fallback;
+}
+
+function semanticOwnershipTypeDeclarationKind(kind: string | undefined): string | undefined {
+  return kind !== undefined && SEMANTIC_OWNERSHIP_TYPE_DECLARATION_KINDS.has(kind) ? kind : undefined;
 }
 
 function stableIdPart(value: string): string {
@@ -9052,6 +9180,7 @@ function defaultQueueOutcomeForCategory(
   if (category === 'terminal') {
     if (input.decision === 'committed' || queueOutcomeHas(search, 'committed', 'commit')) return 'committed';
     if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied', 'apply-local', 'apply')) return 'applied';
+    if (input.decision === 'checked' || queueOutcomeHas(search, 'checked', 'check')) return 'checked';
     if (input.decision === 'superseded' || queueOutcomeHas(search, 'superseded')) return 'superseded';
     if (input.decision === 'rerun' || queueOutcomeHas(search, 'rerun', 're-run', 'retry', 'needs-rerun', 'stale-rerun')) return 'rerun';
     if (queueOutcomeHas(search, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict')) return 'conflict-blocked';
@@ -9091,6 +9220,7 @@ function canonicalizeSwarmQueueOutcome(value: string): FrontierSwarmQueueOutcome
   if (!token) return undefined;
   if (token === 'applied' || token === 'apply-local' || token === 'apply') return 'applied';
   if (token === 'committed' || token === 'commit') return 'committed';
+  if (token === 'checked' || token === 'check') return 'checked';
   if (token === 'superseded') return 'superseded';
   if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
   if (token === 'rejected' || token === 'reject' || token === 'failed' || token === 'failure') return 'rejected';
@@ -9275,12 +9405,13 @@ function queueOutcomeDecisionClosesTerminalState(decision: FrontierSwarmQueueOut
     return true;
   }
   const search = queueOutcomeSearch(decision);
-  return queueOutcomeHas(search, 'applied', 'committed', 'superseded', 'no-change', 'rejected', 'rerun', 'stale-against-head', 'conflict', 'human-question');
+  return queueOutcomeHas(search, 'applied', 'committed', 'checked', 'superseded', 'no-change', 'rejected', 'rerun', 'stale-against-head', 'conflict', 'human-question');
 }
 
 function queueOutcomeDecisionIsResolvedOutput(decision: FrontierSwarmQueueOutcomeDecision): boolean {
   return decision.outcome === 'applied'
     || decision.outcome === 'committed'
+    || decision.outcome === 'checked'
     || decision.outcome === 'superseded'
     || decision.outcome === 'no-change'
     || decision.outcome === 'recorded'
@@ -10582,7 +10713,7 @@ function modelRouteReasons(
   selected: FrontierSwarmModelRouteCandidate,
   cheapest: FrontierSwarmModelRouteCandidate | undefined,
   panel: FrontierSwarmPanelEvaluation,
-  input: { riskDemand: number; qualityThreshold: number; budgetCapped: boolean; missingTelemetry: boolean; taskProfile: FrontierSwarmTaskModelProfile }
+  input: { riskDemand: number; qualityThreshold: number; budgetCapped: boolean; missingTelemetry: boolean; taskProfile: FrontierSwarmTaskModelProfile; cheapestHistoryPoor: boolean }
 ): string[] {
   const reasons: string[] = [];
   reasons.push(`task-kind-profile:${input.taskProfile.workKind}`);
@@ -10594,6 +10725,7 @@ function modelRouteReasons(
     reasons.push('cheapest-capable-selected', 'risk-below-escalation-threshold');
   } else {
     reasons.push('single-deep-selected', 'risk-uncertainty-or-impact-escalation');
+    if (input.cheapestHistoryPoor) reasons.push('cheapest-capable-history-poor');
     if (selected.qualityScore >= input.qualityThreshold) reasons.push('quality-threshold-satisfied');
     if (cheapest && selected.compute.id !== cheapest.compute.id) reasons.push(`escalated-from:${cheapest.compute.id}`);
   }
@@ -11252,16 +11384,48 @@ function inferMergeRisk(result: FrontierSwarmJobResult, disposition: FrontierSwa
 }
 
 function normalizeVerificationResult(input: FrontierSwarmVerificationResultInput): FrontierSwarmVerificationResult {
+  const command = [...(input.command ?? [])];
+  const commandLine = input.commandLine ?? (command.length > 0 ? command.join(' ') : undefined);
+  const category = input.category ?? inferVerificationCategory({
+    name: input.name,
+    commandLine,
+    command,
+    cwd: input.cwd
+  });
   return {
-    name: input.name ?? ((input.command ?? []).join(' ') || 'verification'),
-    command: [...(input.command ?? [])],
+    name: input.name ?? commandLine ?? 'verification',
+    command,
+    ...(commandLine ? { commandLine } : {}),
+    ...(input.cwd ? { cwd: input.cwd } : {}),
     ...(input.status !== undefined ? { status: input.status } : {}),
     ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
     stdoutTail: [...(input.stdoutTail ?? [])],
     stderrTail: [...(input.stderrTail ?? [])],
     required: input.required ?? true,
+    ...(category ? { category } : {}),
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
+}
+
+function inferVerificationCategory(input: {
+  name?: string;
+  commandLine?: string;
+  command?: readonly string[];
+  cwd?: string;
+}): FrontierSwarmVerificationCategory | undefined {
+  const text = [input.name, input.commandLine, input.command?.join(' '), input.cwd]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join(' ')
+    .toLowerCase();
+  if (!text) return undefined;
+  if (/(?:^|[^\w-])(typecheck|tsc|check:types|types?)(?:$|[^\w-])/.test(text)) return 'typecheck';
+  if (/(?:^|[^\w-])(build|compile|bundle|pack)(?:$|[^\w-])/.test(text)) return 'build';
+  if (/(?:^|[^\w-])(smoke|smoke-test|test\/smoke)(?:$|[^\w-])/.test(text)) return 'smoke';
+  if (/(?:^|[^\w-])(fuzz|fuzzer|property-based)(?:$|[^\w-])/.test(text)) return 'fuzz';
+  if (/(?:^|[^\w-])(browser|playwright|puppeteer|cypress|e2e)(?:$|[^\w-])/.test(text)) return 'browser';
+  if (/(?:^|[^\w-])(oracle|parity|reference)(?:$|[^\w-])/.test(text)) return 'oracle';
+  if (/(?:^|[^\w-])(unit|test)(?:$|[^\w-])/.test(text)) return 'unit';
+  return undefined;
 }
 
 function summarizeJobs(jobs: readonly FrontierSwarmJob[]): FrontierSwarmSummary {

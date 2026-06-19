@@ -55,10 +55,19 @@ import {
   checkSwarmBudget,
   createSwarmPlan,
   createSwarmRun,
+  createSwarmOptimizationSummary,
+  classifySwarmQueueOutcome,
+  collapseSwarmQueueOutcomeDecisions,
+  createSwarmQueueOutcomeDecision,
+  createSwarmQueueOutcomeModel,
   defineSwarmTasks,
+  normalizeSwarmTerminalOutcome,
+  reconcileSwarmTerminalState,
   resolveSwarmChangedRegions,
   resolveSwarmCompute,
   createSwarmScheduleInputFromAdaptiveLoadPlan,
+  FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS,
+  FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS,
   type FrontierSwarmArtifactIndex,
   type FrontierSwarmArtifactRoutingPlan,
   type FrontierSwarmAutoReviewReport,
@@ -102,6 +111,9 @@ import {
   type FrontierSwarmModelRoutingPolicyInput,
   type FrontierSwarmModelRoutingPolicySignal,
   type FrontierSwarmModelRoutingPolicySignalInput,
+  type FrontierSwarmOptimizationSummary,
+  type FrontierSwarmOptimizationSummaryCounts,
+  type FrontierSwarmOptimizationSummaryInput,
   type FrontierSwarmMergeBundle,
   type FrontierSwarmMergeConflict,
   type FrontierSwarmMergeIndex,
@@ -121,9 +133,15 @@ import {
   type FrontierSwarmSemanticImportSummary,
   type FrontierSwarmEventStream,
   type FrontierSwarmTask,
+  type FrontierSwarmQueueOutcomeModel,
   type FrontierSwarmUsageGovernor,
   type FrontierSwarmUsageGovernorDecision,
-  type FrontierSwarmWatchpointPlan
+  type FrontierSwarmWatchpointPlan,
+  type FrontierSwarmVerificationCategory,
+  type FrontierSwarmVerificationResult,
+  type FrontierSwarmVerificationResultInput,
+  type FrontierSwarmTerminalOutcome,
+  type FrontierSwarmTerminalStateReconciliation
 } from '../dist/index.js';
 
 const manifest: FrontierSwarmManifest = createSwarmManifest({
@@ -226,6 +244,33 @@ plan.routingPolicy?.feedback?.[0] satisfies FrontierSwarmModelRoutingFeedback | 
 plan.routingContext satisfies unknown;
 modelRoutingFeedback satisfies FrontierSwarmModelRoutingFeedback;
 modelRoutingPolicy satisfies FrontierSwarmModelRoutingPolicy;
+const emptyOptimizationSummary: FrontierSwarmOptimizationSummary = createSwarmOptimizationSummary();
+const zeroOptimizationSummary: FrontierSwarmOptimizationSummary = createSwarmOptimizationSummary({
+  telemetryAvailable: true,
+  modelRouteDecisionCount: 0,
+  panelDecisionCount: 0,
+  fusionDecisionCount: 0,
+  tournamentObservationCount: 0,
+  routingFeedbackCount: 0,
+  modelDiversityCount: 0,
+  feedbackConsumed: false
+});
+emptyOptimizationSummary.telemetryAvailable satisfies boolean;
+emptyOptimizationSummary.summary satisfies FrontierSwarmOptimizationSummaryCounts | undefined;
+zeroOptimizationSummary.summary satisfies FrontierSwarmOptimizationSummaryCounts | undefined;
+zeroOptimizationSummary.summary?.modelRouteDecisionCount satisfies number | undefined;
+zeroOptimizationSummary.summary?.feedbackConsumed satisfies boolean | undefined;
+({} as FrontierSwarmOptimizationSummaryInput).telemetryAvailable satisfies FrontierSwarmOptimizationSummaryInput['telemetryAvailable'];
+createSwarmOptimizationSummary({
+  telemetryAvailable: true,
+  modelRouteDecisionCount: 0,
+  panelDecisionCount: 0,
+  fusionDecisionCount: 0,
+  tournamentObservationCount: 0,
+  routingFeedbackCount: 0,
+  modelDiversityCount: 0,
+  feedbackConsumed: false
+}) satisfies FrontierSwarmOptimizationSummary;
 ({} as FrontierSwarmModelRoutingFeedbackInput).scope satisfies FrontierSwarmModelRoutingFeedbackInput['scope'];
 ({} as FrontierSwarmModelRoutingPolicyInput).defaultMode satisfies FrontierSwarmModelRoutingPolicyInput['defaultMode'];
 ({} as FrontierSwarmModelRoutingPolicySignalInput).mode satisfies FrontierSwarmModelRoutingPolicySignalInput['mode'];
@@ -312,26 +357,22 @@ const semanticNamespaceExportDefaultRegionId = createSwarmSemanticOwnershipRegio
 });
 const semanticInterfaceRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/types.ts',
-  kind: 'type',
-  declarationKind: 'interface',
+  kind: 'interface',
   name: 'Person'
 });
 const semanticTypeAliasRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/types.ts',
-  kind: 'type',
-  declarationKind: 'type-alias',
+  kind: 'type-alias',
   name: 'Identifier'
 });
 const semanticEnumRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/types.ts',
-  kind: 'type',
-  declarationKind: 'enum',
+  kind: 'enum',
   name: 'Mode'
 });
 const semanticGenericRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/types.ts',
-  kind: 'type',
-  declarationKind: 'generic-declaration',
+  kind: 'generic-declaration',
   name: 'Response'
 });
 const sameFileIndependentExportFormatRegionId = createSwarmSemanticOwnershipRegionId({
@@ -802,6 +843,42 @@ const semanticManifest = createSwarmManifest({
   policy: { defaultCompute: 'deep' }
 });
 const semanticPlan = createSwarmPlan(semanticManifest, [semanticTask]);
+const semanticTypeTask: FrontierSwarmTask = defineSwarmTasks([{
+  id: 'type-regions',
+  lane: 'runtime',
+  targetRefs: ['src/types.ts'],
+  ownershipRegions: [
+    {
+      id: semanticInterfaceRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticInterfaceRegionId]
+    },
+    {
+      id: semanticTypeAliasRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticTypeAliasRegionId]
+    },
+    {
+      id: semanticEnumRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticEnumRegionId]
+    },
+    {
+      id: semanticGenericRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticGenericRegionId]
+    }
+  ],
+  changedRegions: ['src/types.ts']
+}])[0];
+const semanticTypePlan = createSwarmPlan(semanticManifest, [semanticTypeTask]);
+const semanticTypeChangedRegionIds = resolveSwarmChangedRegions(
+  semanticTypePlan.jobs[0],
+  ['src/types.ts'],
+  semanticTypeImport
+);
+semanticTypeChangedRegionIds satisfies string[];
+FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS satisfies readonly ['build', 'typecheck', 'smoke', 'unit', 'fuzz', 'browser', 'oracle'];
 const semanticBundle = createSwarmMergeBundle({
   job: semanticPlan.jobs[0],
   result: {
@@ -810,11 +887,31 @@ const semanticBundle = createSwarmMergeBundle({
     changedPaths: ['src/math.ts'],
     changedRegions: [semanticBroadRegionId],
     queueItemIds: ['math-exports'],
-    verification: [{ status: 0 }],
+    verification: [{
+      name: 'frontier-swarm build',
+      command: ['npm', 'run', 'build'],
+      commandLine: 'npm run build',
+      cwd: 'packages/frontier-swarm',
+      status: 0,
+      durationMs: 42,
+      required: true,
+      category: 'build'
+    }, {
+      name: 'frontier-swarm smoke',
+      command: ['node', 'test/smoke.mjs'],
+      cwd: 'packages/frontier-swarm',
+      status: 0,
+      required: true
+    }] satisfies readonly FrontierSwarmVerificationResultInput[],
     traceShards: [{ kind: 'trace-summary', spanCount: 3, eventCount: 4 }]
   },
   semanticImport
 });
+semanticBundle.commandsPassed[0] satisfies FrontierSwarmVerificationResult;
+semanticBundle.commandsPassed[0].commandLine satisfies string | undefined;
+semanticBundle.commandsPassed[0].cwd satisfies string | undefined;
+semanticBundle.commandsPassed[0].category satisfies FrontierSwarmVerificationCategory | undefined;
+semanticBundle.commandsPassed[1].category satisfies FrontierSwarmVerificationCategory | undefined;
 const semanticFunctionLikeTask: FrontierSwarmTask = defineSwarmTasks([{
   id: 'math-function-method-arrow-regions',
   lane: 'runtime',
@@ -857,7 +954,7 @@ const semanticFunctionLikeBundle = createSwarmMergeBundle({
     changedPaths: ['src/math.ts'],
     changedRegions: [semanticBroadRegionId],
     queueItemIds: ['math-function-method-arrow-regions'],
-    verification: [{ status: 0 }]
+    verification: [{ status: 0, command: ['node', 'test/smoke.mjs'], cwd: 'packages/frontier-swarm', category: 'smoke' }]
   },
   semanticImport: semanticFunctionLikeImport,
   riskLevel: 'low'
@@ -1068,3 +1165,52 @@ lanePlaybook.successfulJobIds satisfies string[];
 patchStackPlan.stacks satisfies readonly { jobIds: string[] }[];
 ({} as FrontierSwarmMergeAdmissionPressure).recordOnlyQueueItemCount satisfies number;
 ({} as FrontierSwarmArtifactIndex).summary satisfies { artifactCount: number };
+FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS.includes('checked');
+const checkedTerminalOutcome: FrontierSwarmTerminalOutcome = normalizeSwarmTerminalOutcome('checked');
+checkedTerminalOutcome.label satisfies FrontierSwarmTerminalOutcome['label'];
+checkedTerminalOutcome.category satisfies FrontierSwarmTerminalOutcome['category'];
+classifySwarmQueueOutcome({ decision: 'coordinator-review', reasons: ['needs-port'] }).humanBlocked satisfies boolean;
+const queueOutcomeModel = createSwarmQueueOutcomeModel({
+  decisions: [{
+    jobId: 'job-review',
+    taskId: 'task-review',
+    queueItemIds: ['queue-review'],
+    decision: 'coordinator-review',
+    generatedAt: 3
+  }],
+  generatedAt: 4
+});
+queueOutcomeModel.visibleHumanBlockers.length satisfies number;
+const queueOutcomeAliasModel: FrontierSwarmQueueOutcomeModel = collapseSwarmQueueOutcomeDecisions([
+  createSwarmQueueOutcomeDecision({
+    jobId: 'job-alias',
+    taskId: 'task-alias',
+    queueItemIds: ['queue-alias'],
+    decision: 'human-question',
+    reasons: ['needs-human-answer'],
+    generatedAt: 1
+  }),
+  createSwarmQueueOutcomeDecision({
+    queueItemId: 'queue-alias',
+    decision: 'checked',
+    generatedAt: 2
+  })
+]);
+queueOutcomeAliasModel.subjectIdByAlias['job-alias'] satisfies string | undefined;
+queueOutcomeAliasModel.subjectIdByAlias['task-alias'] satisfies string | undefined;
+queueOutcomeAliasModel.latestDecisionIdByAlias['queue-alias'] satisfies string | undefined;
+const coordinatorReviewTerminalState: FrontierSwarmTerminalStateReconciliation = reconcileSwarmTerminalState({
+  collections: {
+    ready: [{ id: 'ready-item', jobId: 'job-review', taskId: 'task-review', queueItemIds: ['queue-review'] }]
+  },
+  decisions: [{
+    id: 'coordinator-review-decision',
+    jobId: 'job-review',
+    taskId: 'task-review',
+    queueItemIds: ['queue-review'],
+    decision: 'coordinator-review',
+    generatedAt: 3
+  }],
+  generatedAt: 4
+});
+coordinatorReviewTerminalState.summary.terminalUnresolvedCount satisfies number;

@@ -6,11 +6,13 @@ import {
   FRONTIER_SWARM_LEASE_KIND,
   FRONTIER_SWARM_LEASE_VERSION,
   FRONTIER_SWARM_MODEL_ROUTE_KIND,
+  FRONTIER_SWARM_OPTIMIZATION_SUMMARY_KIND,
   FRONTIER_SWARM_PANEL_EVALUATION_KIND,
   FRONTIER_SWARM_PRIORITY_POLICY_KIND,
   FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
   FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS,
   FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND,
+  FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS,
   FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND,
   FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND,
   FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
@@ -64,6 +66,7 @@ import {
   createSwarmPatchStackPlan,
   createSwarmParityOracle,
   createSwarmPanelEvaluation,
+  createSwarmOptimizationSummary,
   createSwarmProgressModel,
   createSwarmSemanticOwnershipStableKey,
   createSwarmSemanticOwnershipRegionId,
@@ -245,6 +248,26 @@ const semanticNamespaceExportDefaultRegionId = createSwarmSemanticOwnershipRegio
   source: './math.ts',
   name: 'default'
 });
+const semanticInterfaceRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'interface',
+  name: 'Person'
+});
+const semanticTypeAliasRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type-alias',
+  name: 'Identifier'
+});
+const semanticEnumRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'enum',
+  name: 'Mode'
+});
+const semanticGenericRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'generic-declaration',
+  name: 'Response'
+});
 assert.strictEqual(semanticFunctionRegionId, 'src/math.ts#semanticOwnershipRegion:exported-declaration:function:add:add');
 assert.strictEqual(semanticFunctionAliasRegionId, semanticFunctionRegionId);
 assert.strictEqual(semanticFunctionRegionId, semanticDefaultExportRegionId);
@@ -262,6 +285,26 @@ assert.strictEqual(createSwarmSemanticOwnershipStableKey({
   declarationKind: 'type-alias',
   name: 'MathNumber'
 }), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:type-alias:MathNumber:MathNumber`);
+assert.strictEqual(semanticInterfaceRegionId, `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:interface:Person:Person`);
+assert.strictEqual(semanticTypeAliasRegionId, `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:type-alias:Identifier:Identifier`);
+assert.strictEqual(semanticEnumRegionId, `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:enum:Mode:Mode`);
+assert.strictEqual(semanticGenericRegionId, `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:generic-declaration:Response:Response`);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'interface',
+  name: 'Person'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:interface:Person:Person`);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'type-alias',
+  name: 'Identifier'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:type-alias:Identifier:Identifier`);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'enum',
+  name: 'Mode'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:enum:Mode:Mode`);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'generic-declaration',
+  name: 'Response'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:generic-declaration:Response:Response`);
 assert.strictEqual(createSwarmSemanticOwnershipStableKey({
   kind: 'cli-command',
   command: 'npm test'
@@ -295,6 +338,26 @@ assert.strictEqual(createSwarmSemanticOwnershipRegionId({
   declarationKind: 'type-alias',
   name: 'MathNumber'
 }), `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:type-alias:MathNumber:MathNumber`);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'interface',
+  name: 'Person'
+}), `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:interface:Person:Person`);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type-alias',
+  name: 'Identifier'
+}), `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:type-alias:Identifier:Identifier`);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'enum',
+  name: 'Mode'
+}), `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:enum:Mode:Mode`);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'generic-declaration',
+  name: 'Response'
+}), `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:generic-declaration:Response:Response`);
 assert.strictEqual(createSwarmSemanticOwnershipRegionId({
   file: 'src/cli.ts',
   kind: 'cli-command',
@@ -602,6 +665,37 @@ const semanticDefaultOnlyExportImport = {
     readiness: { ready: 1 }
   }
 };
+const semanticTypeImport = {
+  records: [{
+    path: 'src/types.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSemanticNodes: [
+        { kind: 'interface', name: 'Person' },
+        { kind: 'type-alias', name: 'Identifier' },
+        { kind: 'enum', name: 'Mode' },
+        { kind: 'generic-declaration', name: 'Response' }
+      ]
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 4,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 4, occurrences: 4, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
 
 const semanticManifest = createSwarmManifest({
   compute: [{ id: 'deep', kind: 'codex', model: 'gpt-5.5', reasoningEffort: 'xhigh' }],
@@ -693,6 +787,41 @@ assert.deepStrictEqual(resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['
 assert.deepStrictEqual(resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/index.ts'], semanticReExportOnlyImport), [
   semanticReExportRegionId
 ]);
+const semanticTypeTasks = defineSwarmTasks([{
+  id: 'type-regions',
+  lane: 'runtime',
+  targetRefs: ['src/types.ts'],
+  ownershipRegions: [
+    {
+      id: semanticInterfaceRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticInterfaceRegionId]
+    },
+    {
+      id: semanticTypeAliasRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticTypeAliasRegionId]
+    },
+    {
+      id: semanticEnumRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticEnumRegionId]
+    },
+    {
+      id: semanticGenericRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticGenericRegionId]
+    }
+  ],
+  changedRegions: ['src/types.ts']
+}]);
+const semanticTypePlan = createSwarmPlan(semanticManifest, semanticTypeTasks);
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticTypePlan.jobs[0], ['src/types.ts'], semanticTypeImport), [
+  semanticEnumRegionId,
+  semanticGenericRegionId,
+  semanticInterfaceRegionId,
+  semanticTypeAliasRegionId
+].sort());
 const semanticDefaultExportTasks = defineSwarmTasks([{
   id: 'default-export-regions',
   lane: 'runtime',
@@ -1535,7 +1664,15 @@ const implementationProfile = resolveSwarmTaskModelProfile({ workKind: 'implemen
 assert.strictEqual(implementationProfile.modelTier, 'cheap');
 assert.strictEqual(implementationProfile.costBand, 'low');
 assert.ok(implementationProfile.strengths.includes('small patch synthesis'));
-assert.strictEqual(FRONTIER_SWARM_TASK_MODEL_PROFILES.find((profile) => profile.workKind === 'review').modelTier, 'deep');
+const reviewProfile = resolveSwarmTaskModelProfile({ workKind: 'review' });
+assert.strictEqual(reviewProfile.modelTier, 'cheap');
+assert.strictEqual(reviewProfile.costBand, 'low');
+const oracleProfile = resolveSwarmTaskModelProfile({ workKind: 'oracle' });
+assert.strictEqual(oracleProfile.modelTier, 'cheap');
+assert.strictEqual(oracleProfile.costBand, 'low');
+assert.strictEqual(FRONTIER_SWARM_TASK_MODEL_PROFILES.find((profile) => profile.workKind === 'review').modelTier, 'cheap');
+assert.strictEqual(FRONTIER_SWARM_TASK_MODEL_PROFILES.find((profile) => profile.workKind === 'review').model, undefined);
+assert.strictEqual(FRONTIER_SWARM_TASK_MODEL_PROFILES.find((profile) => profile.workKind === 'oracle').modelTier, 'cheap');
 const cheapRoute = createSwarmModelRoute({
   manifest,
   task: {
@@ -1555,8 +1692,47 @@ assert.deepStrictEqual(cheapRoute.recommendedComputeIds, ['fast']);
 assert.strictEqual(cheapRoute.summary.cheapestCapableComputeId, 'fast');
 assert.strictEqual(cheapRoute.taskProfile.workKind, 'agent-task');
 assert.strictEqual(cheapRoute.taskProfile.modelTier, 'balanced');
-assert.ok(cheapRoute.reasons.includes('task-kind-cost:medium'));
+assert.ok(cheapRoute.reasons.includes('task-kind-profile:agent-task'));
 assert.ok(cheapRoute.candidates.find((candidate) => candidate.compute.id === 'fast').estimatedCostUsd < cheapRoute.candidates.find((candidate) => candidate.compute.id === 'deep').estimatedCostUsd);
+
+const reviewCheapRoute = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'simple-review-fix',
+    kind: 'review',
+    lane: 'runtime',
+    targetRefs: ['inkwell/apps/web/src/runtime/review.ts'],
+    metadata: { risk: 'low', uncertainty: 'low', impact: 'low' }
+  },
+  priceCatalog: modelPriceCatalog,
+  tokenEstimate: routerTokenEstimate,
+  outcomeHistory: routerHistory,
+  generatedAt: 13050
+});
+assert.strictEqual(reviewCheapRoute.taskProfile.workKind, 'review');
+assert.strictEqual(reviewCheapRoute.taskProfile.modelTier, 'cheap');
+assert.strictEqual(reviewCheapRoute.route, 'single-cheap');
+assert.deepStrictEqual(reviewCheapRoute.recommendedComputeIds, ['fast']);
+assert.ok(reviewCheapRoute.reasons.includes('task-kind-tier:cheap'));
+
+const oracleCheapRoute = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'simple-oracle-check',
+    kind: 'oracle',
+    lane: 'runtime',
+    targetRefs: ['inkwell/apps/web/src/runtime/oracle.ts'],
+    metadata: { risk: 'low', uncertainty: 'low', impact: 'low' }
+  },
+  priceCatalog: modelPriceCatalog,
+  tokenEstimate: routerTokenEstimate,
+  outcomeHistory: routerHistory,
+  generatedAt: 13060
+});
+assert.strictEqual(oracleCheapRoute.taskProfile.workKind, 'oracle');
+assert.strictEqual(oracleCheapRoute.taskProfile.modelTier, 'cheap');
+assert.strictEqual(oracleCheapRoute.route, 'single-cheap');
+assert.deepStrictEqual(oracleCheapRoute.recommendedComputeIds, ['fast']);
 
 const riskRoute = createSwarmModelRoute({
   manifest,
@@ -1564,7 +1740,7 @@ const riskRoute = createSwarmModelRoute({
     id: 'critical-release-router',
     lane: 'runtime',
     targetRefs: ['inkwell/apps/web/src/runtime/router.ts'],
-    tags: ['critical', 'release'],
+    tags: ['critical', 'public-api', 'merge'],
     metadata: { risk: 'high', uncertainty: 'unknown', impact: 'high' }
   },
   priceCatalog: modelPriceCatalog,
@@ -1578,6 +1754,30 @@ const riskRoute = createSwarmModelRoute({
 assert.strictEqual(riskRoute.route, 'single-deep');
 assert.deepStrictEqual(riskRoute.recommendedComputeIds, ['deep']);
 assert.ok(riskRoute.reasons.includes('risk-uncertainty-or-impact-escalation'));
+assert.strictEqual(riskRoute.taskProfile.workKind, 'agent-task');
+
+const reviewFailureRoute = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'review-needs-escalation',
+    kind: 'review',
+    lane: 'runtime',
+    targetRefs: ['inkwell/apps/web/src/runtime/review-needs-escalation.ts'],
+    metadata: { risk: 'low', uncertainty: 'low', impact: 'low' }
+  },
+  priceCatalog: modelPriceCatalog,
+  tokenEstimate: routerTokenEstimate,
+  outcomeHistory: [
+    { compute: 'fast', attempts: 12, successRate: 0.26, confidence: 0.18, averageDurationMs: 39000 },
+    { compute: 'deep', attempts: 8, successRate: 0.95, confidence: 0.92, averageDurationMs: 128000 }
+  ],
+  generatedAt: 13150
+});
+assert.strictEqual(reviewFailureRoute.taskProfile.workKind, 'review');
+assert.strictEqual(reviewFailureRoute.route, 'single-deep');
+assert.deepStrictEqual(reviewFailureRoute.recommendedComputeIds, ['deep']);
+assert.ok(reviewFailureRoute.reasons.includes('single-deep-selected'));
+assert.ok(reviewFailureRoute.reasons.includes('cheapest-capable-history-poor'));
 
 const budgetRoute = createSwarmModelRoute({
   manifest,
@@ -1678,6 +1878,35 @@ assert.strictEqual(modelRoutingPolicy.preferences[0].mode, 'override');
 assert.strictEqual(modelRoutingPolicy.summary.signalCount, 1);
 assert.strictEqual(modelRoutingPolicy.summary.feedbackCount, 1);
 
+const emptyOptimizationSummary = createSwarmOptimizationSummary();
+assert.strictEqual(emptyOptimizationSummary.kind, FRONTIER_SWARM_OPTIMIZATION_SUMMARY_KIND);
+assert.strictEqual(emptyOptimizationSummary.telemetryAvailable, false);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(emptyOptimizationSummary, 'summary'), false);
+
+const zeroOptimizationSummary = createSwarmOptimizationSummary({
+  telemetryAvailable: true,
+  modelRouteDecisionCount: 0,
+  panelDecisionCount: 0,
+  fusionDecisionCount: 0,
+  tournamentObservationCount: 0,
+  routingFeedbackCount: 0,
+  modelDiversityCount: 0,
+  feedbackConsumed: false,
+  generatedAt: 13601
+});
+assert.strictEqual(zeroOptimizationSummary.kind, FRONTIER_SWARM_OPTIMIZATION_SUMMARY_KIND);
+assert.strictEqual(zeroOptimizationSummary.telemetryAvailable, true);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(zeroOptimizationSummary, 'summary'), true);
+assert.deepStrictEqual(zeroOptimizationSummary.summary, {
+  modelRouteDecisionCount: 0,
+  panelDecisionCount: 0,
+  fusionDecisionCount: 0,
+  tournamentObservationCount: 0,
+  routingFeedbackCount: 0,
+  modelDiversityCount: 0,
+  feedbackConsumed: false
+});
+
 const modelRoutingPlan = createSwarmPlan(manifest, tasks, {
   routingMode: 'override',
   routingPolicy: modelRoutingPolicy,
@@ -1715,6 +1944,7 @@ scaleRun = completeSwarmJob(scaleRun, {
   traceShards: [{ kind: 'trace-summary', spanCount: 1, eventCount: 2 }]
 });
 assert.strictEqual(scaleRun.results[0].mergeReadiness, 'patch-candidate');
+assert.deepStrictEqual(scaleRun.results[0].verification, []);
 assert.deepStrictEqual(scaleRun.results[0].traceShards, [{ kind: 'trace-summary', spanCount: 1, eventCount: 2 }]);
 assert.strictEqual(classifySwarmMergeReadiness({ jobId: 'discovery', status: 'completed', changedPaths: [] }), 'discovery-only');
 assert.strictEqual(classifySwarmMergeDisposition({ jobId: 'verified', status: 'verified', changedPaths: ['src/runtime/a.ts'], verification: [{ status: 0 }] }), 'auto-mergeable');
@@ -1730,10 +1960,88 @@ const mergeBundle = createSwarmMergeBundle({
 assert.strictEqual(mergeBundle.disposition, 'needs-port');
 assert.strictEqual(mergeBundle.patchPath, 'agent-runs/scale/changes.patch');
 assert.deepStrictEqual(mergeBundle.queueItemIds, [firstScaleJob.taskId]);
+assert.deepStrictEqual(mergeBundle.commandsPassed, []);
+assert.deepStrictEqual(mergeBundle.commandsFailed, []);
 assert.deepStrictEqual(mergeBundle.traceShards, [{ kind: 'trace-summary', spanCount: 1, eventCount: 2 }]);
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageId, 'frontier-swarm');
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
+const verificationMetadataBundle = createSwarmMergeBundle({
+  job: firstScaleJob,
+  result: {
+    jobId: 'verification-command-contract',
+    status: 'verified',
+    changedPaths: [firstScaleJob.task.targetRefs[0]],
+    queueItemIds: [firstScaleJob.taskId],
+    verification: [
+      {
+        name: 'frontier-swarm build',
+        command: ['npm', 'run', 'build'],
+        commandLine: 'npm run build',
+        cwd: 'packages/frontier-swarm',
+        status: 0,
+        durationMs: 17,
+        required: true,
+        category: 'build'
+      },
+      {
+        name: 'frontier-swarm smoke',
+        command: ['node', 'test/smoke.mjs'],
+        cwd: 'packages/frontier-swarm',
+        status: 0,
+        required: true
+      },
+      {
+        name: 'frontier-swarm typecheck',
+        command: ['npm', 'run', 'typecheck'],
+        cwd: 'packages/frontier-swarm',
+        status: 0,
+        required: true
+      },
+      {
+        name: 'frontier-swarm unit',
+        command: ['npm', 'test'],
+        cwd: 'packages/frontier-swarm',
+        status: 0,
+        required: true
+      },
+      {
+        name: 'frontier-swarm fuzz',
+        command: ['node', 'test/fuzz.mjs'],
+        cwd: 'packages/frontier-swarm',
+        status: 0,
+        required: true
+      },
+      {
+        name: 'frontier-swarm browser',
+        command: ['node', 'test/browser.mjs'],
+        cwd: 'packages/frontier-swarm',
+        status: 0,
+        required: true
+      },
+      {
+        name: 'frontier-swarm oracle',
+        command: ['node', 'test/oracle.mjs'],
+        cwd: 'packages/frontier-swarm',
+        status: 0,
+        required: true
+      }
+    ]
+  }
+});
+assert.deepStrictEqual(
+  verificationMetadataBundle.commandsPassed.map((entry) => entry.category),
+  ['build', 'smoke', 'typecheck', 'unit', 'fuzz', 'browser', 'oracle']
+);
+assert.strictEqual(verificationMetadataBundle.commandsPassed[0].commandLine, 'npm run build');
+assert.strictEqual(verificationMetadataBundle.commandsPassed[0].cwd, 'packages/frontier-swarm');
+assert.strictEqual(verificationMetadataBundle.commandsPassed[0].durationMs, 17);
+assert.strictEqual(verificationMetadataBundle.commandsPassed[1].commandLine, 'node test/smoke.mjs');
+assert.strictEqual(verificationMetadataBundle.commandsPassed[2].category, 'typecheck');
+assert.strictEqual(verificationMetadataBundle.commandsPassed[3].category, 'unit');
+assert.strictEqual(verificationMetadataBundle.commandsPassed[4].category, 'fuzz');
+assert.strictEqual(verificationMetadataBundle.commandsPassed[5].category, 'browser');
+assert.strictEqual(verificationMetadataBundle.commandsPassed[6].category, 'oracle');
 const adaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
   plan: scalePlan,
   observations: [{ severity: 'warning', reason: 'load spike' }],
@@ -3031,12 +3339,28 @@ assert.strictEqual(
   'human-question'
 );
 assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'coordinator-review', reasons: ['needs-port'] }).humanBlocked,
+  false
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'coordinator-review', reasons: ['needs-port'] }).coordinatorReview,
+  true
+);
+assert.strictEqual(
   classifySwarmQueueOutcome({ outcome: 'no-change', reasons: ['no-op'] }).category,
   'terminal'
 );
 assert.strictEqual(
   classifySwarmQueueOutcome({ outcome: 'no-change', reasons: ['no-op'] }).outcome,
   'no-change'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'checked', reasons: ['checked'] }).category,
+  'terminal'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'checked', reasons: ['checked'] }).outcome,
+  'checked'
 );
 assert.strictEqual(
   classifySwarmQueueOutcome({ decision: 'rerun', reasons: ['stale-against-head'] }).category,
@@ -3050,10 +3374,11 @@ assert.deepStrictEqual(
   [
     classifySwarmQueueOutcome({ category: 'terminal', outcome: 'applied', terminal: true }).outcome,
     classifySwarmQueueOutcome({ category: 'terminal', outcome: 'committed', terminal: true }).outcome,
+    classifySwarmQueueOutcome({ category: 'terminal', outcome: 'checked', terminal: true }).outcome,
     classifySwarmQueueOutcome({ category: 'terminal', outcome: 'superseded', terminal: true }).outcome,
     classifySwarmQueueOutcome({ category: 'terminal', outcome: 'no-change', terminal: true }).outcome
   ],
-  ['applied', 'committed', 'superseded', 'no-change']
+  ['applied', 'committed', 'checked', 'superseded', 'no-change']
 );
 assert.strictEqual(
   classifySwarmQueueOutcome({ category: 'terminal', decision: 'rerun', reasons: ['stale-against-head'], terminal: true }).outcome,
@@ -3112,6 +3437,7 @@ assert.strictEqual(
 const normalizedTerminalOutcomes = [
   normalizeSwarmTerminalOutcome('applied'),
   normalizeSwarmTerminalOutcome('committed'),
+  normalizeSwarmTerminalOutcome('checked'),
   normalizeSwarmTerminalOutcome('superseded'),
   normalizeSwarmTerminalOutcome({ label: 'evidence only' }),
   normalizeSwarmTerminalOutcome({ status: 'no change' }),
@@ -3128,6 +3454,7 @@ const normalizedTerminalOutcomes = [
 assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.label), [
   'applied',
   'committed',
+  'checked',
   'superseded',
   'evidence-only',
   'no-change',
@@ -3148,6 +3475,7 @@ assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.succe
   true,
   true,
   true,
+  true,
   false,
   false,
   false,
@@ -3157,6 +3485,7 @@ assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.succe
   false,
   false
 ]);
+assert.strictEqual(FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS.includes('checked'), true);
 assert.strictEqual(FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS.includes('superseded'), true);
 assert.strictEqual(normalizeSwarmTerminalOutcome({ decision: 'human-question' }).category, 'blocked');
 assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'human blocked' }).label, 'human-question');
@@ -3175,6 +3504,23 @@ assert.strictEqual(terminalOutcomeModel.summary.visibleReviewDebtCount, 1);
 assert.strictEqual(terminalOutcomeModel.visibleHumanBlockers[0].jobId, terminalBundleBlocked.jobId);
 assert.strictEqual(terminalOutcomeModel.visibleReruns[0].jobId, terminalBundleStale.jobId);
 assert.strictEqual(terminalOutcomeModel.visibleReviewDebt[0].jobId, terminalBundleCoordinatorReview.jobId);
+
+const coordinatorReviewOutcomeModel = createSwarmQueueOutcomeModel({
+  decisions: [
+    {
+      id: 'coordinator-review-only',
+      jobId: 'job-coordinator-review-only',
+      taskId: 'task-coordinator-review-only',
+      queueItemIds: ['queue-coordinator-review-only'],
+      decision: 'coordinator-review',
+      generatedAt: 7601
+    }
+  ],
+  generatedAt: 7602
+});
+assert.strictEqual(coordinatorReviewOutcomeModel.visibleHumanBlockers.length, 0);
+assert.strictEqual(coordinatorReviewOutcomeModel.visibleReviewDebt.length, 1);
+assert.strictEqual(coordinatorReviewOutcomeModel.visibleReviewDebt[0].coordinatorReview, true);
 
 const queueAliasCollapse = collapseSwarmQueueOutcomeDecisions([
   createSwarmQueueOutcomeDecision({
@@ -3311,6 +3657,33 @@ assert.strictEqual(queueTerminalAliasSurfaceCollapse.latestDecisionIdByAlias['ta
 assert.strictEqual(queueTerminalAliasSurfaceCollapse.latestDecisionIdByAlias['job-alias-closed-by-job'], 'new-applied-job-alias');
 assert.strictEqual(queueTerminalAliasSurfaceCollapse.latestDecisionIdByAlias['queue-alias-closed-by-queue-item'], 'new-rejected-queue-item-alias');
 
+const queueAliasSubjectCollapse = collapseSwarmQueueOutcomeDecisions([
+  createSwarmQueueOutcomeDecision({
+    id: 'old-checked-task-job-alias',
+    jobId: 'job-alias-closed-by-subject',
+    taskId: 'task-alias-closed-by-subject',
+    queueItemIds: ['queue-alias-closed-by-subject'],
+    decision: 'human-question',
+    reasons: ['needs-human-answer'],
+    generatedAt: 4
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'new-checked-queue-alias',
+    queueItemId: 'queue-alias-closed-by-subject',
+    decision: 'checked',
+    generatedAt: 14
+  })
+]);
+assert.strictEqual(queueAliasSubjectCollapse.summary.subjectCount, 1);
+assert.strictEqual(queueAliasSubjectCollapse.summary.latestDecisionCount, 1);
+assert.strictEqual(queueAliasSubjectCollapse.summary.supersededDecisionCount, 1);
+assert.deepStrictEqual(queueAliasSubjectCollapse.latestDecisions.map((decision) => decision.id), ['new-checked-queue-alias']);
+assert.strictEqual(queueAliasSubjectCollapse.subjectIdByAlias['job-alias-closed-by-subject'], 'queue-alias-closed-by-subject');
+assert.strictEqual(queueAliasSubjectCollapse.subjectIdByAlias['task-alias-closed-by-subject'], 'queue-alias-closed-by-subject');
+assert.strictEqual(queueAliasSubjectCollapse.latestDecisionIdByAlias['job-alias-closed-by-subject'], 'new-checked-queue-alias');
+assert.strictEqual(queueAliasSubjectCollapse.latestDecisionIdByAlias['task-alias-closed-by-subject'], 'new-checked-queue-alias');
+assert.strictEqual(queueAliasSubjectCollapse.latestDecisionIdByAlias['queue-alias-closed-by-subject'], 'new-checked-queue-alias');
+
 const sameRunTerminalReconciliation = reconcileSwarmTerminalState({
   collections: {
     ready: [
@@ -3398,6 +3771,22 @@ assert.strictEqual(noChangeTerminalReconciliation.summary.resolvedCount, 1);
 assert.strictEqual(noChangeTerminalReconciliation.summary.terminalUnresolvedCount, 0);
 assert.strictEqual(noChangeTerminalReconciliation.collections.done.length, 1);
 assert.strictEqual(noChangeTerminalReconciliation.resolved[0].decisionOutcome, 'no-change');
+
+const checkedTerminalReconciliation = reconcileSwarmTerminalState({
+  collections: {
+    ready: [
+      { id: 'checked-ready-item', jobId: 'job-checked', taskId: 'task-checked', queueItemIds: ['queue-checked'] }
+    ]
+  },
+  decisions: [
+    { id: 'checked-decision', jobId: 'job-checked', taskId: 'task-checked', queueItemIds: ['queue-checked'], decision: 'checked', generatedAt: 37 }
+  ],
+  generatedAt: 38
+});
+assert.strictEqual(checkedTerminalReconciliation.summary.resolvedCount, 1);
+assert.strictEqual(checkedTerminalReconciliation.summary.terminalUnresolvedCount, 0);
+assert.strictEqual(checkedTerminalReconciliation.collections.done.length, 1);
+assert.strictEqual(checkedTerminalReconciliation.resolved[0].decisionOutcome, 'checked');
 
 const continuationNoChangeTerminalReconciliation = reconcileSwarmTerminalState({
   collections: {
