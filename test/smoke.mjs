@@ -1,11 +1,15 @@
 import assert from 'node:assert';
 import {
+  FRONTIER_SWARM_CONTINUOUS_POOL_STATE_KIND,
   FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND,
   FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID,
+  FRONTIER_SWARM_LEASE_KIND,
+  FRONTIER_SWARM_LEASE_VERSION,
   FRONTIER_SWARM_MODEL_ROUTE_KIND,
   FRONTIER_SWARM_PANEL_EVALUATION_KIND,
   FRONTIER_SWARM_PRIORITY_POLICY_KIND,
   FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
+  FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND,
   checkSwarmOwnership,
   classifySwarmMergeDisposition,
   classifySwarmMergeReadiness,
@@ -21,6 +25,7 @@ import {
   createSwarmAutoReviewReport,
   createSwarmBlackboard,
   createSwarmBottleneckReport,
+  createSwarmContinuousPoolState,
   createSwarmCoordinatorAgentDrainWork,
   createSwarmContextPack,
   createSwarmDebugHandoff,
@@ -75,10 +80,13 @@ import {
   querySwarmEvidenceIndex,
   recordSwarmEvent,
   renewSwarmLease,
+  reconcileSwarmTerminalState,
+  normalizeSwarmTerminalOutcome,
   resolveSwarmChangedRegions,
   checkSwarmRegionOwnership,
   resolveSwarmCompute,
   routeSwarmEventToMailboxes,
+  mergeSwarmMetadata,
   summarizeSwarmCoordinatorAgentDrainWork,
   validateSwarmManifest
 } from '../dist/index.js';
@@ -277,6 +285,23 @@ const invalid = validateSwarmManifest({
 });
 assert.strictEqual(invalid.valid, false);
 
+const packageScopedVerificationGate = {
+  command: 'npm',
+  args: ['run', 'focused-gate'],
+  metadata: {
+    packageId: 'frontier-swarm',
+    packagePath: 'packages/frontier-swarm',
+    packageName: '@shapeshift-labs/frontier-swarm'
+  }
+};
+const mergedGateMetadata = mergeSwarmMetadata([
+  { reason: 'queue-gate' }
+], [packageScopedVerificationGate]);
+assert.strictEqual(mergedGateMetadata.reason, 'queue-gate');
+assert.strictEqual(mergedGateMetadata.verificationGates[0].metadata.packageId, 'frontier-swarm');
+assert.strictEqual(mergedGateMetadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
+assert.strictEqual(mergedGateMetadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
+
 const scaleTasks = defineSwarmTasks(Array.from({ length: 1000 }, (_, index) => ({
   id: `scale-${index}`,
   lane: index % 2 === 0 ? 'runtime' : 'harness',
@@ -284,7 +309,8 @@ const scaleTasks = defineSwarmTasks(Array.from({ length: 1000 }, (_, index) => (
   targetRefs: [index % 2 === 0 ? `inkwell/apps/web/src/runtime/${index}.ts` : `inkwell/e2e-${index}.mjs`],
   concurrencyKey: `surface-${index % 25}`,
   budget: { maxInputTokens: 2000, maxOutputTokens: 1000, maxDurationMs: 60000, maxRetries: 1 },
-  review: { sampleRate: 0.05, requiredReviewers: 1, reviewerPool: ['reviewer-a', 'reviewer-b'] }
+  review: { sampleRate: 0.05, requiredReviewers: 1, reviewerPool: ['reviewer-a', 'reviewer-b'] },
+  verification: [packageScopedVerificationGate]
 })));
 const scalePlan = createSwarmPlan(manifest, scaleTasks, {
   includeCompleted: true,
@@ -377,6 +403,74 @@ assert.deepStrictEqual(priorityQueue.jobs.slice(0, 3).map((job) => job.taskId), 
 assert.strictEqual(priorityQueue.jobs[0].metadata.priorityPolicy.className, 'coordinator-drain');
 assert.strictEqual(priorityQueue.jobs[1].metadata.priorityPolicy.className, 'review');
 assert.strictEqual(priorityQueue.jobs.find((job) => job.taskId === 'speculative-0').metadata.priorityPolicy.className, 'speculative');
+
+const classifiedPool = createSwarmContinuousPoolState({
+  generatedAt: 12600,
+  decisions: [
+    { subjectId: 'review-item', category: 'coordinator-review', outcome: 'coordinator-review' },
+    { subjectId: 'rerun-item', category: 'stale-rerun', outcome: 'rerun' },
+    { subjectId: 'human-question', category: 'human-blocked', outcome: 'human-blocked' },
+    { subjectId: 'done-item', category: 'terminal', outcome: 'committed' }
+  ]
+});
+assert.strictEqual(classifiedPool.kind, FRONTIER_SWARM_CONTINUOUS_POOL_STATE_KIND);
+assert.strictEqual(classifiedPool.summary.reviewDrainCount, 1);
+assert.strictEqual(classifiedPool.summary.rerunCount, 1);
+assert.strictEqual(classifiedPool.summary.humanBlockedCount, 1);
+assert.strictEqual(classifiedPool.summary.doneCount, 1);
+assert.strictEqual(classifiedPool.drained, false);
+
+const refillPool = createSwarmContinuousPoolState({
+  maxWorkers: 3,
+  generatedAt: 12700,
+  activeLeases: [{
+    kind: FRONTIER_SWARM_LEASE_KIND,
+    version: FRONTIER_SWARM_LEASE_VERSION,
+    id: 'active-lease-a',
+    jobId: 'active-a',
+    workerId: 'worker-a',
+    token: 'token-a',
+    leasedAt: 12600,
+    expiresAt: 14000,
+    fencingToken: 1,
+    status: 'active'
+  }],
+  reviewDrain: [{ id: 'review-drain-a', jobId: 'review-drain-a', queueItemIds: ['review-drain-a'] }],
+  queued: [
+    { id: 'speculative-a', jobId: 'speculative-a', queueItemIds: ['speculative-a'], priorityClass: 'speculative', priority: 0 },
+    { id: 'standard-a', jobId: 'standard-a', queueItemIds: ['standard-a'], priorityClass: 'standard', priority: 1 }
+  ]
+});
+assert.strictEqual(refillPool.phase, 'active');
+assert.strictEqual(refillPool.summary.activeCount, 1);
+assert.strictEqual(refillPool.summary.queuedCount, 2);
+assert.strictEqual(refillPool.summary.refillSlotCount, 2);
+assert.strictEqual(refillPool.summary.idleRefillSlotCount, 0);
+assert.deepStrictEqual(refillPool.refillRecommendations.map((entry) => entry.action), ['drain-review', 'lease-queued']);
+assert.deepStrictEqual(refillPool.refillRecommendations.map((entry) => entry.bucket), ['review-drain', 'queued']);
+assert.deepStrictEqual(refillPool.refillRecommendations.map((entry) => entry.itemIds[0]), ['review-drain-a', 'standard-a']);
+assert.deepStrictEqual(refillPool.stopConditions, []);
+assert.strictEqual(refillPool.drained, false);
+
+const humanQuestionPool = createSwarmContinuousPoolState({
+  generatedAt: 12800,
+  humanBlocked: [{ id: 'needs-human-answer', queueItemIds: ['needs-human-answer'], reasons: ['human-question'] }]
+});
+assert.strictEqual(humanQuestionPool.phase, 'human-blocked');
+assert.strictEqual(humanQuestionPool.stopCondition, 'human-blocked');
+assert.strictEqual(humanQuestionPool.drained, false);
+
+const drainedPool = createSwarmContinuousPoolState({
+  maxWorkers: 2,
+  generatedAt: 12900,
+  done: [{ id: 'done-a', queueItemIds: ['done-a'] }]
+});
+assert.strictEqual(drainedPool.phase, 'done');
+assert.strictEqual(drainedPool.stopCondition, 'drained');
+assert.deepStrictEqual(drainedPool.stopConditions, ['drained']);
+assert.strictEqual(drainedPool.drained, true);
+assert.strictEqual(drainedPool.summary.pendingCount, 0);
+assert.strictEqual(drainedPool.summary.idleRefillSlotCount, 2);
 
 const modelPriceCatalog = {
   fast: {
@@ -538,11 +632,17 @@ const mergeBundle = createSwarmMergeBundle({
 assert.strictEqual(mergeBundle.disposition, 'needs-port');
 assert.strictEqual(mergeBundle.patchPath, 'agent-runs/scale/changes.patch');
 assert.deepStrictEqual(mergeBundle.queueItemIds, [firstScaleJob.taskId]);
+assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageId, 'frontier-swarm');
+assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
+assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
 const queueSnapshot = createSwarmQueueSnapshot({ plan: scalePlan, run: scaleRun, leases, generatedAt: 8000 });
 assert.strictEqual(queueSnapshot.summary.jobCount, 1000);
 assert.strictEqual(queueSnapshot.summary.leaseCount, 5);
 assert.strictEqual(queueSnapshot.summary.leasedCount, 4);
 assert.strictEqual(queueSnapshot.summary.completedCount, 1);
+assert.strictEqual(queueSnapshot.jobs[0].metadata.verificationGates[0].metadata.packageId, 'frontier-swarm');
+assert.strictEqual(queueSnapshot.jobs[0].metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
+assert.strictEqual(queueSnapshot.jobs[0].metadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
 const queueOverlay = createSwarmQueueOverlay({ runId: scaleRun.id, bundles: [mergeBundle], generatedAt: 8100 });
 assert.strictEqual(queueOverlay.summary.needsHumanPortCount, 1);
 const derivedQueue = deriveSwarmQueueStatus({ snapshot: queueSnapshot, overlays: [queueOverlay], generatedAt: 8200 });
@@ -670,10 +770,10 @@ const unregionedBundle = createSwarmMergeBundle({
 const sameRegionJob = scalePlan.jobs[14];
 const crossScopeJob = scalePlan.jobs[16];
 const highRiskJob = scalePlan.jobs[18];
-const publicApiJob = scalePlan.jobs[20];
-const publicApiJobB = scalePlan.jobs[24];
+const parentScopeJob = scalePlan.jobs[20];
+const parentScopeJobB = scalePlan.jobs[24];
 const unknownRegionJob = scalePlan.jobs[22];
-assert.ok(sameRegionJob && crossScopeJob && highRiskJob && publicApiJob && publicApiJobB && unknownRegionJob);
+assert.ok(sameRegionJob && crossScopeJob && highRiskJob && parentScopeJob && parentScopeJobB && unknownRegionJob);
 const sameRegionBundle = createSwarmMergeBundle({
   job: sameRegionJob,
   result: {
@@ -710,28 +810,28 @@ const highRiskBundle = createSwarmMergeBundle({
   patchPath: 'agent-runs/high-risk/changes.patch',
   riskLevel: 'high'
 });
-const publicApiBundle = createSwarmMergeBundle({
-  job: publicApiJob,
+const parentScopeBundle = createSwarmMergeBundle({
+  job: parentScopeJob,
   result: {
-    jobId: publicApiJob.id,
+    jobId: parentScopeJob.id,
     status: 'verified',
-    changedPaths: ['src/contracts/public-api.ts'],
-    changedRegions: ['contract.public-api'],
+    changedPaths: ['src/scopes/parent-scope.ts'],
+    changedRegions: ['scope.parent'],
     verification: [{ status: 0 }]
   },
-  patchPath: 'agent-runs/public-api/changes.patch',
+  patchPath: 'agent-runs/parent-scope/changes.patch',
   riskLevel: 'low'
 });
-const publicApiBundleB = createSwarmMergeBundle({
-  job: publicApiJobB,
+const parentScopeBundleB = createSwarmMergeBundle({
+  job: parentScopeJobB,
   result: {
-    jobId: publicApiJobB.id,
+    jobId: parentScopeJobB.id,
     status: 'verified',
-    changedPaths: ['src/contracts/public-api.ts'],
-    changedRegions: ['contract.public-api'],
+    changedPaths: ['src/scopes/parent-scope.ts'],
+    changedRegions: ['scope.parent'],
     verification: [{ status: 0 }]
   },
-  patchPath: 'agent-runs/public-api-b/changes.patch',
+  patchPath: 'agent-runs/parent-scope-b/changes.patch',
   riskLevel: 'low'
 });
 const unknownRegionBundle = createSwarmMergeBundle({
@@ -749,6 +849,7 @@ const unknownRegionBundle = createSwarmMergeBundle({
 const regionIndex = createSwarmMergeIndex({ bundles: [regionBundleA, regionBundleB], generatedAt: 6100 });
 assert.strictEqual(regionIndex.summary.conflictCount, 0);
 assert.strictEqual(regionIndex.summary.readyToApplyCount, 2);
+assert.strictEqual(regionIndex.entries.find((entry) => entry.jobId === regionBundleA.jobId).metadata.verificationGates[0].metadata.packageId, 'frontier-swarm');
 const sameRegionIndex = createSwarmMergeIndex({ bundles: [regionBundleA, sameRegionBundle], generatedAt: 6150 });
 assert.strictEqual(sameRegionIndex.summary.conflictCount, 1);
 assert.deepStrictEqual(sameRegionIndex.entries.find((entry) => entry.jobId === sameRegionBundle.jobId).conflictingJobIds, [regionBundleA.jobId]);
@@ -756,13 +857,13 @@ const crossScopeIndex = createSwarmMergeIndex({ bundles: [crossScopeBundle], gen
 assert.strictEqual(crossScopeIndex.summary.conflictCount, 0);
 const highRiskIndex = createSwarmMergeIndex({ bundles: [highRiskBundle], generatedAt: 6170 });
 assert.strictEqual(highRiskIndex.summary.readyToApplyCount, 1);
-const publicApiIndex = createSwarmMergeIndex({ bundles: [publicApiBundle], generatedAt: 6180 });
-assert.strictEqual(publicApiIndex.summary.readyToApplyCount, 1);
-const publicApiConflictIndex = createSwarmMergeIndex({ bundles: [publicApiBundle, publicApiBundleB], generatedAt: 6185 });
-assert.strictEqual(publicApiConflictIndex.summary.conflictCount, 1);
+const parentScopeIndex = createSwarmMergeIndex({ bundles: [parentScopeBundle], generatedAt: 6180 });
+assert.strictEqual(parentScopeIndex.summary.readyToApplyCount, 1);
+const parentScopeConflictIndex = createSwarmMergeIndex({ bundles: [parentScopeBundle, parentScopeBundleB], generatedAt: 6185 });
+assert.strictEqual(parentScopeConflictIndex.summary.conflictCount, 1);
 assert.deepStrictEqual(
-  publicApiConflictIndex.entries.find((entry) => entry.jobId === publicApiBundle.jobId).conflictingJobIds,
-  [publicApiBundleB.jobId]
+  parentScopeConflictIndex.entries.find((entry) => entry.jobId === parentScopeBundle.jobId).conflictingJobIds,
+  [parentScopeBundleB.jobId]
 );
 const unknownRegionIndex = createSwarmMergeIndex({ bundles: [unknownRegionBundle], generatedAt: 6190 });
 assert.strictEqual(unknownRegionIndex.summary.readyToApplyCount, 1);
@@ -824,7 +925,7 @@ assert.strictEqual(patchStackPlan.summary.jobCount, 2);
 assert.ok(patchStackPlan.stacks.some((stack) => stack.conflicts.length === 1));
 const defaultHierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, generatedAt: 7190 });
 assert.strictEqual(defaultHierarchicalQueue.summary.applyLocalCount, 2);
-assert.strictEqual(defaultHierarchicalQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:repo:*');
+assert.strictEqual(defaultHierarchicalQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:*');
 assert.strictEqual(defaultHierarchicalQueue.summary.admissionPressure.applyLocalQueueItemCount, 2);
 assert.deepStrictEqual(
   defaultHierarchicalQueue.assignments.map((assignment) => assignment.queueItemIds).flat().sort(),
@@ -853,8 +954,9 @@ assert.deepStrictEqual(
   sameFileSliceQueue.assignments.map((assignment) => assignment.requiredLeaseKeys[0]).sort(),
   sameFileSliceQueue.assignments.map((assignment) => assignment.leaseKey).sort()
 );
-assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:repo:*')));
+assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:root:*')));
 assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:lane:runtime')));
+assert.strictEqual(sameFileSliceQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
 const sameFileSliceDrainWorkA = createSwarmCoordinatorAgentDrainWork({
   queue: sameFileSliceQueue,
   coordinatorId: 'coordinator-a',
@@ -1102,42 +1204,42 @@ const highRiskAssignment = highRiskQueue.assignments.find((assignment) => assign
 assert.strictEqual(highRiskAssignment.action, 'promote');
 assert.strictEqual(highRiskAssignment.promoteToScopeId, 'root');
 assert.ok(highRiskAssignment.reasons.includes('high-risk'));
-const publicApiQueue = createSwarmHierarchicalMergeQueue({ index: publicApiIndex, generatedAt: 7280 });
-const publicApiAssignment = publicApiQueue.assignments.find((assignment) => assignment.jobId === publicApiBundle.jobId);
-assert.strictEqual(publicApiAssignment.action, 'promote');
-assert.strictEqual(publicApiAssignment.promoteToScopeId, publicApiAssignment.parentScopeIds[0]);
-assert.ok(publicApiAssignment.scopeId.startsWith('semantic-region:'));
-assert.strictEqual(publicApiAssignment.leaseKey, `merge:semantic:${publicApiAssignment.lane ?? 'root'}:contract.public-api`);
-assert.deepStrictEqual(publicApiAssignment.queueItemIds, publicApiBundle.queueItemIds);
-assert.ok(publicApiAssignment.reasons.includes('public-api-or-contract-region'));
-assert.deepStrictEqual(publicApiAssignment.parentDecisionRegions, ['contract.public-api']);
-assert.strictEqual(publicApiAssignment.retrySlices, undefined);
-assert.strictEqual(publicApiQueue.summary.admissionPressure.promoteUpwardQueueItemCount, 1);
-const publicApiConflictQueue = createSwarmHierarchicalMergeQueue({ index: publicApiConflictIndex, generatedAt: 7285 });
-const publicApiConflictAssignments = publicApiConflictQueue.assignments.filter((assignment) => (
-  [publicApiBundle.jobId, publicApiBundleB.jobId].includes(assignment.jobId)
+const parentScopeQueue = createSwarmHierarchicalMergeQueue({ index: parentScopeIndex, generatedAt: 7280 });
+const parentScopeAssignment = parentScopeQueue.assignments.find((assignment) => assignment.jobId === parentScopeBundle.jobId);
+assert.strictEqual(parentScopeAssignment.action, 'promote');
+assert.strictEqual(parentScopeAssignment.promoteToScopeId, parentScopeAssignment.parentScopeIds[0]);
+assert.ok(parentScopeAssignment.scopeId.startsWith('semantic-region:'));
+assert.strictEqual(parentScopeAssignment.leaseKey, `merge:semantic:${parentScopeAssignment.lane ?? 'root'}:scope.parent`);
+assert.deepStrictEqual(parentScopeAssignment.queueItemIds, parentScopeBundle.queueItemIds);
+assert.ok(parentScopeAssignment.reasons.includes('parent-scope-region'));
+assert.deepStrictEqual(parentScopeAssignment.parentDecisionRegions, ['scope.parent']);
+assert.strictEqual(parentScopeAssignment.retrySlices, undefined);
+assert.strictEqual(parentScopeQueue.summary.admissionPressure.promoteUpwardQueueItemCount, 1);
+const parentScopeConflictQueue = createSwarmHierarchicalMergeQueue({ index: parentScopeConflictIndex, generatedAt: 7285 });
+const parentScopeConflictAssignments = parentScopeConflictQueue.assignments.filter((assignment) => (
+  [parentScopeBundle.jobId, parentScopeBundleB.jobId].includes(assignment.jobId)
 ));
-assert.strictEqual(publicApiConflictQueue.summary.promoteCount, 2);
-assert.deepStrictEqual(publicApiConflictAssignments.map((assignment) => assignment.action), ['promote', 'promote']);
-assert.ok(publicApiConflictAssignments.every((assignment) => assignment.reasons.includes('public-api-or-contract-region')));
-assert.ok(publicApiConflictAssignments.every((assignment) => assignment.reasons.includes('conflicting-changes')));
-assert.strictEqual(new Set(publicApiConflictAssignments.map((assignment) => assignment.promoteToScopeId)).size, 1);
-assert.strictEqual(publicApiConflictAssignments[0].promoteToScopeId, 'lane:runtime');
-assert.ok(publicApiConflictAssignments.every((assignment) => assignment.leaseKey.startsWith('merge:semantic:runtime:contract.public-api')));
-assert.ok(publicApiConflictAssignments.every((assignment) => assignment.requiredLeaseKeys.length === 1));
-assert.ok(publicApiConflictAssignments.every((assignment) => assignment.requiredLeaseKeys[0] === 'merge:lane:runtime'));
-const publicApiConflictDrainWork = createSwarmCoordinatorAgentDrainWork({
-  queue: publicApiConflictQueue,
-  coordinatorId: 'contract-coordinator',
+assert.strictEqual(parentScopeConflictQueue.summary.promoteCount, 2);
+assert.deepStrictEqual(parentScopeConflictAssignments.map((assignment) => assignment.action), ['promote', 'promote']);
+assert.ok(parentScopeConflictAssignments.every((assignment) => assignment.reasons.includes('parent-scope-region')));
+assert.ok(parentScopeConflictAssignments.every((assignment) => assignment.reasons.includes('conflicting-changes')));
+assert.strictEqual(new Set(parentScopeConflictAssignments.map((assignment) => assignment.promoteToScopeId)).size, 1);
+assert.strictEqual(parentScopeConflictAssignments[0].promoteToScopeId, 'lane:runtime');
+assert.ok(parentScopeConflictAssignments.every((assignment) => assignment.leaseKey.startsWith('merge:semantic:runtime:scope.parent')));
+assert.ok(parentScopeConflictAssignments.every((assignment) => assignment.requiredLeaseKeys.length === 1));
+assert.ok(parentScopeConflictAssignments.every((assignment) => assignment.requiredLeaseKeys[0] === 'merge:lane:runtime'));
+const parentScopeConflictDrainWork = createSwarmCoordinatorAgentDrainWork({
+  queue: parentScopeConflictQueue,
+  coordinatorId: 'parent-scope-coordinator',
   generatedAt: 7286
 });
-assert.strictEqual(publicApiConflictDrainWork.summary.escalatedCount, 2);
-assert.strictEqual(new Set(publicApiConflictDrainWork.assignments.map((assignment) => assignment.leaseScope)).size, 1);
+assert.strictEqual(parentScopeConflictDrainWork.summary.escalatedCount, 2);
+assert.strictEqual(new Set(parentScopeConflictDrainWork.assignments.map((assignment) => assignment.leaseScope)).size, 1);
 assert.deepStrictEqual(
-  publicApiConflictDrainWork.byLeaseScope['merge:lane:runtime'].sort(),
-  [publicApiBundle.jobId, publicApiBundleB.jobId].sort()
+  parentScopeConflictDrainWork.byLeaseScope['merge:lane:runtime'].sort(),
+  [parentScopeBundle.jobId, parentScopeBundleB.jobId].sort()
 );
-assert.ok(publicApiConflictDrainWork.assignments.every((assignment) => assignment.requiredLeaseKeys[0] === assignment.leaseScope));
+assert.ok(parentScopeConflictDrainWork.assignments.every((assignment) => assignment.requiredLeaseKeys[0] === assignment.leaseScope));
 const unknownRegionQueue = createSwarmHierarchicalMergeQueue({ index: unknownRegionIndex, generatedAt: 7290 });
 const unknownRegionAssignment = unknownRegionQueue.assignments.find((assignment) => assignment.jobId === unknownRegionBundle.jobId);
 assert.strictEqual(unknownRegionAssignment.action, 'promote');
@@ -1197,6 +1299,30 @@ assert.deepStrictEqual(customScope.changedRegions, ['content.docs']);
 assert.deepStrictEqual(customScope.metadata, { ownerKind: 'adapter-defined' });
 assert.deepStrictEqual(customScope.jobIds, []);
 assert.ok(customScopeQueue.assignments.every((assignment) => assignment.scopeId.startsWith('semantic-region:')));
+const parentChildScopeQueue = createSwarmHierarchicalMergeQueue({
+  index: regionIndex,
+  scopes: [
+    {
+      id: 'scope:parent',
+      kind: 'parent',
+      parentId: 'root',
+      title: 'Parent queue',
+      leaseKey: 'merge:scope:parent'
+    },
+    {
+      id: 'scope:child',
+      kind: 'child',
+      parentId: 'scope:parent',
+      title: 'Child queue',
+      leaseKey: 'merge:scope:child'
+    }
+  ],
+  generatedAt: 7355
+});
+assert.strictEqual(parentChildScopeQueue.scopes.find((scope) => scope.id === 'scope:parent').kind, 'parent');
+assert.strictEqual(parentChildScopeQueue.scopes.find((scope) => scope.id === 'scope:child').kind, 'child');
+assert.strictEqual(parentChildScopeQueue.leaseRecords.find((record) => record.scopeId === 'scope:parent').scopeClass, 'parent');
+assert.strictEqual(parentChildScopeQueue.leaseRecords.find((record) => record.scopeId === 'scope:child').scopeClass, 'child');
 const sameLaneRuntimeJob = scalePlan.jobs.find((job) => job.id !== regionBundleA.jobId && job.lane === 'runtime');
 assert.ok(sameLaneRuntimeJob);
 const sameLaneUnregionedBundle = createSwarmMergeBundle({
@@ -1215,6 +1341,54 @@ const sameLaneConflictQueue = createSwarmHierarchicalMergeQueue({
   generatedAt: 7500
 });
 assert.deepStrictEqual(sameLaneConflictQueue.promotions.map((promotion) => promotion.toScopeId), ['lane:runtime', 'lane:runtime']);
+const localDrainBundle = createSwarmMergeBundle({
+  result: {
+    jobId: 'synthetic-local-drain',
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-local-drain.ts'],
+    changedRegions: ['content.docs'],
+    queueItemIds: ['synthetic-local-drain'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/local-drain/changes.patch',
+  riskLevel: 'low'
+});
+const publicContractBundle = createSwarmMergeBundle({
+  result: {
+    jobId: 'synthetic-public-contract',
+    status: 'verified',
+    changedPaths: ['src/hot/runtime-public-contract.ts'],
+    changedRegions: ['public-contract'],
+    queueItemIds: ['synthetic-public-contract'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/public-contract/changes.patch',
+  riskLevel: 'low'
+});
+const publicContractAdmission = createSwarmMergeAdmission({
+  index: createSwarmMergeIndex({ bundles: [localDrainBundle, publicContractBundle], generatedAt: 7501 }),
+  maxReady: 1,
+  maxChangedPaths: 2,
+  maxChangedRegions: 2,
+  generatedAt: 7501
+});
+assert.deepStrictEqual(publicContractAdmission.admitted, [localDrainBundle.jobId]);
+const publicContractQueue = createSwarmHierarchicalMergeQueue({
+  index: createSwarmMergeIndex({ bundles: [localDrainBundle, publicContractBundle], generatedAt: 7501 }),
+  admission: publicContractAdmission,
+  generatedAt: 7502
+});
+const publicContractLocalAssignment = publicContractQueue.assignments.find((assignment) => assignment.jobId === localDrainBundle.jobId);
+const publicContractAssignment = publicContractQueue.assignments.find((assignment) => assignment.jobId === publicContractBundle.jobId);
+assert.ok(publicContractLocalAssignment);
+assert.ok(publicContractAssignment);
+assert.strictEqual(publicContractQueue.summary.applyLocalCount, 1);
+assert.strictEqual(publicContractQueue.summary.promoteCount, 1);
+assert.strictEqual(publicContractLocalAssignment.action, 'apply-local');
+assert.strictEqual(publicContractAssignment.action, 'promote');
+assert.strictEqual(publicContractAssignment.promoteToScopeId, 'root');
+assert.ok(publicContractAssignment.reasons.includes('public-contract-region'));
+assert.ok(publicContractAssignment.reasons.includes('parent-scope-region'));
 const terminalJobs = [scalePlan.jobs[8], scalePlan.jobs[9], scalePlan.jobs[10], scalePlan.jobs[11], scalePlan.jobs[12]];
 assert.ok(terminalJobs.every(Boolean));
 const terminalBundleStale = createSwarmMergeBundle({
@@ -1417,6 +1591,7 @@ assert.deepStrictEqual(drainApply.queueItemIds, regionBundleA.queueItemIds);
 assert.ok(drainApply.leaseId.startsWith('swarm-coordinator-agent-drain-lease:'));
 assert.ok(drainApply.leaseScope.startsWith('merge:semantic:'));
 assert.strictEqual(drainApply.queueId, hierarchicalQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).scopeId);
+assert.strictEqual(drainApply.metadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
 assert.deepStrictEqual(
   coordinatorDrainWork.terminalDecisions.find((decision) => decision.jobId === regionBundleA.jobId).queueItemIds,
   regionBundleA.queueItemIds
@@ -1435,6 +1610,7 @@ assert.deepStrictEqual(drainQueue.queueItemIds, regionBundleB.queueItemIds);
 assert.ok(drainQueue.reasons.includes('max-ready'));
 assert.strictEqual(coordinatorDrainWork.activeAssignments[0].leaseScope, drainQueue.leaseScope);
 assert.deepStrictEqual(coordinatorDrainWork.byLeaseScope[drainQueue.leaseScope], [regionBundleB.jobId]);
+assert.strictEqual(drainQueue.metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
 const stableCoordinatorDrainWork = createSwarmCoordinatorAgentDrainWork({
   queue: createSwarmHierarchicalMergeQueue({ index: regionIndex, admission, generatedAt: 7201 }),
   coordinatorId: 'coordinator-1',
@@ -1615,6 +1791,53 @@ assert.strictEqual(
   'conflict'
 );
 
+const normalizedTerminalOutcomes = [
+  normalizeSwarmTerminalOutcome('applied'),
+  normalizeSwarmTerminalOutcome('committed'),
+  normalizeSwarmTerminalOutcome({ label: 'evidence only' }),
+  normalizeSwarmTerminalOutcome({ status: 'no change' }),
+  normalizeSwarmTerminalOutcome({ generatedByCollector: true }),
+  normalizeSwarmTerminalOutcome({ status: 'patch missing' }),
+  normalizeSwarmTerminalOutcome({ outcome: 'bundle missing' }),
+  normalizeSwarmTerminalOutcome({ decision: 'rerun' }),
+  normalizeSwarmTerminalOutcome({ outcome: 'rejected' }),
+  normalizeSwarmTerminalOutcome({ label: 'conflict blocked' }),
+  normalizeSwarmTerminalOutcome({ status: 'human blocked' }),
+  normalizeSwarmTerminalOutcome({ decision: 'coordinator review' })
+];
+assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.label), [
+  'applied',
+  'committed',
+  'evidence-only',
+  'no-change',
+  'generated-by-collector',
+  'patch-missing',
+  'bundle-missing',
+  'rerun',
+  'rejected',
+  'conflict-blocked',
+  'human-blocked',
+  'coordinator-review'
+]);
+assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.success), [
+  true,
+  true,
+  true,
+  true,
+  true,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false
+]);
+assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'patch missing' }).incomplete, true);
+assert.strictEqual(normalizeSwarmTerminalOutcome({ outcome: 'bundle missing' }).incomplete, true);
+assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'patch missing' }).blocker, false);
+assert.strictEqual(normalizeSwarmTerminalOutcome({ outcome: 'bundle missing' }).blocker, false);
+
 const terminalOutcomeModel = createSwarmQueueOutcomeModel({ drainWork: terminalDrainWork, generatedAt: 7600 });
 assert.strictEqual(terminalOutcomeModel.kind, FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND);
 assert.strictEqual(terminalOutcomeModel.summary.terminalCount, 2);
@@ -1700,6 +1923,107 @@ assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['queue-conflict'],
 assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['task-conflict'], 'new-rejected-task');
 assert.strictEqual(queueAliasCollapse.subjectIdByAlias['job-direct'], 'job-direct');
 assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['job-direct'], 'new-committed-job');
+
+const sameRunTerminalReconciliation = reconcileSwarmTerminalState({
+  collections: {
+    ready: [
+      { id: 'same-ready', jobId: 'job-same', taskId: 'task-same', queueItemIds: ['queue-same'] },
+      { id: 'same-superseded-review', jobId: 'job-superseded', taskId: 'task-superseded' }
+    ],
+    review: [
+      { id: 'same-review', jobId: 'job-same', taskId: 'task-same', queueItemIds: ['queue-same'] }
+    ]
+  },
+  decisions: [
+    { id: 'same-applied', jobId: 'job-same', taskId: 'task-same', queueItemIds: ['queue-same'], decision: 'applied', generatedAt: 10 },
+    { id: 'same-superseded', jobId: 'job-superseded', taskId: 'task-superseded', decision: 'superseded', generatedAt: 11 }
+  ],
+  generatedAt: 12
+});
+assert.strictEqual(sameRunTerminalReconciliation.kind, FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND);
+assert.strictEqual(sameRunTerminalReconciliation.summary.inputItemCount, 3);
+assert.strictEqual(sameRunTerminalReconciliation.summary.collapsedItemCount, 3);
+assert.strictEqual(sameRunTerminalReconciliation.summary.resolvedCount, 2);
+assert.strictEqual(sameRunTerminalReconciliation.summary.terminalCount, 2);
+assert.strictEqual(sameRunTerminalReconciliation.summary.activeItemCount, 0);
+assert.strictEqual(sameRunTerminalReconciliation.summary.failedWorkerOutputCount, 0);
+assert.strictEqual(sameRunTerminalReconciliation.collections.ready?.length ?? 0, 0);
+assert.strictEqual(sameRunTerminalReconciliation.collections.review?.length ?? 0, 0);
+assert.deepStrictEqual(
+  sameRunTerminalReconciliation.resolved.map((resolution) => resolution.decisionId).sort(),
+  ['same-applied', 'same-superseded']
+);
+assert.strictEqual(sameRunTerminalReconciliation.resolved.find((resolution) => resolution.decisionId === 'same-applied').sourceItemIds.length, 2);
+assert.strictEqual(sameRunTerminalReconciliation.collections.done.length, 2);
+
+const redrainTerminalReconciliation = reconcileSwarmTerminalState({
+  collections: {
+    failed: [
+      { id: 'redrain-stale-failed-item', jobId: 'job-redrain-old', taskId: 'task-redrain', queueItemIds: ['queue-redrain'], status: 'failed' }
+    ]
+  },
+  decisions: [
+    {
+      id: 'old-stale-failed-decision',
+      jobId: 'job-redrain-old',
+      taskId: 'task-redrain',
+      queueItemIds: ['queue-redrain'],
+      decision: 'rerun',
+      status: 'failed',
+      reasons: ['stale-against-head'],
+      generatedAt: 20
+    },
+    {
+      id: 'new-committed-redrain',
+      jobId: 'job-redrain-new',
+      taskId: 'task-redrain',
+      queueItemIds: ['queue-redrain'],
+      decision: 'committed',
+      generatedAt: 30
+    }
+  ],
+  generatedAt: 31
+});
+assert.strictEqual(redrainTerminalReconciliation.summary.inputItemCount, 1);
+assert.strictEqual(redrainTerminalReconciliation.summary.supersededDecisionCount, 1);
+assert.strictEqual(redrainTerminalReconciliation.summary.collapsedItemCount, 1);
+assert.strictEqual(redrainTerminalReconciliation.summary.resolvedCount, 1);
+assert.strictEqual(redrainTerminalReconciliation.summary.terminalUnresolvedCount, 0);
+assert.strictEqual(redrainTerminalReconciliation.summary.failedWorkerOutputCount, 0);
+assert.strictEqual(redrainTerminalReconciliation.collections.failed?.length ?? 0, 0);
+assert.strictEqual(redrainTerminalReconciliation.collections.done.length, 1);
+assert.strictEqual(redrainTerminalReconciliation.resolved[0].decisionId, 'new-committed-redrain');
+assert.strictEqual(redrainTerminalReconciliation.latestDecisionIdByAlias['job-redrain-old'], 'new-committed-redrain');
+assert.strictEqual(redrainTerminalReconciliation.latestDecisionIdByAlias['queue-redrain'], 'new-committed-redrain');
+
+const visibleTerminalReconciliation = reconcileSwarmTerminalState({
+  collections: {
+    failed: [
+      { id: 'rejected-failed-item', jobId: 'job-rejected', taskId: 'task-rejected', status: 'failed' },
+      { id: 'rerun-failed-item', jobId: 'job-rerun', taskId: 'task-rerun', status: 'failed' },
+      { id: 'conflict-failed-item', jobId: 'job-conflict', taskId: 'task-conflict', status: 'failed' },
+      { id: 'question-failed-item', jobId: 'job-question', taskId: 'task-question', status: 'failed' }
+    ]
+  },
+  decisions: [
+    { id: 'new-rejected-visible', jobId: 'job-rejected', taskId: 'task-rejected', decision: 'rejected', generatedAt: 40 },
+    { id: 'new-rerun-visible', jobId: 'job-rerun', taskId: 'task-rerun', decision: 'rerun', reasons: ['stale-against-head'], generatedAt: 41 },
+    { id: 'new-conflict-visible', jobId: 'job-conflict', taskId: 'task-conflict', decision: 'queued', conflictingJobIds: ['other-job'], reasons: ['conflicting-changes'], generatedAt: 42 },
+    { id: 'new-question-visible', jobId: 'job-question', taskId: 'task-question', decision: 'blocked', reasons: ['human-question'], generatedAt: 43 }
+  ],
+  generatedAt: 44
+});
+assert.strictEqual(visibleTerminalReconciliation.summary.inputItemCount, 4);
+assert.strictEqual(visibleTerminalReconciliation.summary.collapsedItemCount, 4);
+assert.strictEqual(visibleTerminalReconciliation.summary.resolvedCount, 0);
+assert.strictEqual(visibleTerminalReconciliation.summary.terminalUnresolvedCount, 4);
+assert.strictEqual(visibleTerminalReconciliation.summary.failedWorkerOutputCount, 0);
+assert.strictEqual(visibleTerminalReconciliation.collections.failed?.length ?? 0, 0);
+assert.strictEqual(visibleTerminalReconciliation.collections.terminal.length, 4);
+assert.deepStrictEqual(
+  visibleTerminalReconciliation.terminalUnresolved.map((resolution) => resolution.decisionId).sort(),
+  ['new-conflict-visible', 'new-question-visible', 'new-rejected-visible', 'new-rerun-visible']
+);
 
 const decomposed = decomposeSwarmFeature({
   featureId: 'feature-x',

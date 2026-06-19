@@ -96,12 +96,16 @@ export const FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND = 'frontier.swarm.
 export const FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_VERSION = 1;
 export const FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND = 'frontier.swarm.queue-outcome-model';
 export const FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_VERSION = 1;
+export const FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND = 'frontier.swarm.terminal-state-reconciliation';
+export const FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_VERSION = 1;
 export const FRONTIER_SWARM_PRIORITY_POLICY_KIND = 'frontier.swarm.priority-policy';
 export const FRONTIER_SWARM_PRIORITY_POLICY_VERSION = 1;
 export const FRONTIER_SWARM_MODEL_ROUTE_KIND = 'frontier.swarm.model-route';
 export const FRONTIER_SWARM_MODEL_ROUTE_VERSION = 1;
 export const FRONTIER_SWARM_PANEL_EVALUATION_KIND = 'frontier.swarm.panel-evaluation';
 export const FRONTIER_SWARM_PANEL_EVALUATION_VERSION = 1;
+export const FRONTIER_SWARM_CONTINUOUS_POOL_STATE_KIND = 'frontier.swarm.continuous-pool-state';
+export const FRONTIER_SWARM_CONTINUOUS_POOL_STATE_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
@@ -203,6 +207,38 @@ export type FrontierSwarmRebaseStatus =
 export type FrontierSwarmModelRouteStrategy = 'single-cheap' | 'single-deep' | 'panel' | 'tournament' | string;
 export type FrontierSwarmPanelStrategy = 'panel' | 'tournament' | 'auto' | string;
 export type FrontierSwarmTimePressure = 'relaxed' | 'normal' | 'soon' | 'urgent' | string;
+export type FrontierSwarmContinuousPoolPhase =
+  | 'active'
+  | 'queued'
+  | 'review-drain'
+  | 'rerun'
+  | 'human-blocked'
+  | 'conflicted'
+  | 'capacity-blocked'
+  | 'done'
+  | string;
+export type FrontierSwarmContinuousPoolBucket =
+  | 'active'
+  | 'queued'
+  | 'review-drain'
+  | 'rerun'
+  | 'human-blocked'
+  | 'conflicted'
+  | 'capacity-blocked'
+  | 'done'
+  | string;
+export type FrontierSwarmContinuousPoolStopCondition =
+  | 'drained'
+  | 'human-blocked'
+  | 'conflicted'
+  | 'capacity-blocked'
+  | string;
+export type FrontierSwarmContinuousPoolRefillAction =
+  | 'drain-review'
+  | 'rerun-stale'
+  | 'lease-queued'
+  | 'start-speculative-backlog'
+  | string;
 
 export interface FrontierSwarmComputeInput {
   id: string;
@@ -848,6 +884,9 @@ export interface FrontierSwarmPlanInput extends FrontierSwarmPlanFilter {
   maxConcurrencyKeyConcurrency?: Record<string, number>;
   maxComputeConcurrency?: Record<string, number>;
   resourceQuotas?: Record<string, number>;
+  routingMode?: FrontierSwarmModelRoutingMode;
+  routingPolicy?: FrontierSwarmModelRoutingPolicyInput | FrontierSwarmModelRoutingPolicy | unknown;
+  routingContext?: unknown;
   metadata?: unknown;
 }
 
@@ -1434,6 +1473,8 @@ export interface FrontierSwarmJobResultInput {
   riskLevel?: FrontierSwarmRiskLevel;
   mergeDisposition?: FrontierSwarmMergeDisposition;
   verification?: readonly FrontierSwarmVerificationResultInput[];
+  semanticImport?: unknown;
+  traceShards?: readonly unknown[];
   lastMessage?: string;
   error?: unknown;
   metadata?: unknown;
@@ -1479,6 +1520,8 @@ export interface FrontierSwarmJobResult {
   riskLevel: FrontierSwarmRiskLevel;
   mergeDisposition: FrontierSwarmMergeDisposition;
   verification: FrontierSwarmVerificationResult[];
+  semanticImport?: unknown;
+  traceShards: unknown[];
   lastMessage?: string;
   error?: string;
   metadata?: JsonObject;
@@ -1506,6 +1549,8 @@ export interface FrontierSwarmMergeBundleInput {
   staleAgainstHead?: boolean;
   branchName?: string;
   commit?: string;
+  semanticImport?: unknown;
+  traceShards?: readonly unknown[];
   metadata?: unknown;
   generatedAt?: number;
 }
@@ -1537,6 +1582,8 @@ export interface FrontierSwarmMergeBundle {
   commandsPassed: FrontierSwarmVerificationResult[];
   commandsFailed: FrontierSwarmVerificationResult[];
   queueItemIds: string[];
+  semanticImport?: unknown;
+  traceShards: unknown[];
   branchName?: string;
   commit?: string;
   staleAgainstHead: boolean;
@@ -1660,6 +1707,7 @@ export interface FrontierSwarmMergeIndexEntry {
   queueItemIds: string[];
   reasons: string[];
   generatedAt: number;
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmMergeConflict {
@@ -2827,6 +2875,8 @@ export interface FrontierSwarmPatchStack {
 
 export type FrontierSwarmMergeQueueScopeKind =
   | 'root'
+  | 'parent'
+  | 'child'
   | 'lane'
   | 'semantic-region'
   | 'path'
@@ -2901,6 +2951,8 @@ export interface FrontierSwarmMergeQueueRetrySlice {
 
 export type FrontierSwarmHierarchicalQueueLeaseScopeClass =
   | 'root'
+  | 'parent'
+  | 'child'
   | 'lane'
   | 'semantic'
   | 'path'
@@ -3056,6 +3108,7 @@ export interface FrontierSwarmMergeQueueAssignment {
   semanticSliceLeaseKeys?: string[];
   parentDecisionRegions?: string[];
   unknownRegions?: string[];
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmMergeQueuePromotion {
@@ -3100,6 +3153,7 @@ export type FrontierSwarmQueueOutcomeCategory =
 export type FrontierSwarmQueueTerminalOutcome =
   | 'applied'
   | 'committed'
+  | 'superseded'
   | 'rejected'
   | 'recorded'
   | 'closed'
@@ -3116,6 +3170,54 @@ export type FrontierSwarmQueueOutcome =
   | FrontierSwarmQueueHumanBlockedOutcome
   | FrontierSwarmQueueStaleRerunOutcome
   | FrontierSwarmQueueConflictOutcome;
+
+export const FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS = [
+  'applied',
+  'committed',
+  'evidence-only',
+  'no-change',
+  'generated-by-collector',
+  'patch-missing',
+  'bundle-missing',
+  'rerun',
+  'rejected',
+  'conflict-blocked',
+  'human-blocked',
+  'coordinator-review'
+] as const;
+
+export type FrontierSwarmTerminalOutcomeLabel = typeof FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS[number] | string;
+export type FrontierSwarmTerminalOutcomeCategory = 'success' | 'incomplete' | 'rerun' | 'rejected' | 'blocked' | 'review' | 'unknown' | string;
+
+export interface FrontierSwarmTerminalOutcomeInput {
+  label?: FrontierSwarmTerminalOutcomeLabel | string;
+  outcome?: FrontierSwarmTerminalOutcomeLabel | string;
+  status?: string;
+  decision?: string;
+  generatedByCollector?: boolean;
+  evidenceOnly?: boolean;
+  noChange?: boolean;
+  patchMissing?: boolean;
+  bundleMissing?: boolean;
+  conflictBlocked?: boolean;
+  humanBlocked?: boolean;
+  coordinatorReview?: boolean;
+  reasons?: readonly string[];
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmTerminalOutcome {
+  label: FrontierSwarmTerminalOutcomeLabel;
+  category: FrontierSwarmTerminalOutcomeCategory;
+  terminal: true;
+  success: boolean;
+  incomplete: boolean;
+  blocker: boolean;
+  review: boolean;
+  generatedByCollector: boolean;
+  reasons: string[];
+  metadata?: JsonObject;
+}
 
 export interface FrontierSwarmQueueOutcomeClassification {
   category: FrontierSwarmQueueOutcomeCategory;
@@ -3229,6 +3331,119 @@ export interface FrontierSwarmQueueOutcomeModel {
     humanBlockedCount: number;
     staleRerunCount: number;
     conflictCount: number;
+    visibleReviewDebtCount: number;
+    visibleHumanBlockedCount: number;
+    visibleRerunCount: number;
+    visibleConflictCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export type FrontierSwarmTerminalStateBucket =
+  | 'ready'
+  | 'review'
+  | 'stale'
+  | 'failed'
+  | 'done'
+  | 'terminal'
+  | string;
+
+export interface FrontierSwarmTerminalStateItemInput {
+  id?: string;
+  subjectId?: string;
+  subjectAliases?: readonly string[];
+  jobId?: string;
+  taskId?: string;
+  queueItemId?: string;
+  queueItemIds?: readonly string[];
+  bucket?: FrontierSwarmTerminalStateBucket;
+  status?: string;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmTerminalStateCollectionInput {
+  bucket: FrontierSwarmTerminalStateBucket;
+  items: readonly (string | FrontierSwarmTerminalStateItemInput)[];
+}
+
+export type FrontierSwarmTerminalStateCollectionsInput =
+  | Record<string, readonly (string | FrontierSwarmTerminalStateItemInput)[]>
+  | readonly FrontierSwarmTerminalStateCollectionInput[];
+
+export interface FrontierSwarmTerminalStateItem {
+  id: string;
+  subjectId: string;
+  subjectAliases: string[];
+  jobId?: string;
+  taskId?: string;
+  queueItemIds: string[];
+  bucket: FrontierSwarmTerminalStateBucket;
+  status?: string;
+  generatedAt: number;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmTerminalStateResolution {
+  id: string;
+  subjectId: string;
+  subjectAliases: string[];
+  jobId?: string;
+  taskId?: string;
+  queueItemIds: string[];
+  bucket: FrontierSwarmTerminalStateBucket;
+  sourceItemIds: string[];
+  sourceBuckets: FrontierSwarmTerminalStateBucket[];
+  decisionId: string;
+  decisionCategory: FrontierSwarmQueueOutcomeCategory;
+  decisionOutcome: FrontierSwarmQueueOutcome;
+  decisionTerminal: boolean;
+  decisionGeneratedAt: number;
+  resolved: boolean;
+  terminal: boolean;
+  failedWorkerOutput: false;
+  reasons: string[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmTerminalStateReconciliationInput {
+  id?: string;
+  collections?: FrontierSwarmTerminalStateCollectionsInput;
+  decisions?: readonly (FrontierSwarmQueueOutcomeDecisionInput | FrontierSwarmQueueOutcomeDecision)[];
+  outcomeModel?: FrontierSwarmQueueOutcomeModel;
+  generatedAt?: number;
+  doneBucket?: FrontierSwarmTerminalStateBucket;
+  terminalBucket?: FrontierSwarmTerminalStateBucket;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmTerminalStateReconciliation {
+  kind: typeof FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND;
+  version: typeof FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_VERSION;
+  id: string;
+  generatedAt: number;
+  outcomeModelId: string;
+  items: FrontierSwarmTerminalStateItem[];
+  active: FrontierSwarmTerminalStateItem[];
+  failedWorkerOutput: FrontierSwarmTerminalStateItem[];
+  resolved: FrontierSwarmTerminalStateResolution[];
+  terminal: FrontierSwarmTerminalStateResolution[];
+  terminalUnresolved: FrontierSwarmTerminalStateResolution[];
+  collapsed: FrontierSwarmTerminalStateResolution[];
+  collections: Record<string, FrontierSwarmTerminalStateItem[]>;
+  byBucket: Record<string, string[]>;
+  latestDecisionIdByAlias: Record<string, string>;
+  summary: {
+    inputItemCount: number;
+    decisionCount: number;
+    latestDecisionCount: number;
+    supersededDecisionCount: number;
+    activeItemCount: number;
+    collapsedItemCount: number;
+    resolvedCount: number;
+    terminalCount: number;
+    terminalUnresolvedCount: number;
+    failedWorkerOutputCount: number;
     visibleReviewDebtCount: number;
     visibleHumanBlockedCount: number;
     visibleRerunCount: number;
@@ -3374,6 +3589,7 @@ export interface FrontierSwarmCoordinatorAgentDrainAssignment {
   requiredLeaseKeys?: string[];
   parentDecisionRegions?: string[];
   unknownRegions?: string[];
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmCoordinatorAgentDrainTerminalDecision {
@@ -3395,6 +3611,7 @@ export interface FrontierSwarmCoordinatorAgentDrainTerminalDecision {
   requiredLeaseKeys?: string[];
   parentDecisionRegions?: string[];
   unknownRegions?: string[];
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmCoordinatorAgentPromotedWork {
@@ -3414,6 +3631,123 @@ export interface FrontierSwarmCoordinatorAgentPromotedWork {
   reasons: string[];
   requiredLeaseScopeIds?: string[];
   requiredLeaseKeys?: string[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmContinuousPoolWorkItemInput {
+  id?: string;
+  jobId?: string;
+  taskId?: string;
+  queueItemId?: string;
+  queueItemIds?: readonly string[];
+  lane?: string;
+  bucket?: FrontierSwarmContinuousPoolBucket;
+  source?: string;
+  status?: string;
+  priority?: number;
+  priorityClass?: FrontierSwarmPriorityClass;
+  reasons?: readonly string[];
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmContinuousPoolWorkItem {
+  id: string;
+  jobId?: string;
+  taskId?: string;
+  queueItemIds: string[];
+  lane?: string;
+  bucket: FrontierSwarmContinuousPoolBucket;
+  source: string;
+  status?: string;
+  priority?: number;
+  priorityClass: FrontierSwarmPriorityClass;
+  reasons: string[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmContinuousPoolStateInput {
+  id?: string;
+  maxWorkers?: number;
+  active?: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[];
+  queued?: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[];
+  reviewDrain?: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[];
+  rerun?: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[];
+  humanBlocked?: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[];
+  conflicted?: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[];
+  conflicts?: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[];
+  capacityBlocked?: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[];
+  done?: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[];
+  activeLeases?: readonly FrontierSwarmLease[];
+  queueSnapshot?: FrontierSwarmQueueSnapshot;
+  schedule?: FrontierSwarmSchedule;
+  drainWork?: FrontierSwarmCoordinatorAgentDrainWork;
+  outcomeModel?: FrontierSwarmQueueOutcomeModel;
+  decisions?: readonly (FrontierSwarmQueueOutcomeDecisionInput | FrontierSwarmQueueOutcomeDecision)[];
+  terminalState?: FrontierSwarmTerminalStateReconciliation;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmContinuousPoolRefillSlot {
+  id: string;
+  index: number;
+  state: 'fillable' | 'idle' | string;
+  recommendationId?: string;
+}
+
+export interface FrontierSwarmContinuousPoolRefillRecommendation {
+  id: string;
+  slotId: string;
+  action: FrontierSwarmContinuousPoolRefillAction;
+  bucket: FrontierSwarmContinuousPoolBucket;
+  itemIds: string[];
+  jobIds: string[];
+  priority: number;
+  priorityClass: FrontierSwarmPriorityClass;
+  reasons: string[];
+}
+
+export interface FrontierSwarmContinuousPoolState {
+  kind: typeof FRONTIER_SWARM_CONTINUOUS_POOL_STATE_KIND;
+  version: typeof FRONTIER_SWARM_CONTINUOUS_POOL_STATE_VERSION;
+  id: string;
+  generatedAt: number;
+  phase: FrontierSwarmContinuousPoolPhase;
+  maxWorkers?: number;
+  activeLeases: FrontierSwarmLease[];
+  buckets: {
+    active: FrontierSwarmContinuousPoolWorkItem[];
+    queued: FrontierSwarmContinuousPoolWorkItem[];
+    reviewDrain: FrontierSwarmContinuousPoolWorkItem[];
+    rerun: FrontierSwarmContinuousPoolWorkItem[];
+    humanBlocked: FrontierSwarmContinuousPoolWorkItem[];
+    conflicted: FrontierSwarmContinuousPoolWorkItem[];
+    capacityBlocked: FrontierSwarmContinuousPoolWorkItem[];
+    done: FrontierSwarmContinuousPoolWorkItem[];
+  };
+  byBucket: Record<string, string[]>;
+  refillSlots: FrontierSwarmContinuousPoolRefillSlot[];
+  refillRecommendations: FrontierSwarmContinuousPoolRefillRecommendation[];
+  stopCondition?: FrontierSwarmContinuousPoolStopCondition;
+  stopConditions: FrontierSwarmContinuousPoolStopCondition[];
+  stopped: boolean;
+  drained: boolean;
+  summary: {
+    activeCount: number;
+    queuedCount: number;
+    reviewDrainCount: number;
+    rerunCount: number;
+    humanBlockedCount: number;
+    conflictedCount: number;
+    capacityBlockedCount: number;
+    doneCount: number;
+    pendingCount: number;
+    terminalUnresolvedCount: number;
+    refillSlotCount: number;
+    idleRefillSlotCount: number;
+    refillRecommendationCount: number;
+  };
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmProof {
@@ -3974,6 +4308,9 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
   const commandsFailed = result.verification.filter((entry) => entry.status !== undefined && entry.status !== 0 && entry.required !== false);
   const ownedFilesTouched = job ? changedPaths.filter((file) => job.allowedWrites.some((glob) => matchesGlob(file, glob))) : changedPaths;
   const reasons = mergeBundleReasons(result, disposition, input.staleAgainstHead ?? false);
+  const metadata = mergeSwarmMetadata([input.metadata, job?.metadata, result.metadata]);
+  const semanticImport = input.semanticImport !== undefined ? input.semanticImport : result.semanticImport;
+  const traceShards = cloneJsonValue([...(input.traceShards ?? []), ...(result.traceShards ?? [])]);
   return {
     kind: FRONTIER_SWARM_MERGE_BUNDLE_KIND,
     version: FRONTIER_SWARM_MERGE_BUNDLE_VERSION,
@@ -3999,11 +4336,13 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
     commandsPassed,
     commandsFailed,
     queueItemIds,
+    ...(semanticImport !== undefined ? { semanticImport: cloneJsonValue(semanticImport) } : {}),
+    traceShards,
     ...(input.branchName ? { branchName: input.branchName } : {}),
     ...(input.commit ? { commit: input.commit } : {}),
     staleAgainstHead: input.staleAgainstHead ?? false,
     reasons,
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+    ...(metadata ? { metadata } : {})
   };
 }
 
@@ -4116,9 +4455,11 @@ export function deriveSwarmQueueStatus(input: FrontierSwarmDerivedQueueStatusInp
 
 export function createSwarmMergeIndex(input: FrontierSwarmMergeIndexInput): FrontierSwarmMergeIndex {
   const generatedAt = input.generatedAt ?? Date.now();
+  const metadata = mergeSwarmMetadata([input.metadata]);
   const entries: FrontierSwarmMergeIndexEntry[] = input.bundles.map((bundle) => {
     const patchStatus = input.patchStatuses?.[bundle.jobId] ?? (bundle.staleAgainstHead ? 'stale' : bundle.patchPath ? 'unknown' : 'missing');
     const staleAgainstHead = bundle.staleAgainstHead || patchStatus === 'stale' || patchStatus === 'failed-check';
+    const entryMetadata = mergeSwarmMetadata([bundle.metadata]);
     return {
       jobId: bundle.jobId,
       ...(bundle.taskId ? { taskId: bundle.taskId } : {}),
@@ -4142,7 +4483,8 @@ export function createSwarmMergeIndex(input: FrontierSwarmMergeIndexInput): Fron
       evidencePaths: [...bundle.evidencePaths],
       queueItemIds: [...bundle.queueItemIds],
       reasons: uniqueStrings([...bundle.reasons, ...(staleAgainstHead ? ['stale-against-head'] : [])]),
-      generatedAt: bundle.generatedAt
+      generatedAt: bundle.generatedAt,
+      ...(entryMetadata ? { metadata: entryMetadata } : {})
     };
   });
   const conflicts = createMergeIndexConflicts(entries);
@@ -4183,7 +4525,7 @@ export function createSwarmMergeIndex(input: FrontierSwarmMergeIndexInput): Fron
       conflictCount: conflicts.length,
       conflictedJobCount: conflictsByJob.size
     },
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+    ...(metadata ? { metadata } : {})
   };
 }
 
@@ -5193,6 +5535,7 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
       semanticSliceScopeIds,
       semanticSliceLeaseKeys
     });
+    const metadata = mergeSwarmMetadata([scope.metadata, entry.metadata]);
     const assignment: FrontierSwarmMergeQueueAssignment = {
       jobId: entry.jobId,
       ...(entry.taskId ? { taskId: entry.taskId } : {}),
@@ -5217,7 +5560,8 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
       ...(retrySlices.length ? { retrySlices } : {}),
       ...(semanticSliceScopeIds.length ? { semanticSliceScopeIds, semanticSliceLeaseKeys } : {}),
       ...(entryScopes?.parentDecisionRegions.length ? { parentDecisionRegions: [...entryScopes.parentDecisionRegions] } : {}),
-      ...(entryScopes?.unknownRegions.length ? { unknownRegions: [...entryScopes.unknownRegions] } : {})
+      ...(entryScopes?.unknownRegions.length ? { unknownRegions: [...entryScopes.unknownRegions] } : {}),
+      ...(metadata ? { metadata } : {})
     };
     assignments.push(assignment);
     scope.jobIds = uniqueStrings([...scope.jobIds, entry.jobId]);
@@ -5338,6 +5682,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
     const parentQueueId = assignment.action === 'promote'
       ? assignment.promoteToScopeId ?? assignment.parentScopeIds[0]
       : undefined;
+    const assignmentMetadata = mergeSwarmMetadata([leaseScopeRecord?.metadata, assignment.metadata]);
     return {
       id: 'swarm-coordinator-agent-drain-assignment:' + stableHash([input.queue.id, assignment.jobId, assignment.scopeId, assignment.action, parentQueueId]),
       jobId: assignment.jobId,
@@ -5372,7 +5717,8 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       ...(assignment.semanticSliceScopeIds?.length ? { semanticSliceScopeIds: [...assignment.semanticSliceScopeIds] } : {}),
       ...(assignment.semanticSliceLeaseKeys?.length ? { semanticSliceLeaseKeys: [...assignment.semanticSliceLeaseKeys] } : {}),
       ...(assignment.parentDecisionRegions?.length ? { parentDecisionRegions: [...assignment.parentDecisionRegions] } : {}),
-      ...(assignment.unknownRegions?.length ? { unknownRegions: [...assignment.unknownRegions] } : {})
+      ...(assignment.unknownRegions?.length ? { unknownRegions: [...assignment.unknownRegions] } : {}),
+      ...(assignmentMetadata ? { metadata: assignmentMetadata } : {})
     };
   });
   const terminalDecisions: FrontierSwarmCoordinatorAgentDrainTerminalDecision[] = assignments
@@ -5395,7 +5741,8 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       ...(assignment.semanticSliceScopeIds?.length ? { semanticSliceScopeIds: [...assignment.semanticSliceScopeIds] } : {}),
       ...(assignment.semanticSliceLeaseKeys?.length ? { semanticSliceLeaseKeys: [...assignment.semanticSliceLeaseKeys] } : {}),
       ...(assignment.parentDecisionRegions?.length ? { parentDecisionRegions: [...assignment.parentDecisionRegions] } : {}),
-      ...(assignment.unknownRegions?.length ? { unknownRegions: [...assignment.unknownRegions] } : {})
+      ...(assignment.unknownRegions?.length ? { unknownRegions: [...assignment.unknownRegions] } : {}),
+      ...(assignment.metadata ? { metadata: cloneJsonValue(assignment.metadata) as JsonObject } : {})
     }));
   const promotedWork: FrontierSwarmCoordinatorAgentPromotedWork[] = assignments
     .filter((assignment) => assignment.assignedAction === 'promote' && assignment.parentQueueId)
@@ -5415,7 +5762,8 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       terminal: false,
       reasons: [...assignment.reasons],
       requiredLeaseScopeIds: [...(assignment.requiredLeaseScopeIds ?? [])],
-      requiredLeaseKeys: [...(assignment.requiredLeaseKeys ?? [])]
+      requiredLeaseKeys: [...(assignment.requiredLeaseKeys ?? [])],
+      ...(assignment.metadata ? { metadata: cloneJsonValue(assignment.metadata) as JsonObject } : {})
     }));
   const activeAssignments = assignments.filter((assignment) => !coordinatorAgentDrainAssignmentIsTerminal(assignment));
   const blockers = terminalDecisions.filter((decision) => decision.assignedAction === 'block' || decision.decision === 'blocked');
@@ -5496,6 +5844,156 @@ export function summarizeSwarmCoordinatorAgentDrainWork(
   };
 }
 
+export function createSwarmContinuousPoolState(input: FrontierSwarmContinuousPoolStateInput = {}): FrontierSwarmContinuousPoolState {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const maxWorkers = positiveNumber(input.maxWorkers) || input.maxWorkers === 0
+    ? Math.max(0, Math.floor(input.maxWorkers as number))
+    : undefined;
+  const activeLeases = uniqueLeases([
+    ...(input.activeLeases ?? []),
+    ...(input.queueSnapshot?.leases ?? [])
+  ], generatedAt);
+  const outcomeModel = input.outcomeModel ?? (
+    input.drainWork || input.decisions?.length
+      ? createSwarmQueueOutcomeModel({
+        drainWork: input.drainWork,
+        decisions: input.decisions ?? [],
+        generatedAt
+      })
+      : undefined
+  );
+
+  const active = dedupeContinuousPoolItems([
+    ...normalizeContinuousPoolItems(input.active, 'active', 'input.active', generatedAt),
+    ...activeLeases.map((lease, index) => continuousPoolItemFromLease(lease, index)),
+    ...(input.queueSnapshot?.jobs ?? [])
+      .filter((job) => continuousPoolQueueStatusIsActive(job.status))
+      .map((job, index) => continuousPoolItemFromQueueJob(job, 'active', 'queue-snapshot', index)),
+    ...(input.schedule?.running ?? [])
+      .map((job, index) => continuousPoolItemFromScheduledJob(job, 'active', 'schedule.running', index))
+  ]);
+
+  const queued = dedupeContinuousPoolItems([
+    ...normalizeContinuousPoolItems(input.queued, 'queued', 'input.queued', generatedAt),
+    ...(input.queueSnapshot?.jobs ?? [])
+      .filter((job) => continuousPoolQueueStatusIsQueued(job.status))
+      .map((job, index) => continuousPoolItemFromQueueJob(job, 'queued', 'queue-snapshot', index)),
+    ...(input.schedule?.ready ?? [])
+      .map((job, index) => continuousPoolItemFromScheduledJob(job, 'queued', 'schedule.ready', index))
+  ]);
+
+  const reviewDrain = dedupeContinuousPoolItems([
+    ...normalizeContinuousPoolItems(input.reviewDrain, 'review-drain', 'input.reviewDrain', generatedAt),
+    ...(input.drainWork?.activeAssignments ?? [])
+      .filter((assignment) => assignment.decision === 'escalated' || assignment.assignedAction === 'promote' || assignment.classification === 'non-terminal')
+      .map((assignment, index) => continuousPoolItemFromDrainAssignment(assignment, 'review-drain', 'coordinator-drain-work', index)),
+    ...(input.drainWork?.promotedWork ?? [])
+      .map((work, index) => continuousPoolItemFromPromotedWork(work, 'review-drain', 'coordinator-promoted-work', index)),
+    ...(outcomeModel?.visibleReviewDebt ?? [])
+      .filter((decision) => decision.coordinatorReview && !decision.conflict)
+      .map((decision, index) => continuousPoolItemFromOutcomeDecision(decision, 'review-drain', 'queue-outcome-model', index)),
+    ...(input.terminalState?.terminalUnresolved ?? [])
+      .filter((resolution) => resolution.decisionCategory === 'coordinator-review')
+      .map((resolution, index) => continuousPoolItemFromTerminalResolution(resolution, 'review-drain', 'terminal-state', index))
+  ]);
+
+  const rerun = dedupeContinuousPoolItems([
+    ...normalizeContinuousPoolItems(input.rerun, 'rerun', 'input.rerun', generatedAt),
+    ...(outcomeModel?.visibleReruns ?? [])
+      .map((decision, index) => continuousPoolItemFromOutcomeDecision(decision, 'rerun', 'queue-outcome-model', index)),
+    ...(input.terminalState?.terminalUnresolved ?? [])
+      .filter((resolution) => resolution.decisionCategory === 'stale-rerun')
+      .map((resolution, index) => continuousPoolItemFromTerminalResolution(resolution, 'rerun', 'terminal-state', index))
+  ]);
+
+  const humanBlocked = dedupeContinuousPoolItems([
+    ...normalizeContinuousPoolItems(input.humanBlocked, 'human-blocked', 'input.humanBlocked', generatedAt),
+    ...(input.queueSnapshot?.jobs ?? [])
+      .filter((job) => continuousPoolQueueStatusIsHumanBlocked(job.status))
+      .map((job, index) => continuousPoolItemFromQueueJob(job, 'human-blocked', 'queue-snapshot', index)),
+    ...(outcomeModel?.visibleHumanBlockers ?? [])
+      .map((decision, index) => continuousPoolItemFromOutcomeDecision(decision, 'human-blocked', 'queue-outcome-model', index)),
+    ...(input.terminalState?.terminalUnresolved ?? [])
+      .filter((resolution) => resolution.decisionCategory === 'human-blocked')
+      .map((resolution, index) => continuousPoolItemFromTerminalResolution(resolution, 'human-blocked', 'terminal-state', index))
+  ]);
+
+  const conflicted = dedupeContinuousPoolItems([
+    ...normalizeContinuousPoolItems(input.conflicted, 'conflicted', 'input.conflicted', generatedAt),
+    ...normalizeContinuousPoolItems(input.conflicts, 'conflicted', 'input.conflicts', generatedAt),
+    ...(outcomeModel?.visibleConflicts ?? [])
+      .map((decision, index) => continuousPoolItemFromOutcomeDecision(decision, 'conflicted', 'queue-outcome-model', index)),
+    ...(input.terminalState?.terminalUnresolved ?? [])
+      .filter((resolution) => resolution.decisionCategory === 'conflict')
+      .map((resolution, index) => continuousPoolItemFromTerminalResolution(resolution, 'conflicted', 'terminal-state', index))
+  ]);
+
+  const capacityBlocked = dedupeContinuousPoolItems([
+    ...normalizeContinuousPoolItems(input.capacityBlocked, 'capacity-blocked', 'input.capacityBlocked', generatedAt),
+    ...(input.schedule?.blocked ?? [])
+      .filter((job) => continuousPoolBlockedJobIsCapacityBlocked(job))
+      .map((job, index) => continuousPoolItemFromBlockedJob(job, 'capacity-blocked', 'schedule.blocked', index))
+  ]);
+
+  const done = dedupeContinuousPoolItems([
+    ...normalizeContinuousPoolItems(input.done, 'done', 'input.done', generatedAt),
+    ...(input.queueSnapshot?.jobs ?? [])
+      .filter((job) => continuousPoolQueueStatusIsDone(job.status))
+      .map((job, index) => continuousPoolItemFromQueueJob(job, 'done', 'queue-snapshot', index)),
+    ...(input.schedule?.completed ?? [])
+      .map((jobId, index) => normalizeContinuousPoolItem(jobId, 'done', 'schedule.completed', generatedAt, index)),
+    ...(outcomeModel?.latestDecisions ?? [])
+      .filter(continuousPoolDecisionIsDone)
+      .map((decision, index) => continuousPoolItemFromOutcomeDecision(decision, 'done', 'queue-outcome-model', index)),
+    ...(input.terminalState?.resolved ?? [])
+      .map((resolution, index) => continuousPoolItemFromTerminalResolution(resolution, 'done', 'terminal-state', index)),
+    ...(input.terminalState?.terminal ?? [])
+      .filter((resolution) => resolution.decisionCategory === 'terminal')
+      .map((resolution, index) => continuousPoolItemFromTerminalResolution(resolution, 'done', 'terminal-state', index))
+  ]);
+
+  const buckets = { active, queued, reviewDrain, rerun, humanBlocked, conflicted, capacityBlocked, done };
+  const refill = createContinuousPoolRefill({ buckets, maxWorkers, generatedAt });
+  const stopConditions = continuousPoolStopConditions({ buckets, maxWorkers });
+  const stopCondition = stopConditions[0];
+  const phase = continuousPoolPhase(buckets);
+  const pendingCount = active.length + queued.length + reviewDrain.length + rerun.length + humanBlocked.length + conflicted.length + capacityBlocked.length;
+  const terminalUnresolvedCount = reviewDrain.length + rerun.length + humanBlocked.length + conflicted.length + capacityBlocked.length;
+  return {
+    kind: FRONTIER_SWARM_CONTINUOUS_POOL_STATE_KIND,
+    version: FRONTIER_SWARM_CONTINUOUS_POOL_STATE_VERSION,
+    id: input.id ?? 'swarm-continuous-pool-state:' + stableHash([maxWorkers, buckets, stopConditions, generatedAt]),
+    generatedAt,
+    phase,
+    ...(maxWorkers !== undefined ? { maxWorkers } : {}),
+    activeLeases,
+    buckets,
+    byBucket: continuousPoolByBucket(buckets),
+    refillSlots: refill.slots,
+    refillRecommendations: refill.recommendations,
+    ...(stopCondition ? { stopCondition } : {}),
+    stopConditions,
+    stopped: stopConditions.length > 0,
+    drained: stopConditions.length === 1 && stopCondition === 'drained',
+    summary: {
+      activeCount: active.length,
+      queuedCount: queued.length,
+      reviewDrainCount: reviewDrain.length,
+      rerunCount: rerun.length,
+      humanBlockedCount: humanBlocked.length,
+      conflictedCount: conflicted.length,
+      capacityBlockedCount: capacityBlocked.length,
+      doneCount: done.length,
+      pendingCount,
+      terminalUnresolvedCount,
+      refillSlotCount: refill.slots.length,
+      idleRefillSlotCount: refill.slots.filter((slot) => slot.state === 'idle').length,
+      refillRecommendationCount: refill.recommendations.length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
 export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisionInput): FrontierSwarmQueueOutcomeClassification {
   const explicitCategory = input.category?.trim();
   const search = queueOutcomeSearch(input);
@@ -5507,7 +6005,7 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
   if (explicitCategory) {
     category = explicitCategory;
   } else if (
-    queueOutcomeHas(search, 'committed', 'applied', 'rejected', 'recorded', 'closed')
+    queueOutcomeHas(search, 'committed', 'applied', 'superseded', 'rejected', 'recorded', 'closed')
     || action === 'apply-local'
     || action === 'reject'
     || action === 'record-only'
@@ -5544,7 +6042,7 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
       'needs-human-port',
       'needs-port',
       'review',
-      'public-api-or-contract-region',
+      'parent-scope-region',
       'unknown-semantic-region',
       'high-risk'
     )
@@ -5755,6 +6253,242 @@ export function collapseSwarmQueueOutcomeDecisions(
 ): FrontierSwarmQueueOutcomeModel {
   if (Array.isArray(input)) return createSwarmQueueOutcomeModel({ decisions: input });
   return createSwarmQueueOutcomeModel(input as FrontierSwarmQueueOutcomeModelInput);
+}
+
+function normalizeSwarmTerminalOutcomeText(value: string): string {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')
+    .replace(/[^a-z0-9-]+/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function terminalOutcomeTextMatches(value: string | undefined, ...needles: string[]): boolean {
+  if (!value) return false;
+  const token = normalizeSwarmTerminalOutcomeText(value);
+  return needles.some((needle) => token === needle || token.includes(needle));
+}
+
+function terminalOutcomeLabelFromText(value: string | undefined): FrontierSwarmTerminalOutcomeLabel | undefined {
+  if (!value) return undefined;
+  const token = normalizeSwarmTerminalOutcomeText(value);
+  if (!token) return undefined;
+  if (token === 'applied' || token === 'apply-local' || token === 'apply') return 'applied';
+  if (token === 'committed' || token === 'commit') return 'committed';
+  if (token === 'evidence-only' || token === 'evidenceonly' || token === 'evidence') return 'evidence-only';
+  if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
+  if (token === 'generated-by-collector' || token === 'collector-generated' || token === 'generated-collector') return 'generated-by-collector';
+  if (token === 'patch-missing' || token === 'missing-patch' || token === 'patchmissing') return 'patch-missing';
+  if (token === 'bundle-missing' || token === 'missing-bundle' || token === 'bundlemissing') return 'bundle-missing';
+  if (token === 'rerun' || token === 're-run' || token === 'retry' || token === 'needs-rerun' || token === 'stale-rerun') return 'rerun';
+  if (token === 'rejected' || token === 'reject' || token === 'failed' || token === 'failure') return 'rejected';
+  if (token === 'conflict-blocked' || token === 'merge-conflict' || token === 'textual-conflict' || token === 'conflict') return 'conflict-blocked';
+  if (token === 'human-blocked' || token === 'human-question' || token === 'blocked') return 'human-blocked';
+  if (token === 'coordinator-review' || token === 'needs-port' || token === 'escalated' || token === 'review') return 'coordinator-review';
+  return token;
+}
+
+export function normalizeSwarmTerminalOutcome(
+  input: FrontierSwarmTerminalOutcomeInput | FrontierSwarmTerminalOutcomeLabel | string = {}
+): FrontierSwarmTerminalOutcome {
+  const labelInput = typeof input === 'string' ? input : input.label ?? input.outcome ?? input.status ?? input.decision;
+  const generatedByCollector = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'generated-by-collector', 'collector-generated', 'generated-collector')
+    : input.generatedByCollector === true
+      || terminalOutcomeTextMatches(input.label, 'generated-by-collector', 'collector-generated', 'generated-collector')
+      || terminalOutcomeTextMatches(input.outcome, 'generated-by-collector', 'collector-generated', 'generated-collector')
+      || terminalOutcomeTextMatches(input.status, 'generated-by-collector', 'collector-generated', 'generated-collector')
+      || terminalOutcomeTextMatches(input.decision, 'generated-by-collector', 'collector-generated', 'generated-collector');
+  const evidenceOnly = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'evidence-only', 'evidenceonly')
+    : input.evidenceOnly === true
+      || terminalOutcomeTextMatches(input.label, 'evidence-only', 'evidenceonly')
+      || terminalOutcomeTextMatches(input.outcome, 'evidence-only', 'evidenceonly')
+      || terminalOutcomeTextMatches(input.status, 'evidence-only', 'evidenceonly')
+      || terminalOutcomeTextMatches(input.decision, 'evidence-only', 'evidenceonly');
+  const noChange = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')
+    : input.noChange === true
+      || terminalOutcomeTextMatches(input.label, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')
+      || terminalOutcomeTextMatches(input.outcome, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')
+      || terminalOutcomeTextMatches(input.status, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')
+      || terminalOutcomeTextMatches(input.decision, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged');
+  const patchMissing = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'patch-missing', 'missing-patch', 'patchmissing')
+    : input.patchMissing === true
+      || terminalOutcomeTextMatches(input.label, 'patch-missing', 'missing-patch', 'patchmissing')
+      || terminalOutcomeTextMatches(input.outcome, 'patch-missing', 'missing-patch', 'patchmissing')
+      || terminalOutcomeTextMatches(input.status, 'patch-missing', 'missing-patch', 'patchmissing')
+      || terminalOutcomeTextMatches(input.decision, 'patch-missing', 'missing-patch', 'patchmissing');
+  const bundleMissing = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'bundle-missing', 'missing-bundle', 'bundlemissing')
+    : input.bundleMissing === true
+      || terminalOutcomeTextMatches(input.label, 'bundle-missing', 'missing-bundle', 'bundlemissing')
+      || terminalOutcomeTextMatches(input.outcome, 'bundle-missing', 'missing-bundle', 'bundlemissing')
+      || terminalOutcomeTextMatches(input.status, 'bundle-missing', 'missing-bundle', 'bundlemissing')
+      || terminalOutcomeTextMatches(input.decision, 'bundle-missing', 'missing-bundle', 'bundlemissing');
+  const conflictBlocked = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict')
+    : input.conflictBlocked === true
+      || terminalOutcomeTextMatches(input.label, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict')
+      || terminalOutcomeTextMatches(input.outcome, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict')
+      || terminalOutcomeTextMatches(input.status, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict')
+      || terminalOutcomeTextMatches(input.decision, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict');
+  const humanBlocked = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'human-blocked', 'human-question', 'blocked')
+    : input.humanBlocked === true
+      || terminalOutcomeTextMatches(input.label, 'human-blocked', 'human-question', 'blocked')
+      || terminalOutcomeTextMatches(input.outcome, 'human-blocked', 'human-question', 'blocked')
+      || terminalOutcomeTextMatches(input.status, 'human-blocked', 'human-question', 'blocked')
+      || terminalOutcomeTextMatches(input.decision, 'human-blocked', 'human-question', 'blocked');
+  const coordinatorReview = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'coordinator-review', 'needs-port', 'escalated', 'review')
+    : input.coordinatorReview === true
+      || terminalOutcomeTextMatches(input.label, 'coordinator-review', 'needs-port', 'escalated', 'review')
+      || terminalOutcomeTextMatches(input.outcome, 'coordinator-review', 'needs-port', 'escalated', 'review')
+      || terminalOutcomeTextMatches(input.status, 'coordinator-review', 'needs-port', 'escalated', 'review')
+      || terminalOutcomeTextMatches(input.decision, 'coordinator-review', 'needs-port', 'escalated', 'review');
+  const explicitLabel = terminalOutcomeLabelFromText(labelInput);
+
+  const label = bundleMissing
+    ? 'bundle-missing'
+    : patchMissing
+      ? 'patch-missing'
+      : evidenceOnly
+        ? 'evidence-only'
+        : noChange
+          ? 'no-change'
+          : generatedByCollector
+            ? 'generated-by-collector'
+            : conflictBlocked
+              ? 'conflict-blocked'
+              : humanBlocked
+                ? 'human-blocked'
+                : coordinatorReview
+                  ? 'coordinator-review'
+                  : explicitLabel ?? 'unknown';
+
+  const category: FrontierSwarmTerminalOutcomeCategory = label === 'applied' || label === 'committed' || label === 'evidence-only' || label === 'no-change' || label === 'generated-by-collector'
+    ? 'success'
+    : label === 'patch-missing' || label === 'bundle-missing'
+      ? 'incomplete'
+      : label === 'rerun'
+        ? 'rerun'
+        : label === 'rejected'
+          ? 'rejected'
+          : label === 'conflict-blocked' || label === 'human-blocked'
+            ? 'blocked'
+            : label === 'coordinator-review'
+              ? 'review'
+              : 'unknown';
+
+  return {
+    label,
+    category,
+    terminal: true,
+    success: category === 'success',
+    incomplete: category === 'incomplete',
+    blocker: category === 'blocked',
+    review: category === 'review',
+    generatedByCollector,
+    reasons: typeof input === 'string' ? [] : uniqueStrings(input.reasons ?? []),
+    ...(typeof input !== 'string' && toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function reconcileSwarmTerminalState(input: FrontierSwarmTerminalStateReconciliationInput = {}): FrontierSwarmTerminalStateReconciliation {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const doneBucket = input.doneBucket ?? 'done';
+  const terminalBucket = input.terminalBucket ?? 'terminal';
+  const model = input.outcomeModel && !input.decisions?.length
+    ? input.outcomeModel
+    : createSwarmQueueOutcomeModel({
+      decisions: [
+        ...(input.outcomeModel?.decisions ?? []),
+        ...(input.decisions ?? [])
+      ],
+      generatedAt
+    });
+  const items = normalizeTerminalStateCollections(input.collections, generatedAt);
+  const latestDecisionById = new Map(model.latestDecisions.map((decision) => [decision.id, decision]));
+  const terminalByDecisionId = new Map<string, FrontierSwarmTerminalStateResolution>();
+  const active: FrontierSwarmTerminalStateItem[] = [];
+
+  for (const item of items) {
+    const decision = latestTerminalStateDecisionForItem(item, model, latestDecisionById);
+    if (!decision || !queueOutcomeDecisionClosesTerminalState(decision)) {
+      active.push(item);
+      continue;
+    }
+    const resolution = terminalByDecisionId.get(decision.id)
+      ?? createTerminalStateResolution({
+        decision,
+        bucket: queueOutcomeDecisionIsResolvedOutput(decision) ? doneBucket : terminalBucket,
+        item,
+        generatedAt
+      });
+    mergeTerminalStateResolutionSource(resolution, item);
+    terminalByDecisionId.set(decision.id, resolution);
+  }
+
+  for (const decision of model.latestDecisions) {
+    if (!queueOutcomeDecisionClosesTerminalState(decision)) continue;
+    if (terminalByDecisionId.has(decision.id)) continue;
+    terminalByDecisionId.set(decision.id, createTerminalStateResolution({
+      decision,
+      bucket: queueOutcomeDecisionIsResolvedOutput(decision) ? doneBucket : terminalBucket,
+      generatedAt
+    }));
+  }
+
+  const terminal = Array.from(terminalByDecisionId.values())
+    .sort((left, right) => left.decisionGeneratedAt - right.decisionGeneratedAt || left.decisionId.localeCompare(right.decisionId));
+  const resolved = terminal.filter((resolution) => resolution.resolved);
+  const terminalUnresolved = terminal.filter((resolution) => !resolution.resolved);
+  const collapsed = terminal.filter((resolution) => resolution.sourceItemIds.length > 0);
+  const failedWorkerOutput = active.filter(terminalStateItemIsFailedWorkerOutput);
+  const collections = groupTerminalStateItemsByBucket([
+    ...active,
+    ...terminal.map(terminalStateItemFromResolution)
+  ]);
+  const byBucket = groupIds(Object.values(collections).flat(), (item) => item.bucket);
+
+  return {
+    kind: FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND,
+    version: FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_VERSION,
+    id: input.id ?? 'swarm-terminal-state-reconciliation:' + stableHash([model.id, items, terminal, active, generatedAt]),
+    generatedAt,
+    outcomeModelId: model.id,
+    items,
+    active,
+    failedWorkerOutput,
+    resolved,
+    terminal,
+    terminalUnresolved,
+    collapsed,
+    collections,
+    byBucket,
+    latestDecisionIdByAlias: { ...model.latestDecisionIdByAlias },
+    summary: {
+      inputItemCount: items.length,
+      decisionCount: model.summary.decisionCount,
+      latestDecisionCount: model.summary.latestDecisionCount,
+      supersededDecisionCount: model.summary.supersededDecisionCount,
+      activeItemCount: active.length,
+      collapsedItemCount: collapsed.reduce((total, resolution) => total + resolution.sourceItemIds.length, 0),
+      resolvedCount: resolved.length,
+      terminalCount: terminal.length,
+      terminalUnresolvedCount: terminalUnresolved.length,
+      failedWorkerOutputCount: failedWorkerOutput.length,
+      visibleReviewDebtCount: model.summary.visibleReviewDebtCount,
+      visibleHumanBlockedCount: model.summary.visibleHumanBlockedCount,
+      visibleRerunCount: model.summary.visibleRerunCount,
+      visibleConflictCount: model.summary.visibleConflictCount
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
 }
 
 export function resolveSwarmCompute(
@@ -6507,7 +7241,7 @@ function ensureMergeQueueScope(
 }
 
 function mergeQueueRootLeaseKey(rootScopeId: string): string {
-  return rootScopeId === 'root' ? 'merge:repo:*' : `merge:repo:${rootScopeId}`;
+  return rootScopeId === 'root' ? 'merge:root:*' : `merge:root:${rootScopeId}`;
 }
 
 function mergeQueueScopesForEntry(
@@ -6535,6 +7269,7 @@ function mergeQueueScopesForEntry(
   const changedRegions = uniqueStrings(entry.changedRegions);
   const unknownRegions = changedRegions.filter(mergeQueueRegionIsUnknown);
   const semanticRegions = changedRegions.filter((region) => !mergeQueueRegionIsUnknown(region));
+  const publicContractRegions = semanticRegions.filter(mergeQueueRegionRequiresPublicContractDecision);
   const parentDecisionRegions = semanticRegions.filter(mergeQueueRegionRequiresParentDecision);
   const semanticScopes = semanticRegions.map((region) => ensureMergeQueueScope(scopes, {
     id: `semantic-region:${stableHash([parentId, region])}`,
@@ -6568,7 +7303,8 @@ function mergeQueueScopesForEntry(
       : laneScope ?? rootScope;
   const reasons: string[] = [];
   if (unknownRegions.length) reasons.push('unknown-semantic-region');
-  if (parentDecisionRegions.length) reasons.push('public-api-or-contract-region');
+  if (publicContractRegions.length) reasons.push('public-contract-region');
+  if (parentDecisionRegions.length) reasons.push('parent-scope-region');
   if (semanticScopes.length + pathScopes.length > 1) reasons.push('cross-scope-change');
   const retrySlices = semanticScopes
     .filter((scope) => scope.changedRegions.every((region) => !mergeQueueRegionRequiresParentDecision(region)))
@@ -6752,7 +7488,7 @@ function hierarchicalQueueTerminalDecisionLink(
 
 function hierarchicalQueueLeaseScopeClass(kind: FrontierSwarmMergeQueueScopeKind): FrontierSwarmHierarchicalQueueLeaseScopeClass {
   if (kind === 'semantic-region' || kind === 'semantic') return 'semantic';
-  if (kind === 'root' || kind === 'lane' || kind === 'path') return kind;
+  if (kind === 'root' || kind === 'parent' || kind === 'child' || kind === 'lane' || kind === 'path') return kind;
   return 'custom';
 }
 
@@ -6864,7 +7600,7 @@ function classifyMergeQueueAssignment(
   }
   const cleanAutoMerge = entry.disposition === 'auto-mergeable' && entry.autoMergeable;
   if (cleanAutoMerge && (context.entryScopes?.parentDecisionRegions.length ?? 0) > 0) {
-    return { action: 'promote', reasons: uniqueStrings(['public-api-or-contract-region', ...reasons]) };
+    return { action: 'promote', reasons: uniqueStrings(['parent-scope-region', ...reasons]) };
   }
   if (cleanAutoMerge && (context.entryScopes?.unknownRegions.length ?? 0) > 0) {
     return { action: 'promote', reasons: uniqueStrings(['unknown-semantic-region', ...reasons]) };
@@ -6925,16 +7661,20 @@ function mergeQueueRegionIsUnknown(region: string): boolean {
 }
 
 function mergeQueueRegionRequiresParentDecision(region: string): boolean {
-  const tokens = mergeQueueRegionTokens(region.toLowerCase());
-  const hasPublic = tokens.includes('public');
-  const hasApi = tokens.includes('api');
-  return tokens.includes('contract')
-    || tokens.includes('contracts')
-    || tokens.includes('publicapi')
-    || tokens.includes('publicinterface')
-    || tokens.includes('exports')
-    || tokens.includes('export')
-    || (hasPublic && (hasApi || tokens.includes('surface') || tokens.includes('interface')));
+  const normalized = region.trim().toLowerCase();
+  const tokens = mergeQueueRegionTokens(normalized);
+  return tokens.includes('parent')
+    || tokens.includes('shared')
+    || tokens.includes('boundary')
+    || tokens.includes('upstream')
+    || mergeQueueRegionRequiresPublicContractDecision(normalized);
+}
+
+function mergeQueueRegionRequiresPublicContractDecision(region: string): boolean {
+  const normalized = region.trim().toLowerCase();
+  if (normalized.includes('public-contract')) return true;
+  const tokens = mergeQueueRegionTokens(normalized);
+  return tokens.includes('public') && tokens.includes('contract');
 }
 
 function mergeQueueRegionTokens(region: string): string[] {
@@ -6983,10 +7723,12 @@ function mergeQueuePromotionScopeId(
 
 function mergeQueueScopeRank(kind: FrontierSwarmMergeQueueScopeKind): number {
   if (kind === 'root') return 0;
-  if (kind === 'lane') return 1;
-  if (kind === 'semantic-region') return 2;
-  if (kind === 'path') return 3;
-  return 4;
+  if (kind === 'parent') return 1;
+  if (kind === 'child') return 2;
+  if (kind === 'lane') return 3;
+  if (kind === 'semantic-region') return 4;
+  if (kind === 'path') return 5;
+  return 6;
 }
 
 function coordinatorAgentDrainLeaseId(scope: Pick<FrontierSwarmMergeQueueScope, 'id' | 'kind' | 'leaseKey'>): string {
@@ -7127,6 +7869,486 @@ function countUniqueDrainQueueItems(items: readonly { queueItemIds: readonly str
   return ids.size;
 }
 
+function uniqueLeases(leases: readonly FrontierSwarmLease[], now: number): FrontierSwarmLease[] {
+  const byJobId = new Map<string, FrontierSwarmLease>();
+  for (const lease of leases) {
+    if (lease.status !== 'active' || lease.expiresAt <= now) continue;
+    const existing = byJobId.get(lease.jobId);
+    if (!existing || lease.fencingToken > existing.fencingToken || lease.expiresAt > existing.expiresAt) {
+      byJobId.set(lease.jobId, cloneJsonValue(lease) as FrontierSwarmLease);
+    }
+  }
+  return Array.from(byJobId.values()).sort((left, right) => left.jobId.localeCompare(right.jobId));
+}
+
+function normalizeContinuousPoolItems(
+  items: readonly (string | FrontierSwarmContinuousPoolWorkItemInput)[] | undefined,
+  bucket: FrontierSwarmContinuousPoolBucket,
+  source: string,
+  generatedAt: number
+): FrontierSwarmContinuousPoolWorkItem[] {
+  return (items ?? []).map((item, index) => normalizeContinuousPoolItem(item, bucket, source, generatedAt, index));
+}
+
+function normalizeContinuousPoolItem(
+  input: string | FrontierSwarmContinuousPoolWorkItemInput,
+  bucket: FrontierSwarmContinuousPoolBucket,
+  source: string,
+  generatedAt: number,
+  index: number
+): FrontierSwarmContinuousPoolWorkItem {
+  if (typeof input === 'string') {
+    return {
+      id: input,
+      queueItemIds: [input],
+      bucket,
+      source,
+      priorityClass: continuousPoolDefaultPriorityClass(bucket),
+      reasons: []
+    };
+  }
+  const queueItemIds = uniqueStrings([input.queueItemId, ...(input.queueItemIds ?? [])]);
+  const id = input.id?.trim()
+    || input.jobId?.trim()
+    || input.taskId?.trim()
+    || queueItemIds[0]
+    || 'swarm-continuous-pool-item:' + stableHash([bucket, source, index, generatedAt]);
+  const metadata = toJsonObject(input.metadata);
+  return {
+    id,
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    queueItemIds,
+    ...(input.lane ? { lane: input.lane } : {}),
+    bucket: input.bucket ?? bucket,
+    source: input.source ?? source,
+    ...(input.status ? { status: input.status } : {}),
+    ...(typeof input.priority === 'number' && Number.isFinite(input.priority) ? { priority: input.priority } : {}),
+    priorityClass: input.priorityClass ?? continuousPoolPriorityClassFromMetadata(metadata) ?? continuousPoolDefaultPriorityClass(bucket),
+    reasons: uniqueStrings(input.reasons ?? []),
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function continuousPoolItemFromLease(lease: FrontierSwarmLease, index: number): FrontierSwarmContinuousPoolWorkItem {
+  return {
+    id: lease.id,
+    jobId: lease.jobId,
+    queueItemIds: [lease.jobId],
+    bucket: 'active',
+    source: 'active-lease',
+    status: lease.status,
+    priorityClass: 'standard',
+    reasons: [],
+    metadata: toJsonObject({
+      workerId: lease.workerId,
+      leasedAt: lease.leasedAt,
+      expiresAt: lease.expiresAt,
+      fencingToken: lease.fencingToken,
+      index
+    })
+  };
+}
+
+function continuousPoolItemFromQueueJob(
+  job: FrontierSwarmQueueJob,
+  bucket: FrontierSwarmContinuousPoolBucket,
+  source: string,
+  index: number
+): FrontierSwarmContinuousPoolWorkItem {
+  return normalizeContinuousPoolItem({
+    id: job.jobId,
+    jobId: job.jobId,
+    taskId: job.taskId,
+    queueItemIds: [job.taskId ?? job.jobId],
+    lane: job.lane,
+    status: job.status,
+    priority: job.priority,
+    priorityClass: continuousPoolPriorityClassFromMetadata(job.metadata) ?? continuousPoolDefaultPriorityClass(bucket),
+    reasons: job.lastError ? [job.lastError] : [],
+    metadata: {
+      source,
+      attempts: job.attempts,
+      maxAttempts: job.maxAttempts,
+      availableAt: job.availableAt,
+      index,
+      ...(job.metadata ?? {})
+    }
+  }, bucket, source, 0, index);
+}
+
+function continuousPoolItemFromScheduledJob(
+  job: FrontierSwarmScheduledJob | FrontierSwarmRunningJob,
+  bucket: FrontierSwarmContinuousPoolBucket,
+  source: string,
+  index: number
+): FrontierSwarmContinuousPoolWorkItem {
+  const scheduled = job as FrontierSwarmScheduledJob;
+  return normalizeContinuousPoolItem({
+    id: job.jobId,
+    jobId: job.jobId,
+    taskId: 'taskId' in job ? job.taskId : undefined,
+    queueItemIds: ['taskId' in job ? job.taskId : job.jobId],
+    lane: job.lane,
+    status: source,
+    priority: 'priority' in job ? job.priority : undefined,
+    priorityClass: continuousPoolPriorityClassFromMetadata(job.metadata) ?? continuousPoolDefaultPriorityClass(bucket),
+    reasons: 'dependsOn' in scheduled && scheduled.dependsOn.length ? [`depends-on:${scheduled.dependsOn.join(',')}`] : [],
+    metadata: {
+      compute: job.compute,
+      concurrencyKey: job.concurrencyKey,
+      index,
+      ...(job.metadata ?? {})
+    }
+  }, bucket, source, 0, index);
+}
+
+function continuousPoolItemFromBlockedJob(
+  job: FrontierSwarmBlockedJob,
+  bucket: FrontierSwarmContinuousPoolBucket,
+  source: string,
+  index: number
+): FrontierSwarmContinuousPoolWorkItem {
+  return normalizeContinuousPoolItem({
+    id: job.jobId,
+    jobId: job.jobId,
+    taskId: job.taskId,
+    queueItemIds: [job.taskId],
+    lane: job.lane,
+    status: 'blocked',
+    priority: job.priority,
+    priorityClass: continuousPoolPriorityClassFromMetadata(job.metadata) ?? continuousPoolDefaultPriorityClass(bucket),
+    reasons: [...job.reasons],
+    metadata: {
+      compute: job.compute,
+      concurrencyKey: job.concurrencyKey,
+      waitingFor: job.waitingFor,
+      index,
+      ...(job.metadata ?? {})
+    }
+  }, bucket, source, 0, index);
+}
+
+function continuousPoolItemFromDrainAssignment(
+  assignment: FrontierSwarmCoordinatorAgentDrainAssignment,
+  bucket: FrontierSwarmContinuousPoolBucket,
+  source: string,
+  index: number
+): FrontierSwarmContinuousPoolWorkItem {
+  return normalizeContinuousPoolItem({
+    id: assignment.id,
+    jobId: assignment.jobId,
+    taskId: assignment.taskId,
+    queueItemIds: assignment.queueItemIds,
+    lane: assignment.lane,
+    status: assignment.decision,
+    priorityClass: 'coordinator-drain',
+    reasons: assignment.reasons,
+    metadata: {
+      assignedAction: assignment.assignedAction,
+      queueId: assignment.queueId,
+      leaseScope: assignment.leaseScope,
+      index
+    }
+  }, bucket, source, 0, index);
+}
+
+function continuousPoolItemFromPromotedWork(
+  work: FrontierSwarmCoordinatorAgentPromotedWork,
+  bucket: FrontierSwarmContinuousPoolBucket,
+  source: string,
+  index: number
+): FrontierSwarmContinuousPoolWorkItem {
+  return normalizeContinuousPoolItem({
+    id: work.id,
+    jobId: work.jobId,
+    taskId: work.taskId,
+    queueItemIds: work.queueItemIds,
+    lane: work.lane,
+    status: work.decision,
+    priorityClass: 'coordinator-drain',
+    reasons: work.reasons,
+    metadata: {
+      assignedAction: work.assignedAction,
+      fromQueueId: work.fromQueueId,
+      parentQueueId: work.parentQueueId,
+      leaseScope: work.leaseScope,
+      index
+    }
+  }, bucket, source, 0, index);
+}
+
+function continuousPoolItemFromOutcomeDecision(
+  decision: FrontierSwarmQueueOutcomeDecision,
+  bucket: FrontierSwarmContinuousPoolBucket,
+  source: string,
+  index: number
+): FrontierSwarmContinuousPoolWorkItem {
+  return normalizeContinuousPoolItem({
+    id: decision.id,
+    jobId: decision.jobId,
+    taskId: decision.taskId,
+    queueItemIds: decision.queueItemIds,
+    lane: decision.lane,
+    status: decision.outcome,
+    priorityClass: continuousPoolDefaultPriorityClass(bucket),
+    reasons: decision.reasons,
+    metadata: {
+      category: decision.category,
+      decision: decision.decision,
+      action: decision.action,
+      assignedAction: decision.assignedAction,
+      subjectId: decision.subjectId,
+      subjectAliases: decision.subjectAliases,
+      generatedAt: decision.generatedAt,
+      index
+    }
+  }, bucket, source, 0, index);
+}
+
+function continuousPoolItemFromTerminalResolution(
+  resolution: FrontierSwarmTerminalStateResolution,
+  bucket: FrontierSwarmContinuousPoolBucket,
+  source: string,
+  index: number
+): FrontierSwarmContinuousPoolWorkItem {
+  return normalizeContinuousPoolItem({
+    id: resolution.id,
+    jobId: resolution.jobId,
+    taskId: resolution.taskId,
+    queueItemIds: resolution.queueItemIds,
+    status: resolution.decisionOutcome,
+    priorityClass: continuousPoolDefaultPriorityClass(bucket),
+    reasons: resolution.reasons,
+    metadata: {
+      decisionId: resolution.decisionId,
+      decisionCategory: resolution.decisionCategory,
+      decisionTerminal: resolution.decisionTerminal,
+      resolved: resolution.resolved,
+      sourceBuckets: resolution.sourceBuckets,
+      index
+    }
+  }, bucket, source, 0, index);
+}
+
+function dedupeContinuousPoolItems(items: readonly FrontierSwarmContinuousPoolWorkItem[]): FrontierSwarmContinuousPoolWorkItem[] {
+  const byKey = new Map<string, FrontierSwarmContinuousPoolWorkItem>();
+  for (const item of items) {
+    const key = continuousPoolItemDedupeKey(item);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, item);
+      continue;
+    }
+    byKey.set(key, {
+      ...existing,
+      queueItemIds: uniqueStrings([...existing.queueItemIds, ...item.queueItemIds]),
+      reasons: uniqueStrings([...existing.reasons, ...item.reasons]),
+      metadata: toJsonObject({
+        ...(existing.metadata ?? {}),
+        alternateSources: uniqueStrings([
+          ...((existing.metadata?.alternateSources as string[] | undefined) ?? []),
+          item.source
+        ])
+      })
+    });
+  }
+  return Array.from(byKey.values()).sort((left, right) => (
+    (left.priority ?? 0) - (right.priority ?? 0)
+    || left.id.localeCompare(right.id)
+  ));
+}
+
+function continuousPoolItemDedupeKey(item: FrontierSwarmContinuousPoolWorkItem): string {
+  return [
+    item.bucket,
+    item.jobId ?? item.taskId ?? item.queueItemIds[0] ?? item.id
+  ].join(':');
+}
+
+function continuousPoolQueueStatusIsActive(status: FrontierSwarmQueueJobStatus): boolean {
+  return status === 'leased' || status === 'running';
+}
+
+function continuousPoolQueueStatusIsQueued(status: FrontierSwarmQueueJobStatus): boolean {
+  return status === 'ready'
+    || status === 'queued'
+    || status === 'retrying'
+    || status === 'scheduled'
+    || status === 'planned'
+    || status === 'open';
+}
+
+function continuousPoolQueueStatusIsHumanBlocked(status: FrontierSwarmQueueJobStatus): boolean {
+  return status === 'blocked' || status === 'failed' || status === 'dead-letter';
+}
+
+function continuousPoolQueueStatusIsDone(status: FrontierSwarmQueueJobStatus): boolean {
+  return status === 'completed' || status === 'verified' || status === 'done';
+}
+
+function continuousPoolBlockedJobIsCapacityBlocked(job: FrontierSwarmBlockedJob): boolean {
+  return job.reasons.some((reason) => (
+    reason === 'lane-capacity'
+    || reason === 'compute-capacity'
+    || reason === 'concurrency-key-capacity'
+    || reason === 'ready-capacity'
+    || reason.startsWith('resource-capacity:')
+  ));
+}
+
+function continuousPoolDecisionIsDone(decision: FrontierSwarmQueueOutcomeDecision): boolean {
+  return decision.category === 'terminal'
+    && !decision.coordinatorReview
+    && !decision.humanBlocked
+    && !decision.staleOrRerun
+    && !decision.conflict;
+}
+
+function continuousPoolDefaultPriorityClass(bucket: FrontierSwarmContinuousPoolBucket): FrontierSwarmPriorityClass {
+  if (bucket === 'review-drain' || bucket === 'rerun') return 'coordinator-drain';
+  if (bucket === 'human-blocked' || bucket === 'conflicted' || bucket === 'capacity-blocked') return 'review';
+  return 'standard';
+}
+
+function continuousPoolPriorityClassFromMetadata(metadata: JsonObject | undefined): FrontierSwarmPriorityClass | undefined {
+  const direct = metadata?.priorityClass;
+  if (typeof direct === 'string' && direct.trim()) return direct;
+  const priorityPolicy = metadata?.priorityPolicy;
+  if (priorityPolicy && typeof priorityPolicy === 'object' && !Array.isArray(priorityPolicy)) {
+    const policyClass = (priorityPolicy as JsonObject).className;
+    if (typeof policyClass === 'string' && policyClass.trim()) return policyClass;
+  }
+  return undefined;
+}
+
+function createContinuousPoolRefill(input: {
+  buckets: FrontierSwarmContinuousPoolState['buckets'];
+  maxWorkers?: number;
+  generatedAt: number;
+}): {
+  slots: FrontierSwarmContinuousPoolRefillSlot[];
+  recommendations: FrontierSwarmContinuousPoolRefillRecommendation[];
+} {
+  const slotCount = input.maxWorkers === undefined
+    ? 0
+    : Math.max(0, input.maxWorkers - input.buckets.active.length);
+  const candidates = [
+    ...input.buckets.reviewDrain.map((item) => continuousPoolRefillCandidate(item, 'drain-review', 0, 'review-drain')),
+    ...input.buckets.rerun.map((item) => continuousPoolRefillCandidate(item, 'rerun-stale', 5, 'rerun')),
+    ...[...input.buckets.queued].sort(compareContinuousPoolQueuedItems).map((item) => (
+      continuousPoolRefillCandidate(
+        item,
+        item.priorityClass === 'speculative' ? 'start-speculative-backlog' : 'lease-queued',
+        item.priorityClass === 'speculative' ? 90 : 20,
+        'queued'
+      )
+    ))
+  ];
+  const slots: FrontierSwarmContinuousPoolRefillSlot[] = [];
+  const recommendations: FrontierSwarmContinuousPoolRefillRecommendation[] = [];
+  for (let index = 0; index < slotCount; index += 1) {
+    const candidate = candidates[index];
+    const slotId = 'swarm-continuous-pool-refill-slot:' + stableHash([index, input.maxWorkers, input.generatedAt]);
+    if (!candidate) {
+      slots.push({ id: slotId, index, state: 'idle' });
+      continue;
+    }
+    const recommendationId = 'swarm-continuous-pool-refill-recommendation:' + stableHash([slotId, candidate.item.id, candidate.action, input.generatedAt]);
+    slots.push({ id: slotId, index, state: 'fillable', recommendationId });
+    recommendations.push({
+      id: recommendationId,
+      slotId,
+      action: candidate.action,
+      bucket: candidate.bucket,
+      itemIds: [candidate.item.id],
+      jobIds: uniqueStrings([candidate.item.jobId]),
+      priority: candidate.priority,
+      priorityClass: candidate.item.priorityClass,
+      reasons: candidate.reasons
+    });
+  }
+  return {
+    slots,
+    recommendations: recommendations.sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
+  };
+}
+
+function continuousPoolRefillCandidate(
+  item: FrontierSwarmContinuousPoolWorkItem,
+  action: FrontierSwarmContinuousPoolRefillAction,
+  priority: number,
+  bucket: FrontierSwarmContinuousPoolBucket
+): {
+  item: FrontierSwarmContinuousPoolWorkItem;
+  action: FrontierSwarmContinuousPoolRefillAction;
+  priority: number;
+  bucket: FrontierSwarmContinuousPoolBucket;
+  reasons: string[];
+} {
+  const reasons = item.reasons.length
+    ? [...item.reasons]
+    : bucket === 'review-drain'
+      ? ['coordinator-drain-before-new-backlog']
+      : bucket === 'rerun'
+        ? ['rerun-before-new-backlog']
+        : item.priorityClass === 'speculative'
+          ? ['speculative-backlog-after-drain']
+          : ['ready-queued-work'];
+  return { item, action, priority, bucket, reasons };
+}
+
+function compareContinuousPoolQueuedItems(
+  left: FrontierSwarmContinuousPoolWorkItem,
+  right: FrontierSwarmContinuousPoolWorkItem
+): number {
+  const leftSpeculative = left.priorityClass === 'speculative' ? 1 : 0;
+  const rightSpeculative = right.priorityClass === 'speculative' ? 1 : 0;
+  return leftSpeculative - rightSpeculative
+    || (left.priority ?? 0) - (right.priority ?? 0)
+    || left.id.localeCompare(right.id);
+}
+
+function continuousPoolStopConditions(input: {
+  buckets: FrontierSwarmContinuousPoolState['buckets'];
+  maxWorkers?: number;
+}): FrontierSwarmContinuousPoolStopCondition[] {
+  const progressableCount = input.buckets.active.length + input.buckets.queued.length + input.buckets.reviewDrain.length + input.buckets.rerun.length;
+  const refillableCount = input.buckets.queued.length + input.buckets.reviewDrain.length + input.buckets.rerun.length;
+  if (input.buckets.active.length === 0 && input.maxWorkers === 0 && refillableCount > 0) return ['capacity-blocked'];
+  if (progressableCount > 0) return [];
+  const stops: FrontierSwarmContinuousPoolStopCondition[] = [];
+  if (input.buckets.humanBlocked.length > 0) stops.push('human-blocked');
+  if (input.buckets.conflicted.length > 0) stops.push('conflicted');
+  if (input.buckets.capacityBlocked.length > 0) stops.push('capacity-blocked');
+  if (stops.length === 0) stops.push('drained');
+  return uniqueStrings(stops);
+}
+
+function continuousPoolPhase(buckets: FrontierSwarmContinuousPoolState['buckets']): FrontierSwarmContinuousPoolPhase {
+  if (buckets.active.length > 0) return 'active';
+  if (buckets.reviewDrain.length > 0) return 'review-drain';
+  if (buckets.rerun.length > 0) return 'rerun';
+  if (buckets.queued.length > 0) return 'queued';
+  if (buckets.humanBlocked.length > 0) return 'human-blocked';
+  if (buckets.conflicted.length > 0) return 'conflicted';
+  if (buckets.capacityBlocked.length > 0) return 'capacity-blocked';
+  return 'done';
+}
+
+function continuousPoolByBucket(buckets: FrontierSwarmContinuousPoolState['buckets']): Record<string, string[]> {
+  return {
+    active: buckets.active.map((item) => item.id),
+    queued: buckets.queued.map((item) => item.id),
+    'review-drain': buckets.reviewDrain.map((item) => item.id),
+    rerun: buckets.rerun.map((item) => item.id),
+    'human-blocked': buckets.humanBlocked.map((item) => item.id),
+    conflicted: buckets.conflicted.map((item) => item.id),
+    'capacity-blocked': buckets.capacityBlocked.map((item) => item.id),
+    done: buckets.done.map((item) => item.id)
+  };
+}
+
 function queueOutcomeSearch(input: FrontierSwarmQueueOutcomeDecisionInput): string {
   return [
     input.category,
@@ -7158,6 +8380,7 @@ function defaultQueueOutcomeForCategory(
   if (category === 'terminal') {
     if (queueOutcomeHas(search, 'committed')) return 'committed';
     if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied')) return 'applied';
+    if (input.decision === 'superseded' || queueOutcomeHas(search, 'superseded')) return 'superseded';
     if (action === 'reject' || input.decision === 'rejected' || input.disposition === 'rejected' || queueOutcomeHas(search, 'rejected')) return 'rejected';
     if (action === 'record-only' || input.decision === 'recorded' || input.mergeReadiness === 'discovery-only' || queueOutcomeHas(search, 'recorded')) return 'recorded';
     return 'closed';
@@ -7263,6 +8486,200 @@ function groupDecisionIdsBy(
     out[group] = [...(out[group] ?? []), decision.id];
   }
   for (const ids of Object.values(out)) ids.sort();
+  return out;
+}
+
+function normalizeTerminalStateCollections(
+  collections: FrontierSwarmTerminalStateCollectionsInput | undefined,
+  generatedAt: number
+): FrontierSwarmTerminalStateItem[] {
+  if (!collections) return [];
+  const entries: FrontierSwarmTerminalStateCollectionInput[] = Array.isArray(collections)
+    ? collections
+    : Object.entries(collections).map(([bucket, items]) => ({ bucket, items }));
+  return entries.flatMap((entry, entryIndex) => entry.items.map((item, itemIndex) => (
+    normalizeTerminalStateItem(item, entry.bucket, generatedAt, entryIndex, itemIndex)
+  )));
+}
+
+function normalizeTerminalStateItem(
+  input: string | FrontierSwarmTerminalStateItemInput,
+  bucket: FrontierSwarmTerminalStateBucket,
+  generatedAt: number,
+  entryIndex: number,
+  itemIndex: number
+): FrontierSwarmTerminalStateItem {
+  if (typeof input === 'string') {
+    const subjectId = normalizeId(input, 'terminal state subject');
+    return {
+      id: 'swarm-terminal-state-item:' + stableHash([bucket, subjectId, entryIndex, itemIndex, generatedAt]),
+      subjectId,
+      subjectAliases: [subjectId],
+      queueItemIds: [],
+      bucket,
+      generatedAt
+    };
+  }
+  const queueItemIds = uniqueStrings([input.queueItemId, ...(input.queueItemIds ?? [])]);
+  const subjectId = input.subjectId?.trim()
+    || queueItemIds[0]
+    || input.taskId?.trim()
+    || input.jobId?.trim()
+    || input.id?.trim()
+    || 'unknown-subject';
+  const subjectAliases = uniqueStrings([
+    input.subjectId,
+    ...(input.subjectAliases ?? []),
+    ...queueItemIds,
+    input.taskId,
+    input.jobId,
+    input.id
+  ]);
+  const normalizedBucket = input.bucket ?? bucket;
+  return {
+    id: input.id ?? 'swarm-terminal-state-item:' + stableHash([normalizedBucket, subjectId, subjectAliases, entryIndex, itemIndex, generatedAt]),
+    subjectId,
+    subjectAliases: subjectAliases.length ? subjectAliases : [subjectId],
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    queueItemIds,
+    bucket: normalizedBucket,
+    ...(input.status ? { status: input.status } : {}),
+    generatedAt: input.generatedAt ?? generatedAt,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function latestTerminalStateDecisionForItem(
+  item: FrontierSwarmTerminalStateItem,
+  model: FrontierSwarmQueueOutcomeModel,
+  latestDecisionById: ReadonlyMap<string, FrontierSwarmQueueOutcomeDecision>
+): FrontierSwarmQueueOutcomeDecision | undefined {
+  let latest: FrontierSwarmQueueOutcomeDecision | undefined;
+  const seen = new Set<string>();
+  for (const alias of item.subjectAliases) {
+    const decisionId = model.latestDecisionIdByAlias[alias];
+    if (!decisionId || seen.has(decisionId)) continue;
+    seen.add(decisionId);
+    const decision = latestDecisionById.get(decisionId);
+    if (!decision) continue;
+    if (!latest || decision.generatedAt > latest.generatedAt || decision.generatedAt === latest.generatedAt && decision.id > latest.id) {
+      latest = decision;
+    }
+  }
+  return latest;
+}
+
+function queueOutcomeDecisionClosesTerminalState(decision: FrontierSwarmQueueOutcomeDecision): boolean {
+  if (decision.terminal || decision.closesSubject) return true;
+  if (decision.category === 'terminal' || decision.category === 'stale-rerun' || decision.category === 'human-blocked' || decision.category === 'conflict') {
+    return true;
+  }
+  const search = queueOutcomeSearch(decision);
+  return queueOutcomeHas(search, 'applied', 'committed', 'superseded', 'rejected', 'rerun', 'stale-against-head', 'conflict', 'human-question');
+}
+
+function queueOutcomeDecisionIsResolvedOutput(decision: FrontierSwarmQueueOutcomeDecision): boolean {
+  if (decision.category !== 'terminal') return false;
+  return decision.outcome === 'applied'
+    || decision.outcome === 'committed'
+    || decision.outcome === 'superseded'
+    || decision.outcome === 'recorded'
+    || decision.outcome === 'closed';
+}
+
+function createTerminalStateResolution(input: {
+  decision: FrontierSwarmQueueOutcomeDecision;
+  bucket: FrontierSwarmTerminalStateBucket;
+  item?: FrontierSwarmTerminalStateItem;
+  generatedAt: number;
+}): FrontierSwarmTerminalStateResolution {
+  const subjectAliases = uniqueStrings([
+    ...(input.item?.subjectAliases ?? []),
+    ...input.decision.subjectAliases
+  ]);
+  const queueItemIds = uniqueStrings([
+    ...(input.item?.queueItemIds ?? []),
+    ...input.decision.queueItemIds
+  ]);
+  const resolved = queueOutcomeDecisionIsResolvedOutput(input.decision);
+  return {
+    id: 'swarm-terminal-state-resolution:' + stableHash([input.decision.id, input.bucket, subjectAliases, input.generatedAt]),
+    subjectId: input.decision.subjectId,
+    subjectAliases: subjectAliases.length ? subjectAliases : [input.decision.subjectId],
+    ...(input.decision.jobId ?? input.item?.jobId ? { jobId: input.decision.jobId ?? input.item?.jobId } : {}),
+    ...(input.decision.taskId ?? input.item?.taskId ? { taskId: input.decision.taskId ?? input.item?.taskId } : {}),
+    queueItemIds,
+    bucket: input.bucket,
+    sourceItemIds: [],
+    sourceBuckets: [],
+    decisionId: input.decision.id,
+    decisionCategory: input.decision.category,
+    decisionOutcome: input.decision.outcome,
+    decisionTerminal: input.decision.terminal,
+    decisionGeneratedAt: input.decision.generatedAt,
+    resolved,
+    terminal: true,
+    failedWorkerOutput: false,
+    reasons: [...input.decision.reasons],
+    metadata: toJsonObject({
+      decision: input.decision.decision,
+      status: input.decision.status,
+      disposition: input.decision.disposition,
+      mergeReadiness: input.decision.mergeReadiness
+    })
+  };
+}
+
+function mergeTerminalStateResolutionSource(
+  resolution: FrontierSwarmTerminalStateResolution,
+  item: FrontierSwarmTerminalStateItem
+): void {
+  resolution.sourceItemIds = uniqueStrings([...resolution.sourceItemIds, item.id]);
+  resolution.sourceBuckets = uniqueStrings([...resolution.sourceBuckets, item.bucket]);
+  resolution.subjectAliases = uniqueStrings([...resolution.subjectAliases, ...item.subjectAliases]);
+  resolution.queueItemIds = uniqueStrings([...resolution.queueItemIds, ...item.queueItemIds]);
+  if (!resolution.jobId && item.jobId) resolution.jobId = item.jobId;
+  if (!resolution.taskId && item.taskId) resolution.taskId = item.taskId;
+}
+
+function terminalStateItemFromResolution(resolution: FrontierSwarmTerminalStateResolution): FrontierSwarmTerminalStateItem {
+  return {
+    id: 'swarm-terminal-state-item:' + stableHash([resolution.id, resolution.bucket]),
+    subjectId: resolution.subjectId,
+    subjectAliases: [...resolution.subjectAliases],
+    ...(resolution.jobId ? { jobId: resolution.jobId } : {}),
+    ...(resolution.taskId ? { taskId: resolution.taskId } : {}),
+    queueItemIds: [...resolution.queueItemIds],
+    bucket: resolution.bucket,
+    status: resolution.resolved ? 'resolved' : 'terminal',
+    generatedAt: resolution.decisionGeneratedAt,
+    metadata: toJsonObject({
+      decisionId: resolution.decisionId,
+      decisionCategory: resolution.decisionCategory,
+      decisionOutcome: resolution.decisionOutcome,
+      sourceItemIds: resolution.sourceItemIds,
+      sourceBuckets: resolution.sourceBuckets,
+      resolved: resolution.resolved,
+      terminal: resolution.terminal,
+      failedWorkerOutput: resolution.failedWorkerOutput
+    })
+  };
+}
+
+function terminalStateItemIsFailedWorkerOutput(item: FrontierSwarmTerminalStateItem): boolean {
+  const normalized = `${item.bucket} ${item.status ?? ''}`.toLowerCase().replace(/[^a-z0-9]+/gu, '-');
+  return normalized.includes('failed') || normalized.includes('dead-letter');
+}
+
+function groupTerminalStateItemsByBucket(items: readonly FrontierSwarmTerminalStateItem[]): Record<string, FrontierSwarmTerminalStateItem[]> {
+  const out: Record<string, FrontierSwarmTerminalStateItem[]> = {};
+  for (const item of items) out[item.bucket] = [...(out[item.bucket] ?? []), item];
+  for (const bucket of Object.keys(out)) {
+    out[bucket] = [...(out[bucket] ?? [])].sort((left, right) => (
+      left.generatedAt - right.generatedAt || left.id.localeCompare(right.id)
+    ));
+  }
   return out;
 }
 
@@ -7818,6 +9235,28 @@ function priorityDecisionMetadata(metadata: unknown, decision: FrontierSwarmPrio
     ...(toJsonObject(metadata) ?? {}),
     priorityPolicy: cloneJsonValue(decision) as unknown as JsonObject
   };
+}
+
+export function mergeSwarmMetadata(
+  metadataInputs: readonly unknown[] = [],
+  verificationGates: readonly (string | FrontierSwarmCommandInput)[] = []
+): JsonObject | undefined {
+  const merged: Record<string, unknown> = {};
+  const gates: FrontierSwarmCommand[] = [];
+  for (const metadataInput of metadataInputs) {
+    const metadata = toJsonObject(metadataInput);
+    if (!metadata) continue;
+    for (const [key, value] of Object.entries(metadata)) {
+      if (key === 'verificationGates') {
+        if (Array.isArray(value)) gates.push(...normalizeCommands(value as readonly (string | FrontierSwarmCommandInput)[]));
+        continue;
+      }
+      merged[key] = value;
+    }
+  }
+  gates.push(...normalizeCommands(verificationGates));
+  if (gates.length > 0) merged.verificationGates = uniqueSwarmCommands(gates);
+  return Object.keys(merged).length > 0 ? merged as JsonObject : undefined;
 }
 
 function priorityPolicyMetadata(
@@ -8673,6 +10112,7 @@ function normalizePolicy(input: FrontierSwarmPolicyInput | undefined, defaultCom
 
 function normalizeTask(input: FrontierSwarmTaskInput): FrontierSwarmTask {
   const targetRefs = uniqueStrings([...(input.targetRefs ?? []), ...(input.ownedFiles ?? [])]);
+  const metadata = mergeSwarmMetadata([input.metadata], input.verification ?? []);
   return {
     kind: FRONTIER_SWARM_TASK_KIND,
     version: FRONTIER_SWARM_TASK_VERSION,
@@ -8704,7 +10144,7 @@ function normalizeTask(input: FrontierSwarmTaskInput): FrontierSwarmTask {
     ...(input.evidenceCommand ? { evidenceCommand: input.evidenceCommand } : {}),
     ...(input.shardCommand ? { shardCommand: input.shardCommand } : {}),
     tags: uniqueStrings(input.tags ?? []),
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+    ...(metadata ? { metadata } : {})
   };
 }
 
@@ -8828,6 +10268,7 @@ function createJob(compiled: FrontierSwarmCompiled, task: FrontierSwarmTask, opt
   const resourceRequirements = mergeResourceRequirements(lane?.resourceRequirements, task.resourceRequirements, capabilities);
   const ownershipRegions = mergeOwnershipRegions(lane?.ownershipRegions ?? [], task.ownershipRegions);
   const ownedRegions = uniqueStrings([...task.ownedRegions, ...ownershipRegions.map((region) => region.id)]);
+  const metadata = mergeSwarmMetadata([priorityDecisionMetadata(task.metadata, priorityDecisionForTask(task, lane?.id ?? 'unassigned', layer))], task.verification);
   return {
     id: `${lane?.id ?? 'unassigned'}-${slug(task.id)}`,
     taskId: task.id,
@@ -8856,7 +10297,7 @@ function createJob(compiled: FrontierSwarmCompiled, task: FrontierSwarmTask, opt
     ...(task.budget ? { budget: task.budget } : {}),
     review: task.review ?? normalizeReviewPolicy(),
     tags: uniqueStrings([...task.tags, ...(lane?.tags ?? []), ...(layer ? [layer] : []), compute.id]),
-    metadata: priorityDecisionMetadata(task.metadata, priorityDecisionForTask(task, lane?.id ?? 'unassigned', layer))
+    ...(metadata ? { metadata } : {})
   };
 }
 
@@ -8943,6 +10384,7 @@ function normalizeEvent(input: FrontierSwarmEventInput): FrontierSwarmEvent {
 }
 
 function normalizeQueueJob(input: FrontierSwarmQueueJobInput): FrontierSwarmQueueJob {
+  const metadata = mergeSwarmMetadata([input.metadata]);
   return {
     jobId: input.jobId,
     ...(input.taskId ? { taskId: input.taskId } : {}),
@@ -8957,7 +10399,7 @@ function normalizeQueueJob(input: FrontierSwarmQueueJobInput): FrontierSwarmQueu
     ...(input.availableAt !== undefined ? { availableAt: input.availableAt } : {}),
     ...(input.lease ? { lease: cloneJsonValue(input.lease) as FrontierSwarmLease } : {}),
     ...(input.lastError ? { lastError: input.lastError } : {}),
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+    ...(metadata ? { metadata } : {})
   };
 }
 
@@ -9022,6 +10464,8 @@ function normalizeResult(input: FrontierSwarmJobResultInput): FrontierSwarmJobRe
     riskLevel: input.riskLevel ?? 'unknown',
     mergeDisposition: input.mergeDisposition ?? classifySwarmMergeDisposition({ ...input, status }),
     verification: (input.verification ?? []).map(normalizeVerificationResult),
+    ...(input.semanticImport !== undefined ? { semanticImport: cloneJsonValue(input.semanticImport) } : {}),
+    traceShards: cloneJsonValue([...(input.traceShards ?? [])]),
     ...(input.lastMessage ? { lastMessage: input.lastMessage } : {}),
     ...(input.error !== undefined ? { error: stringifyError(input.error) } : {}),
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
@@ -9135,6 +10579,484 @@ function hasLayerCycle(layerId: string, layers: readonly FrontierSwarmLayer[]): 
   return false;
 }
 
+export type FrontierSwarmBacklogStatus = 'open' | 'ready' | 'running' | 'blocked' | 'completed' | 'verified' | string;
+export type FrontierSwarmBacklogEntryKind = 'task' | 'bug' | 'feature' | 'chore' | 'research' | 'spike' | 'decision' | string;
+export type FrontierSwarmCycleType = 'milestone' | 'iteration' | 'wave' | string;
+
+export interface FrontierSwarmBacklogEntryInput {
+  id: string;
+  title?: string;
+  objective?: string;
+  entryKind?: FrontierSwarmBacklogEntryKind;
+  status?: FrontierSwarmBacklogStatus;
+  lane?: string;
+  layer?: string;
+  workKind?: string;
+  epicId?: string;
+  groupId?: string;
+  cycleId?: string;
+  parentEntryId?: string;
+  childEntryIds?: readonly string[];
+  taskId?: string;
+  dependsOn?: readonly string[];
+  blockedBy?: readonly string[];
+  sourceRefs?: readonly string[];
+  targetRefs?: readonly string[];
+  allowedWrites?: readonly string[];
+  acceptance?: readonly string[];
+  tags?: readonly string[];
+  priority?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmBacklogEntry extends FrontierSwarmBacklogEntryInput {
+  title: string;
+  entryKind: FrontierSwarmBacklogEntryKind;
+  status: FrontierSwarmBacklogStatus;
+  childEntryIds: string[];
+  dependsOn: string[];
+  blockedBy: string[];
+  sourceRefs: string[];
+  targetRefs: string[];
+  allowedWrites: string[];
+  acceptance: string[];
+  tags: string[];
+  priority: number;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmBacklogInput {
+  id?: string;
+  title?: string;
+  package?: string;
+  epics?: readonly Record<string, unknown>[];
+  taskGroups?: readonly Record<string, unknown>[];
+  cycles?: readonly Record<string, unknown>[];
+  entries?: readonly FrontierSwarmBacklogEntryInput[];
+  tasks?: readonly (FrontierSwarmTaskInput | FrontierSwarmTask)[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmBacklog {
+  kind: 'frontier.swarm.backlog';
+  version: 1;
+  id: string;
+  title: string;
+  package?: string;
+  generatedAt: number;
+  epics: Record<string, unknown>[];
+  taskGroups: Record<string, unknown>[];
+  cycles: Record<string, unknown>[];
+  entries: FrontierSwarmBacklogEntry[];
+  tasks: FrontierSwarmTask[];
+  summary: {
+    epicCount: number;
+    groupCount: number;
+    cycleCount: number;
+    entryCount: number;
+    taskCount: number;
+    readyCount: number;
+    runningCount: number;
+    blockedCount: number;
+    completedCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmBacklogTaskPlanInput {
+  backlog: FrontierSwarmBacklog | FrontierSwarmBacklogInput;
+  recursive?: boolean;
+  maxDepth?: number;
+  childArtifactPath?: string;
+  decomposeCompute?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmBacklogDecompositionMetadata {
+  sourceId: string;
+  sourceKind: string;
+  remainingDepth: number;
+  childArtifactPath?: string;
+}
+
+export interface FrontierSwarmBacklogContinuationTaskPlanMetadata extends FrontierSwarmBacklogDecompositionMetadata {
+  parentTaskId?: string;
+}
+
+export interface FrontierSwarmBacklogTaskPlan {
+  kind: 'frontier.swarm.backlog-task-plan';
+  version: 1;
+  id: string;
+  backlogId: string;
+  generatedAt: number;
+  tasks: FrontierSwarmTask[];
+  runnableTaskIds: string[];
+  decompositionTaskIds: string[];
+  summary: { taskCount: number; runnableCount: number; decompositionCount: number };
+  metadata?: JsonObject;
+}
+
+export function createSwarmBacklog(input: FrontierSwarmBacklogInput = {}): FrontierSwarmBacklog {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const taskEntries = (input.tasks ?? []).map((task) => normalizeTask(task)).map(taskToBacklogEntry);
+  const entries = [...(input.entries ?? []).map(normalizeBacklogEntry), ...taskEntries];
+  const tasks = (input.tasks ?? []).map((task) => normalizeTask(task));
+  const id = input.id ?? 'swarm-backlog:' + stableHash([input.package, input.title, entries.map((entry) => entry.id), tasks.map((task) => task.id)]);
+  return {
+    kind: 'frontier.swarm.backlog',
+    version: 1,
+    id,
+    title: input.title ?? titleFromId(id),
+    ...(input.package ? { package: input.package } : {}),
+    generatedAt,
+    epics: cloneJsonValue([...(input.epics ?? [])]),
+    taskGroups: cloneJsonValue([...(input.taskGroups ?? [])]),
+    cycles: cloneJsonValue([...(input.cycles ?? [])]),
+    entries,
+    tasks,
+    summary: summarizeBacklog(entries, tasks, input),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function querySwarmBacklog(backlogInput: FrontierSwarmBacklog | FrontierSwarmBacklogInput, query: Partial<FrontierSwarmBacklogEntryInput> = {}): FrontierSwarmBacklog {
+  const backlog = isBacklog(backlogInput) ? backlogInput : createSwarmBacklog(backlogInput);
+  const entries = backlog.entries.filter((entry) => (
+    (query.status === undefined || entry.status === query.status)
+    && (query.lane === undefined || entry.lane === query.lane)
+    && (query.epicId === undefined || entry.epicId === query.epicId)
+    && (query.groupId === undefined || entry.groupId === query.groupId)
+    && (query.cycleId === undefined || entry.cycleId === query.cycleId)
+  ));
+  return createSwarmBacklog({ ...backlog, entries, tasks: backlog.tasks.filter((task) => entries.some((entry) => entry.taskId === task.id || entry.id === task.id)) });
+}
+
+export function mergeSwarmBacklogs(input: { base: FrontierSwarmBacklog | FrontierSwarmBacklogInput; entries?: readonly FrontierSwarmBacklogEntryInput[]; tasks?: readonly FrontierSwarmTaskInput[] }): FrontierSwarmBacklog {
+  const base = isBacklog(input.base) ? input.base : createSwarmBacklog(input.base);
+  const byId = new Map(base.entries.map((entry) => [entry.id, entry]));
+  for (const raw of input.entries ?? []) {
+    const entry = normalizeBacklogEntry(raw);
+    byId.set(entry.id, { ...(byId.get(entry.id) ?? entry), ...entry, tags: uniqueStrings([...(byId.get(entry.id)?.tags ?? []), ...entry.tags]) });
+  }
+  return createSwarmBacklog({ ...base, entries: Array.from(byId.values()), tasks: [...base.tasks, ...(input.tasks ?? []).map((task) => normalizeTask(task))] });
+}
+
+export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanInput): FrontierSwarmBacklogTaskPlan {
+  const backlog = isBacklog(input.backlog) ? input.backlog : createSwarmBacklog(input.backlog);
+  const runnable = backlog.entries.filter((entry) => entry.status === 'ready' || entry.status === 'open');
+  const tasks = runnable.map((entry) => normalizeTask({
+    id: entry.taskId ?? entry.id,
+    title: entry.title,
+    objective: entry.objective,
+    status: entry.status,
+    lane: entry.lane,
+    layer: entry.layer,
+    kind: entry.workKind ?? entry.entryKind,
+    priority: entry.priority,
+    sourceRefs: entry.sourceRefs,
+    targetRefs: entry.targetRefs,
+    allowedWrites: entry.allowedWrites,
+    dependsOn: entry.dependsOn,
+    tags: entry.tags,
+    metadata: { backlogEntryId: entry.id, ...(entry.metadata ?? {}) }
+  }));
+  const decompositionTasks = input.recursive ? backlog.entries
+    .filter((entry) => entry.entryKind === 'feature' || entry.childEntryIds.length > 0)
+    .map((entry) => normalizeTask({
+      id: `${entry.id}:decompose`,
+      title: `Decompose ${entry.title}`,
+      objective: `Break ${entry.title} into child tasks.`,
+      status: 'ready',
+      lane: entry.lane,
+      layer: entry.layer,
+      compute: input.decomposeCompute,
+      kind: 'backlog-decompose',
+      targetRefs: input.childArtifactPath ? [input.childArtifactPath] : [],
+      allowedWrites: input.childArtifactPath ? [input.childArtifactPath] : [],
+      metadata: { source: { kind: 'entry', id: entry.id, taskId: entry.taskId }, continuation: { remainingDepth: Math.max(0, input.maxDepth ?? 1), childArtifactPath: input.childArtifactPath } }
+    }))
+    : [];
+  const allTasks = [...tasks, ...decompositionTasks];
+  return {
+    kind: 'frontier.swarm.backlog-task-plan',
+    version: 1,
+    id: 'swarm-backlog-task-plan:' + stableHash([backlog.id, allTasks.map((task) => task.id), input.recursive, input.maxDepth]),
+    backlogId: backlog.id,
+    generatedAt: Date.now(),
+    tasks: allTasks,
+    runnableTaskIds: tasks.map((task) => task.id),
+    decompositionTaskIds: decompositionTasks.map((task) => task.id),
+    summary: { taskCount: allTasks.length, runnableCount: tasks.length, decompositionCount: decompositionTasks.length },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export type FrontierSwarmModelRoutingMode = 'fill' | 'observe' | 'override' | string;
+export type FrontierSwarmModelRoutingScope = 'global' | 'repository' | 'package' | 'lane' | 'task' | string;
+export type FrontierSwarmEvidenceQualityBand = 'missing' | 'weak' | 'adequate' | 'strong' | string;
+
+export interface FrontierSwarmModelRoutingFeedbackInput {
+  id?: string;
+  scope?: FrontierSwarmModelRoutingScope;
+  policyId?: string;
+  taskId?: string;
+  lane?: string;
+  layer?: string;
+  workKind?: string;
+  computeId?: string;
+  model?: string;
+  resultStatus?: string;
+  mergeDisposition?: FrontierSwarmMergeDisposition;
+  selected?: boolean;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmModelRoutingFeedback extends FrontierSwarmModelRoutingFeedbackInput {
+  kind: 'frontier.swarm.model-routing-feedback';
+  version: 1;
+  id: string;
+  scope: FrontierSwarmModelRoutingScope;
+  lane: string;
+  model: string;
+  taskKind: string;
+  generatedAt: number;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmModelRoutingPolicySignalInput {
+  mode?: FrontierSwarmModelRoutingMode;
+  lane?: string;
+  workKind?: string;
+  model?: string;
+  confidence?: FrontierSwarmConfidence;
+  reason?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmModelRoutingPolicySignal extends FrontierSwarmModelRoutingPolicySignalInput {
+  id: string;
+}
+
+export interface FrontierSwarmModelRoutingPolicyInput {
+  id?: string;
+  defaultMode?: FrontierSwarmModelRoutingMode;
+  signals?: readonly FrontierSwarmModelRoutingPolicySignalInput[];
+  feedback?: readonly FrontierSwarmModelRoutingFeedbackInput[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmModelRoutingPolicy {
+  kind: 'frontier.swarm.model-routing-policy';
+  version: 1;
+  id: string;
+  defaultMode: FrontierSwarmModelRoutingMode;
+  signals: FrontierSwarmModelRoutingPolicySignal[];
+  feedback: FrontierSwarmModelRoutingFeedback[];
+  generatedAt: number;
+  summary: { signalCount: number; feedbackCount: number; selectedCount: number };
+  metadata?: JsonObject;
+}
+
+export function createSwarmModelRoutingFeedback(input: FrontierSwarmModelRoutingFeedbackInput = {}): FrontierSwarmModelRoutingFeedback {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const lane = input.lane ?? 'global';
+  const model = input.model ?? input.computeId ?? 'unknown';
+  const { metadata: rawMetadata, ...rest } = input;
+  const metadata = toJsonObject(rawMetadata);
+  return {
+    kind: 'frontier.swarm.model-routing-feedback',
+    version: 1,
+    id: input.id ?? 'swarm-model-routing-feedback:' + stableHash([input.scope, input.policyId, input.taskId, lane, model, generatedAt]),
+    scope: input.scope ?? 'task',
+    lane,
+    model,
+    taskKind: input.workKind ?? 'task',
+    generatedAt,
+    ...rest,
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+export function createSwarmModelRoutingPolicy(input: FrontierSwarmModelRoutingPolicyInput = {}): FrontierSwarmModelRoutingPolicy {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const feedback = (input.feedback ?? []).map(createSwarmModelRoutingFeedback);
+  const signals = (input.signals ?? []).map((signal, index) => ({ id: `signal-${index + 1}`, ...signal }));
+  return {
+    kind: 'frontier.swarm.model-routing-policy',
+    version: 1,
+    id: input.id ?? 'swarm-model-routing-policy:' + stableHash([input.defaultMode, signals, feedback.map((entry) => entry.id)]),
+    defaultMode: input.defaultMode ?? 'observe',
+    signals,
+    feedback,
+    generatedAt,
+    summary: { signalCount: signals.length, feedbackCount: feedback.length, selectedCount: feedback.filter((entry) => entry.selected).length },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmModelRoutingFeedbackFromBoard(input: { board?: unknown; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmModelRoutingFeedback {
+  return createSwarmModelRoutingFeedback({ scope: 'lane', resultStatus: 'board-observed', generatedAt: input.generatedAt, metadata: input.metadata });
+}
+
+export function createSwarmModelRoutingFeedbackFromPanel(input: { panel?: unknown; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmModelRoutingFeedback {
+  return createSwarmModelRoutingFeedback({ scope: 'task', resultStatus: 'panel-observed', generatedAt: input.generatedAt, metadata: input.metadata });
+}
+
+export interface FrontierSwarmAdaptiveObservationInput { kind?: string; jobId?: string; lane?: string; score?: number; metadata?: unknown }
+export interface FrontierSwarmTournamentAdaptiveRecommendation { id: string; model?: string; computeId?: string; score: number; reason: string; metadata?: JsonObject }
+export interface FrontierSwarmTournamentAdaptiveFeedback { kind: 'frontier.swarm.tournament-adaptive-feedback'; version: 1; id: string; observations: FrontierSwarmAdaptiveObservationInput[]; recommendations: FrontierSwarmTournamentAdaptiveRecommendation[]; generatedAt: number; metadata?: JsonObject }
+export interface FrontierSwarmStrategyTournament { kind: 'frontier.swarm.strategy-tournament'; version: 1; id: string; candidates: Record<string, unknown>[]; winnerId?: string; generatedAt: number; metadata?: JsonObject }
+export interface FrontierSwarmStrategyTournamentHistory { kind: 'frontier.swarm.strategy-tournament-history'; version: 1; id: string; tournaments: FrontierSwarmStrategyTournament[]; generatedAt: number; metadata?: JsonObject }
+export interface FrontierSwarmStrategyTournamentComparison { winnerId?: string; tournamentCount: number; candidateCount: number; metadata?: JsonObject }
+
+export function createSwarmTournamentAdaptiveFeedback(input: { observations?: readonly FrontierSwarmAdaptiveObservationInput[]; recommendations?: readonly Partial<FrontierSwarmTournamentAdaptiveRecommendation>[]; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmTournamentAdaptiveFeedback {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const recommendations = (input.recommendations ?? []).map((entry, index) => ({
+    id: entry.id ?? `recommendation-${index + 1}`,
+    score: entry.score ?? 0,
+    reason: entry.reason ?? 'observed',
+    ...(entry.model ? { model: entry.model } : {}),
+    ...(entry.computeId ? { computeId: entry.computeId } : {}),
+    ...(toJsonObject(entry.metadata) ? { metadata: toJsonObject(entry.metadata) } : {})
+  }));
+  return {
+    kind: 'frontier.swarm.tournament-adaptive-feedback',
+    version: 1,
+    id: 'swarm-tournament-adaptive-feedback:' + stableHash([input.observations, recommendations, generatedAt]),
+    observations: cloneJsonValue([...(input.observations ?? [])]),
+    recommendations,
+    generatedAt,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmMergeTournament(input: { candidates?: readonly Record<string, unknown>[]; winnerId?: string; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmStrategyTournament {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const candidates = cloneJsonValue([...(input.candidates ?? [])]);
+  return { kind: 'frontier.swarm.strategy-tournament', version: 1, id: 'swarm-strategy-tournament:' + stableHash([candidates, input.winnerId, generatedAt]), candidates, ...(input.winnerId ? { winnerId: input.winnerId } : {}), generatedAt, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
+}
+
+export function createSwarmStrategyTournamentHistory(input: { tournaments?: readonly FrontierSwarmStrategyTournament[]; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmStrategyTournamentHistory {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const tournaments = cloneJsonValue([...(input.tournaments ?? [])]);
+  return { kind: 'frontier.swarm.strategy-tournament-history', version: 1, id: 'swarm-strategy-tournament-history:' + stableHash([tournaments.map((entry) => entry.id), generatedAt]), tournaments, generatedAt, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
+}
+
+export function querySwarmStrategyTournament(tournament: FrontierSwarmStrategyTournament): FrontierSwarmStrategyTournament {
+  return tournament;
+}
+
+export function compareSwarmStrategyTournaments(history: FrontierSwarmStrategyTournamentHistory | readonly FrontierSwarmStrategyTournament[]): FrontierSwarmStrategyTournamentComparison {
+  const tournaments: readonly FrontierSwarmStrategyTournament[] = Array.isArray(history)
+    ? history as readonly FrontierSwarmStrategyTournament[]
+    : (history as FrontierSwarmStrategyTournamentHistory).tournaments;
+  return { winnerId: tournaments.find((entry: FrontierSwarmStrategyTournament) => entry.winnerId)?.winnerId, tournamentCount: tournaments.length, candidateCount: tournaments.reduce((sum: number, entry: FrontierSwarmStrategyTournament) => sum + entry.candidates.length, 0) };
+}
+
+export interface FrontierSwarmAdaptiveLoadPlan { kind: 'frontier.swarm.adaptive-load-plan'; version: 1; id: string; planId?: string; observations: FrontierSwarmAdaptiveObservationInput[]; generatedAt: number; limits: FrontierSwarmScheduleLimits; metadata?: JsonObject }
+
+export function createSwarmAdaptiveLoadPlan(input: { plan?: FrontierSwarmPlan; observations?: readonly FrontierSwarmAdaptiveObservationInput[]; currentLimits?: Partial<FrontierSwarmScheduleLimits>; maxLimits?: Partial<FrontierSwarmScheduleLimits>; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmAdaptiveLoadPlan {
+  const generatedAt = input.generatedAt ?? Date.now();
+  return {
+    kind: 'frontier.swarm.adaptive-load-plan',
+    version: 1,
+    id: 'swarm-adaptive-load-plan:' + stableHash([input.plan?.id, input.observations, generatedAt]),
+    ...(input.plan ? { planId: input.plan.id } : {}),
+    observations: cloneJsonValue([...(input.observations ?? [])]),
+    generatedAt,
+    limits: { maxLaneConcurrency: {}, maxConcurrencyKeyConcurrency: {}, maxComputeConcurrency: {}, resourceQuotas: {}, ...(input.currentLimits ?? {}), ...(input.maxLimits ?? {}) },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmScheduleInputFromAdaptiveLoadPlan(plan: FrontierSwarmPlan, adaptivePlan: FrontierSwarmAdaptiveLoadPlan): FrontierSwarmScheduleInput {
+  return { plan, ...adaptivePlan.limits };
+}
+
+export interface FrontierSwarmCoordinatorProcessInput { id?: string; role?: string; lane?: string; status?: string; metadata?: unknown }
+export interface FrontierSwarmCoordinatorDashboard { kind: 'frontier.swarm.coordinator-dashboard'; version: 1; id: string; generatedAt: number; processes: FrontierSwarmCoordinatorProcessInput[]; summary: { processCount: number; activeCount: number }; metadata?: JsonObject }
+
+export function createSwarmCoordinatorDashboard(input: { processes?: readonly FrontierSwarmCoordinatorProcessInput[]; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmCoordinatorDashboard {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const processes = cloneJsonValue([...(input.processes ?? [])]);
+  return {
+    kind: 'frontier.swarm.coordinator-dashboard',
+    version: 1,
+    id: 'swarm-coordinator-dashboard:' + stableHash([processes, generatedAt]),
+    generatedAt,
+    processes,
+    summary: { processCount: processes.length, activeCount: processes.filter((entry) => entry.status === 'active' || entry.status === 'running').length },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function querySwarmCoordinatorDashboard(dashboard: FrontierSwarmCoordinatorDashboard): FrontierSwarmCoordinatorDashboard {
+  return dashboard;
+}
+
+function normalizeBacklogEntry(input: FrontierSwarmBacklogEntryInput): FrontierSwarmBacklogEntry {
+  const { metadata: rawMetadata, ...rest } = input;
+  const metadata = toJsonObject(rawMetadata);
+  return {
+    ...rest,
+    title: input.title ?? titleFromId(input.id),
+    entryKind: input.entryKind ?? 'task',
+    status: input.status ?? 'open',
+    childEntryIds: uniqueStrings(input.childEntryIds ?? []),
+    dependsOn: uniqueStrings(input.dependsOn ?? []),
+    blockedBy: uniqueStrings(input.blockedBy ?? []),
+    sourceRefs: uniqueStrings(input.sourceRefs ?? []),
+    targetRefs: uniqueStrings(input.targetRefs ?? []),
+    allowedWrites: uniqueStrings(input.allowedWrites ?? []),
+    acceptance: uniqueStrings(input.acceptance ?? []),
+    tags: uniqueStrings(input.tags ?? []),
+    priority: input.priority ?? 0,
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function taskToBacklogEntry(task: FrontierSwarmTask): FrontierSwarmBacklogEntry {
+  return normalizeBacklogEntry({
+    id: task.id,
+    taskId: task.id,
+    title: task.title,
+    objective: task.objective,
+    entryKind: task.workKind === 'feature' ? 'feature' : 'task',
+    status: task.status,
+    lane: task.lane,
+    layer: task.layer,
+    workKind: task.workKind,
+    sourceRefs: task.sourceRefs,
+    targetRefs: task.targetRefs,
+    allowedWrites: task.allowedWrites,
+    acceptance: task.acceptance,
+    tags: task.tags,
+    priority: task.priority,
+    metadata: task.metadata
+  });
+}
+
+function summarizeBacklog(entries: readonly FrontierSwarmBacklogEntry[], tasks: readonly FrontierSwarmTask[], input: FrontierSwarmBacklogInput): FrontierSwarmBacklog['summary'] {
+  return {
+    epicCount: input.epics?.length ?? 0,
+    groupCount: input.taskGroups?.length ?? 0,
+    cycleCount: input.cycles?.length ?? 0,
+    entryCount: entries.length,
+    taskCount: tasks.length,
+    readyCount: entries.filter((entry) => entry.status === 'ready' || entry.status === 'open').length,
+    runningCount: entries.filter((entry) => entry.status === 'running').length,
+    blockedCount: entries.filter((entry) => entry.status === 'blocked').length,
+    completedCount: entries.filter((entry) => entry.status === 'completed' || entry.status === 'verified').length
+  };
+}
+
+function isBacklog(value: FrontierSwarmBacklog | FrontierSwarmBacklogInput): value is FrontierSwarmBacklog {
+  return (value as FrontierSwarmBacklog).kind === 'frontier.swarm.backlog';
+}
+
 function isSwarmManifest(value: unknown): value is FrontierSwarmManifest {
   return !!value && typeof value === 'object' && (value as { kind?: unknown }).kind === FRONTIER_SWARM_MANIFEST_KIND;
 }
@@ -9177,6 +11099,18 @@ function slug(value: string): string {
 
 function uniqueStrings(values: readonly (string | undefined | null)[]): string[] {
   return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)));
+}
+
+function uniqueSwarmCommands(commands: readonly FrontierSwarmCommand[]): FrontierSwarmCommand[] {
+  const seen = new Set<string>();
+  const unique: FrontierSwarmCommand[] = [];
+  for (const command of commands) {
+    const key = stableHash(command);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(command);
+  }
+  return unique;
 }
 
 function positiveNumber(value: unknown): value is number {
