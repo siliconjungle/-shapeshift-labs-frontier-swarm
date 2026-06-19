@@ -6,6 +6,8 @@ Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and
 
 Verification gate metadata stays plain JSON. `mergeSwarmMetadata(...)` preserves `metadata.verificationGates` across task normalization, queue jobs, merge bundles, merge indexes, and coordinator drain assignments, and package-scoped gate descriptors can carry `metadata.packageId`, `metadata.packagePath`, and `metadata.packageName` without pulling in Codex-specific runtime code.
 
+Backlog-oriented adapters can use `createSwarmBacklog(...)`, `mergeSwarmBacklogs(...)`, `querySwarmBacklog(...)`, and `createSwarmBacklogTaskPlan(...)` to normalize backlog entries, fold multiple backlog snapshots together, and derive runnable plus recursive decomposition task plans for continuation workflows.
+
 ## Priority Scheduling
 
 Plans, schedules, and queue snapshots include `metadata.priorityPolicy` using the exported `FRONTIER_SWARM_REVIEW_PRIORITY_POLICY`. The policy puts coordinator-drain and review work in the top priority band, keeps speculative backlog in a lower band, and round-robins lanes inside each band before falling back to the task's numeric `priority`. Lane limits, compute limits, resource quotas, and `concurrencyKey` limits still gate readiness; the priority policy only changes candidate order.
@@ -18,25 +20,32 @@ Refill recommendations fill idle capacity with coordinator drain and rerun work 
 
 ## Hierarchical Merge Queues
 
-`createSwarmHierarchicalMergeQueue()` turns a merge index plus optional admission budget into root, parent, child, lane, semantic-region, and path queues. Clean admitted work can be applied by the local queue, clean excess work stays queued locally, stale work is marked for rerun, failed evidence is rejected, discovery work is recorded without review debt, true blockers stay blocked, and conflicted, public-contract, or higher-risk work is promoted upward.
+`createSwarmHierarchicalMergeQueue()` turns a merge index plus optional admission budget into root, parent, child, lane, semantic-region, and path queues. Clean admitted work can be applied by the local queue, clean excess work stays queued locally, stale work is marked for rerun, failed evidence is rejected, discovery work is tracked as record-only but normalizes to no-change, true blockers stay blocked, and conflicted, public-contract, or cross-scope work is promoted upward. High-risk work stays local unless admission explicitly allows it.
 
 Clean auto-mergeable work that spans multiple known semantic regions is returned as a `rerun` assignment with `retrySlices`, `semanticSliceScopeIds`, and `semanticSliceLeaseKeys`. Each retry slice carries its own required lease scope/key so runners can produce independently reviewable same-file slice bundles. If admission has already accepted a still-unsliced cross-scope patch, the `apply-local` assignment remains atomic and carries all `semanticSliceScopeIds` and `semanticSliceLeaseKeys` so runners can acquire every required semantic lease before applying it once. Same-region conflicts still serialize under one local lease, while unknown regions, public-contract regions, and parent-scope regions promote to the parent queue for a broader decision.
 
 Queue and coordinator-drain assignments also expose `requiredLeaseScopeIds` and `requiredLeaseKeys`. For independent same-file semantic regions these required leases stay at the semantic-region level, allowing multiple coordinators to acquire different locks for the same changed file. For promoted work, including shared parent-scope edits, the required lease is the promotion target such as the lane or root queue, so conflicting changes serialize under a parent decision without relying on package-specific names.
 
+Root lease keys are derived from the caller-supplied `rootScopeId`, so the queue model does not special-case a literal `root` identifier.
+
 The queue model is generic. Runners can map scopes to any repository, package, feature, service, file, symbol, or semantic ownership region without baking project-specific package names into the core package.
 
 `createSwarmSemanticOwnershipStableKey` and `createSwarmSemanticOwnershipRegionId` keep export, type, CLI command, docs section, fixture family, and test case ownership keys stable across discovery order and queue replay.
+The canonical stable-key prefixes are `exported-declaration`, `type-declaration`, `cli-command`, `docs-section`, `fixture-family`, and `test-case`.
 
 Caller-provided `scopes` are serialized as opaque queue scopes. Their `id`, `kind`, `leaseKey`, `changedPaths`, `changedRegions`, and `metadata` stay runner-owned, with `kind` defaulting to `custom`; callers can model root, parent, child, lane, semantic-region, and path scopes without changing the core queue logic.
 
-Hierarchical queues also emit `leaseRecords` for root, parent, child, lane, semantic, path, and custom scopes. These records are generic agent merge-queue infrastructure: they carry the lease key, optional local leader metadata, active and terminal queue item IDs, conflict and retry reasons, parent-promotion state, and terminal decision links back to the queue items they close. Adapters can use those records to let independent semantic scopes make progress concurrently while same-scope work serializes under one lease.
+`createSwarmHierarchicalMergeQueue()` also exposes a generic `scopeTree` summary with `scopeIdsByKind`, `ancestorScopeIdsByScopeId`, `childScopeIdsByScopeId`, and `leafScopeIds`. The tree is derived from the declared scope kinds and `parentId` links, so adapters can inspect root, parent, child, lane, semantic-region, and path scopes without assuming any Frontier-specific package, repo, or feature naming scheme.
+
+Hierarchical queues also emit `leaseRecords` for root, parent, child, lane, semantic-region, path, and custom scopes. These records are generic agent merge-queue infrastructure: they carry the lease key, optional local leader metadata, active and terminal queue item IDs, conflict and retry reasons, parent-promotion state, and terminal decision links back to the queue items they close. Adapters can use those records to let independent semantic scopes make progress concurrently while same-scope work serializes under one lease.
+
+Queue-local conflict decisions stay in the `continuation` bucket, so routine conflicts that are already contained within one scope do not get mislabeled as human review debt.
 
 This keeps the root coordinator from becoming the only place where work can make progress. A child queue can apply verified work under its own lease, leave clean overflow in `queue-local`, and promote only the items that need a parent decision. Adapters such as `@shapeshift-labs/frontier-swarm-codex` can layer run, collect, Loom, auto-drain, rerun, reject, discovery, and blocker workflows on top of the generic queue data.
 
 `createSwarmQueueOutcomeModel()` and `collapseSwarmQueueOutcomeDecisions()` provide a repo-agnostic outcome layer for autonomous merge queues. The model separates `terminal`, `continuation`, `coordinator-review`, `human-blocked`, `stale-rerun`, and `conflict` categories so "needs coordinator review" does not get reported as a true human blocker. Queue subjects are collapsed across `queueItemIds`, `taskId`, and `jobId` aliases, and only the latest decision for each subject contributes to visible review debt, blockers, reruns, and conflicts. This lets a newer committed/applied/rejected decision close old review or rerun records without requiring runners to mutate historical queue files.
 
-Queue decisions that resolve to conflict, stale rerun, or human review normalize to explicit `conflict-blocked`, `rerun`, and `human-question` terminal labels, so queue items always have a concrete terminal outcome instead of falling through to an ambiguous internal state.
+Queue decisions that resolve to conflict, stale rerun, or human review normalize to explicit `conflict-blocked`, `rerun`, and `human-question` terminal labels, while record-only and closed outcomes collapse to `no-change`, so queue items always have a concrete terminal outcome instead of falling through to an ambiguous internal state.
 
 `normalizeSwarmTerminalOutcome()` keeps terminal labels explicit and stable across bundle, collector, and queue surfaces. It normalizes `applied`, `committed`, `superseded`, `evidence-only`, `no-change`, and `generated-by-collector` as success states; `patch-missing` and `bundle-missing` as incomplete result states; and `rerun`, `rejected`, `conflict-blocked`, `human-question`, and `coordinator-review` as distinct terminal outcomes for downstream routing. `human-blocked` remains accepted as a legacy alias.
 
@@ -380,6 +389,8 @@ const route = createSwarmModelRoute({
 });
 ```
 
+`createSwarmModelRoutingFeedback` and `createSwarmModelRoutingPolicy` cover the serializable feedback/policy layer above the model router, and `createSwarmPlan(..., { routingMode, routingPolicy, routingContext })` now preserves that routing state on the returned plan for continuation code.
+
 The returned record includes scored candidates, estimated cost and latency, price/outcome telemetry fallbacks, panel confidence lift, residual risk, and a human-readable explanation for `single-cheap`, `single-deep`, `panel`, or `tournament` recommendations.
 
 ## Surface
@@ -410,6 +421,7 @@ The returned record includes scored candidates, estimated cost and latency, pric
 - `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`
 - `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`
 - `createSwarmUsageGovernor`, `checkSwarmUsageGovernor`
+- `createSwarmModelRoutingFeedback`, `createSwarmModelRoutingPolicy`
 - `createSwarmModelRoute`, `createSwarmPanelEvaluation`
 - `createSwarmSemanticOwnershipStableKey`, `createSwarmSemanticOwnershipRegionId`
 - `classifySwarmMergeReadiness`, `classifySwarmMergeDisposition`

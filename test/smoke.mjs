@@ -9,11 +9,15 @@ import {
   FRONTIER_SWARM_PANEL_EVALUATION_KIND,
   FRONTIER_SWARM_PRIORITY_POLICY_KIND,
   FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KIND_ORDER,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS,
+  FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS,
   FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
   checkSwarmOwnership,
   classifySwarmMergeDisposition,
   classifySwarmMergeReadiness,
@@ -29,8 +33,11 @@ import {
   createSwarmAutoReviewReport,
   createSwarmBlackboard,
   createSwarmBottleneckReport,
+  createSwarmBacklog,
+  createSwarmBacklogTaskPlan,
   createSwarmContinuousPoolState,
   createSwarmCoordinatorAgentDrainWork,
+  createSwarmCoordinatorDashboard,
   createSwarmContextPack,
   createSwarmDebugHandoff,
   createSwarmDivergenceReport,
@@ -45,6 +52,7 @@ import {
   createSwarmMergeAdmission,
   createSwarmManifest,
   createSwarmMergeBundle,
+  mergeSwarmBacklogs,
   createSwarmMergeIndex,
   createSwarmModelRoutingFeedback,
   createSwarmModelRoutingPolicy,
@@ -85,6 +93,7 @@ import {
   deriveSwarmQueueStatus,
   matchesGlob,
   querySwarmBlackboard,
+  querySwarmBacklog,
   querySwarmEvidenceIndex,
   recordSwarmEvent,
   renewSwarmLease,
@@ -157,6 +166,567 @@ assert.strictEqual(createSwarmManifest().compute[0].id, FRONTIER_SWARM_DEFAULT_C
 assert.strictEqual(validateSwarmManifest(manifest).valid, true);
 assert.strictEqual(compileSwarm(manifest).lanesById.get('runtime').layer, 'implementation');
 
+const semanticBroadRegionId = 'src/math.ts';
+const semanticFunctionRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/math.ts',
+  kind: 'named-export',
+  declarationKind: 'function',
+  name: 'add',
+  exportName: 'add'
+});
+const semanticMethodRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/math.ts',
+  kind: 'named-export',
+  declarationKind: 'method',
+  name: 'Calculator.increment',
+  exportName: 'increment'
+});
+const semanticArrowRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/math.ts',
+  kind: 'named-export',
+  declarationKind: 'arrow-function',
+  name: 'multiply',
+  exportName: 'multiply'
+});
+const semanticDefaultExportRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/math.ts',
+  kind: 'default-export',
+  declarationKind: 'function',
+  name: 'add',
+  exportName: 'add'
+});
+const semanticNamespaceExportRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/index.ts',
+  kind: 'namespace-export',
+  source: './math.ts',
+  name: 'math'
+});
+const semanticNamespaceExportAliasRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/index.ts',
+  kind: 'namespace-export',
+  source: './math.ts',
+  name: 'default',
+  exportName: 'math'
+});
+const semanticReExportRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/index.ts',
+  kind: 're-export',
+  source: './math.ts',
+  name: 'math'
+});
+const semanticReExportAliasRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/index.ts',
+  kind: 're-export',
+  source: './math.ts',
+  name: 'math',
+  exportName: 'default'
+});
+assert.strictEqual(semanticFunctionRegionId, 'src/math.ts#semanticOwnershipRegion:exported-declaration:function:add:add');
+assert.strictEqual(semanticFunctionRegionId, semanticDefaultExportRegionId);
+assert.strictEqual(semanticNamespaceExportRegionId, 'src/index.ts#semanticOwnershipRegion:namespace-export:./math.ts:math');
+assert.strictEqual(semanticNamespaceExportAliasRegionId, semanticNamespaceExportRegionId);
+assert.strictEqual(semanticReExportRegionId, 'src/index.ts#semanticOwnershipRegion:re-export:./math.ts:math');
+assert.strictEqual(semanticReExportAliasRegionId, semanticReExportRegionId);
+assert.notStrictEqual(semanticNamespaceExportRegionId, semanticReExportRegionId);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'type',
+  declarationKind: 'type-alias',
+  name: 'MathNumber'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:type-alias:MathNumber:MathNumber`);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'cli-command',
+  command: 'npm test'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND}:npm_test`);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'docs-section',
+  section: 'hierarchical-merge-queues'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND}:hierarchical-merge-queues`);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'fixture-family',
+  family: 'browser-smoke-fixtures'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND}:browser-smoke-fixtures`);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'namespace-export',
+  source: './math.ts',
+  name: 'math'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND}:./math.ts:math`);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'test-case',
+  testCase: 'semantic-ownership-keys'
+}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND}:semantic-ownership-keys`);
+assert.strictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND, 'exported-declaration');
+assert.strictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND, 'type-declaration');
+assert.strictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND, 'cli-command');
+assert.strictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND, 'docs-section');
+assert.strictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND, 'fixture-family');
+assert.strictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND, 'test-case');
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'type-alias',
+  name: 'MathNumber'
+}), `src/types.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND}:type-alias:MathNumber:MathNumber`);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/cli.ts',
+  kind: 'cli-command',
+  command: 'npm test'
+}), `src/cli.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND}:npm_test`);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'README.md',
+  kind: 'docs-section',
+  section: 'hierarchical-merge-queues'
+}), `README.md#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND}:hierarchical-merge-queues`);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'fixtures/browser-smoke.json',
+  kind: 'fixture-family',
+  family: 'browser-smoke-fixtures'
+}), `fixtures/browser-smoke.json#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND}:browser-smoke-fixtures`);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'test/smoke.mjs',
+  kind: 'test-case',
+  testCase: 'semantic-ownership-keys'
+}), `test/smoke.mjs#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND}:semantic-ownership-keys`);
+const semanticImport = {
+  records: [{
+    path: 'src/math.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSymbols: ['add', 'Calculator.increment', 'multiply']
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 3,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 3, occurrences: 3, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+
+const semanticManifest = createSwarmManifest({
+  compute: [{ id: 'deep', kind: 'codex', model: 'gpt-5.5', reasoningEffort: 'xhigh' }],
+  lanes: [{ id: 'runtime', compute: 'deep', allowedWrites: ['src/**'] }],
+  policy: { defaultCompute: 'deep' }
+});
+const semanticTasks = defineSwarmTasks([{
+  id: 'math-exports',
+  lane: 'runtime',
+  targetRefs: ['src/math.ts'],
+  ownershipRegions: [
+    {
+      id: semanticBroadRegionId,
+      globs: ['src/math.ts']
+    },
+    {
+      id: semanticFunctionRegionId,
+      globs: ['src/math.ts'],
+      selectors: ['add']
+    },
+    {
+      id: semanticMethodRegionId,
+      globs: ['src/math.ts'],
+      selectors: ['Calculator.increment']
+    },
+    {
+      id: semanticArrowRegionId,
+      globs: ['src/math.ts'],
+      selectors: ['multiply']
+    }
+  ],
+  changedRegions: [semanticBroadRegionId],
+  verification: [{ command: 'npm', args: ['test'] }]
+}]);
+const semanticPlan = createSwarmPlan(semanticManifest, semanticTasks);
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticPlan.jobs[0], ['src/math.ts']).sort(), [
+  semanticArrowRegionId,
+  semanticBroadRegionId,
+  semanticFunctionRegionId,
+  semanticMethodRegionId
+].sort());
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticPlan.jobs[0], ['src/math.ts'], semanticImport), [
+  semanticArrowRegionId,
+  semanticFunctionRegionId,
+  semanticMethodRegionId
+].sort());
+const semanticBundle = createSwarmMergeBundle({
+  job: semanticPlan.jobs[0],
+  result: {
+    jobId: semanticPlan.jobs[0].id,
+    status: 'verified',
+    changedPaths: ['src/math.ts'],
+    changedRegions: [semanticBroadRegionId],
+    queueItemIds: ['math-exports'],
+    verification: [{ status: 0 }],
+    traceShards: [{ kind: 'trace-summary', spanCount: 3, eventCount: 4 }]
+  },
+  semanticImport,
+  patchPath: 'agent-runs/export-ownership/changes.patch',
+  riskLevel: 'low'
+});
+assert.deepStrictEqual(semanticBundle.changedRegions, [
+  semanticArrowRegionId,
+  semanticFunctionRegionId,
+  semanticMethodRegionId
+].sort());
+assert.deepStrictEqual(semanticBundle.traceShards, [{ kind: 'trace-summary', spanCount: 3, eventCount: 4 }]);
+const semanticQueue = createSwarmHierarchicalMergeQueue({
+  index: createSwarmMergeIndex({ bundles: [semanticBundle], generatedAt: 6550 }),
+  generatedAt: 6551
+});
+assert.strictEqual(semanticQueue.scopes.filter((scope) => scope.kind === 'semantic-region').length, 3);
+assert.strictEqual(semanticQueue.assignments[0].scopeId, 'lane:runtime');
+assert.strictEqual(semanticQueue.assignments[0].semanticSliceScopeIds.length, 3);
+assert.deepStrictEqual(semanticQueue.assignments[0].semanticSliceScopeIds.sort(), [
+  'semantic-region:fnv1a32:1ca3b68c',
+  'semantic-region:fnv1a32:303865d9',
+  'semantic-region:fnv1a32:4a50e0fd'
+].sort());
+assert.deepStrictEqual(semanticQueue.assignments[0].semanticSliceLeaseKeys.sort(), [
+  'merge:semantic:runtime:src/math.ts#semanticOwnershipRegion:exported-declaration:arrow-function:multiply:multiply',
+  'merge:semantic:runtime:src/math.ts#semanticOwnershipRegion:exported-declaration:function:add:add',
+  'merge:semantic:runtime:src/math.ts#semanticOwnershipRegion:exported-declaration:method:Calculator.increment:increment'
+].sort());
+const sameFileIndependentExportFormatRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/math.ts',
+  kind: 'named-export',
+  declarationKind: 'function',
+  name: 'formatTitle',
+  exportName: 'formatTitle'
+});
+const sameFileIndependentExportParseRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/math.ts',
+  kind: 'named-export',
+  declarationKind: 'function',
+  name: 'parseTitle',
+  exportName: 'parseTitle'
+});
+const sameFileIndependentExportTask = defineSwarmTasks([
+  {
+    id: 'math-format-title',
+    lane: 'runtime',
+    targetRefs: ['src/math.ts'],
+    ownershipRegions: [
+      {
+        id: semanticBroadRegionId,
+        globs: ['src/math.ts']
+      },
+      {
+        id: sameFileIndependentExportFormatRegionId,
+        globs: ['src/math.ts'],
+        selectors: ['formatTitle']
+      },
+      {
+        id: sameFileIndependentExportParseRegionId,
+        globs: ['src/math.ts'],
+        selectors: ['parseTitle']
+      }
+    ],
+    changedRegions: [semanticBroadRegionId]
+  },
+  {
+    id: 'math-parse-title',
+    lane: 'runtime',
+    targetRefs: ['src/math.ts'],
+    ownershipRegions: [
+      {
+        id: semanticBroadRegionId,
+        globs: ['src/math.ts']
+      },
+      {
+        id: sameFileIndependentExportFormatRegionId,
+        globs: ['src/math.ts'],
+        selectors: ['formatTitle']
+      },
+      {
+        id: sameFileIndependentExportParseRegionId,
+        globs: ['src/math.ts'],
+        selectors: ['parseTitle']
+      }
+    ],
+    changedRegions: [semanticBroadRegionId]
+  }
+]);
+const sameFileIndependentExportPlan = createSwarmPlan(semanticManifest, sameFileIndependentExportTask);
+const sameFileIndependentExportSemanticImportFormat = {
+  records: [{
+    path: 'src/math.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSymbols: ['formatTitle']
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const sameFileIndependentExportSemanticImportParse = {
+  records: [{
+    path: 'src/math.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSymbols: ['parseTitle']
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+assert.deepStrictEqual(resolveSwarmChangedRegions(
+  sameFileIndependentExportPlan.jobs[0],
+  ['src/math.ts'],
+  sameFileIndependentExportSemanticImportFormat
+), [sameFileIndependentExportFormatRegionId]);
+assert.deepStrictEqual(resolveSwarmChangedRegions(
+  sameFileIndependentExportPlan.jobs[1],
+  ['src/math.ts'],
+  sameFileIndependentExportSemanticImportParse
+), [sameFileIndependentExportParseRegionId]);
+const sameFileIndependentExportBundleFormat = createSwarmMergeBundle({
+  job: sameFileIndependentExportPlan.jobs[0],
+  result: {
+    jobId: sameFileIndependentExportPlan.jobs[0].id,
+    status: 'verified',
+    changedPaths: ['src/math.ts'],
+    changedRegions: [semanticBroadRegionId],
+    queueItemIds: ['math-format-title'],
+    verification: [{ status: 0 }]
+  },
+  semanticImport: sameFileIndependentExportSemanticImportFormat,
+  patchPath: 'agent-runs/export-ownership/math-format-title.patch',
+  riskLevel: 'low'
+});
+const sameFileIndependentExportBundleParse = createSwarmMergeBundle({
+  job: sameFileIndependentExportPlan.jobs[1],
+  result: {
+    jobId: sameFileIndependentExportPlan.jobs[1].id,
+    status: 'verified',
+    changedPaths: ['src/math.ts'],
+    changedRegions: [semanticBroadRegionId],
+    queueItemIds: ['math-parse-title'],
+    verification: [{ status: 0 }]
+  },
+  semanticImport: sameFileIndependentExportSemanticImportParse,
+  patchPath: 'agent-runs/export-ownership/math-parse-title.patch',
+  riskLevel: 'low'
+});
+const sameFileIndependentExportIndex = createSwarmMergeIndex({
+  bundles: [sameFileIndependentExportBundleFormat, sameFileIndependentExportBundleParse],
+  generatedAt: 6551
+});
+assert.strictEqual(sameFileIndependentExportIndex.summary.conflictCount, 0);
+assert.deepStrictEqual(sameFileIndependentExportIndex.byPath['src/math.ts'].sort(), [
+  sameFileIndependentExportBundleFormat.jobId,
+  sameFileIndependentExportBundleParse.jobId
+].sort());
+assert.deepStrictEqual(sameFileIndependentExportIndex.entries.map((entry) => entry.changedRegions[0]).sort(), [
+  sameFileIndependentExportFormatRegionId,
+  sameFileIndependentExportParseRegionId
+].sort());
+const sameFileIndependentExportAdmission = createSwarmMergeAdmission({
+  index: sameFileIndependentExportIndex,
+  maxReady: 2,
+  maxChangedPaths: 1,
+  maxChangedRegions: 2,
+  generatedAt: 6552
+});
+assert.deepStrictEqual(sameFileIndependentExportAdmission.admitted.sort(), [
+  sameFileIndependentExportBundleFormat.jobId,
+  sameFileIndependentExportBundleParse.jobId
+].sort());
+const sameFileIndependentExportQueue = createSwarmHierarchicalMergeQueue({
+  index: sameFileIndependentExportIndex,
+  admission: sameFileIndependentExportAdmission,
+  generatedAt: 6553
+});
+assert.strictEqual(sameFileIndependentExportQueue.summary.applyLocalCount, 2);
+assert.strictEqual(sameFileIndependentExportQueue.summary.promoteCount, 0);
+assert.strictEqual(sameFileIndependentExportQueue.scopes.filter((scope) => scope.kind === 'semantic-region').length, 2);
+assert.strictEqual(new Set(sameFileIndependentExportQueue.assignments.map((assignment) => assignment.leaseKey)).size, 2);
+assert.ok(sameFileIndependentExportQueue.assignments.every((assignment) => assignment.scopeId.startsWith('semantic-region:')));
+assert.ok(sameFileIndependentExportQueue.assignments.every((assignment) => assignment.changedPaths[0] === 'src/math.ts'));
+assert.deepStrictEqual(
+  sameFileIndependentExportQueue.assignments.map((assignment) => assignment.requiredLeaseKeys[0]).sort(),
+  sameFileIndependentExportQueue.assignments.map((assignment) => assignment.leaseKey).sort()
+);
+assert.strictEqual(sameFileIndependentExportQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic-region').length, 2);
+assert.deepStrictEqual(
+  sameFileIndependentExportQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic-region').map((record) => record.leaseKey).sort(),
+  sameFileIndependentExportQueue.assignments.map((assignment) => assignment.leaseKey).sort()
+);
+
+const sameSymbolAcrossPathsFormatRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/format-title.ts',
+  kind: 'named-export',
+  declarationKind: 'function',
+  name: 'formatTitle',
+  exportName: 'formatTitle'
+});
+const sameSymbolAcrossPathsParseRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/parse-title.ts',
+  kind: 'named-export',
+  declarationKind: 'function',
+  name: 'formatTitle',
+  exportName: 'formatTitle'
+});
+const sameSymbolAcrossPathsTask = defineSwarmTasks([
+  {
+    id: 'format-title-rename',
+    lane: 'runtime',
+    targetRefs: ['src/format-title.ts'],
+    ownershipRegions: [
+      {
+        id: sameSymbolAcrossPathsFormatRegionId,
+        globs: ['src/format-title.ts'],
+        selectors: ['formatTitle']
+      }
+    ],
+    changedRegions: [sameSymbolAcrossPathsFormatRegionId]
+  },
+  {
+    id: 'parse-title-rename',
+    lane: 'runtime',
+    targetRefs: ['src/parse-title.ts'],
+    ownershipRegions: [
+      {
+        id: sameSymbolAcrossPathsParseRegionId,
+        globs: ['src/parse-title.ts'],
+        selectors: ['formatTitle']
+      }
+    ],
+    changedRegions: [sameSymbolAcrossPathsParseRegionId]
+  }
+]);
+const sameSymbolAcrossPathsPlan = createSwarmPlan(semanticManifest, sameSymbolAcrossPathsTask);
+const sameSymbolAcrossPathsSemanticImportFormat = {
+  records: [{
+    path: 'src/format-title.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSymbols: ['formatTitle']
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const sameSymbolAcrossPathsSemanticImportParse = {
+  records: [{
+    path: 'src/parse-title.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSymbols: ['formatTitle']
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 1,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 1, occurrences: 1, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const sameSymbolAcrossPathsBundleFormat = createSwarmMergeBundle({
+  job: sameSymbolAcrossPathsPlan.jobs[0],
+  result: {
+    jobId: sameSymbolAcrossPathsPlan.jobs[0].id,
+    status: 'verified',
+    changedPaths: ['src/format-title.ts'],
+    changedRegions: [sameSymbolAcrossPathsFormatRegionId],
+    queueItemIds: ['format-title-rename'],
+    verification: [{ status: 0 }]
+  },
+  semanticImport: sameSymbolAcrossPathsSemanticImportFormat,
+  patchPath: 'agent-runs/export-ownership/format-title.patch',
+  riskLevel: 'low'
+});
+const sameSymbolAcrossPathsBundleParse = createSwarmMergeBundle({
+  job: sameSymbolAcrossPathsPlan.jobs[1],
+  result: {
+    jobId: sameSymbolAcrossPathsPlan.jobs[1].id,
+    status: 'verified',
+    changedPaths: ['src/parse-title.ts'],
+    changedRegions: [sameSymbolAcrossPathsParseRegionId],
+    queueItemIds: ['parse-title-rename'],
+    verification: [{ status: 0 }]
+  },
+  semanticImport: sameSymbolAcrossPathsSemanticImportParse,
+  patchPath: 'agent-runs/export-ownership/parse-title.patch',
+  riskLevel: 'low'
+});
+const sameSymbolAcrossPathsIndex = createSwarmMergeIndex({
+  bundles: [sameSymbolAcrossPathsBundleFormat, sameSymbolAcrossPathsBundleParse],
+  generatedAt: 6554
+});
+assert.strictEqual(sameSymbolAcrossPathsIndex.summary.conflictCount, 1);
+assert.strictEqual(sameSymbolAcrossPathsIndex.conflicts[0].kind, 'symbol');
+assert.strictEqual(sameSymbolAcrossPathsIndex.conflicts[0].symbol, 'formatTitle');
+assert.deepStrictEqual(
+  sameSymbolAcrossPathsIndex.entries.find((entry) => entry.jobId === sameSymbolAcrossPathsBundleFormat.jobId).conflictingJobIds,
+  [sameSymbolAcrossPathsBundleParse.jobId]
+);
+
 const tasks = defineSwarmTasks([
   {
     id: 'runtime-action-parity',
@@ -200,109 +770,6 @@ assert.strictEqual(plan.jobs[0].verification[0].command, 'node');
 assert.ok(plan.jobs[0].allowedWrites.includes('inkwell/.frontier/evidence/runtime/runtime-action-parity/**'));
 assert.ok(plan.jobs[0].ownedRegions.includes('runtime.actions'));
 assert.deepStrictEqual(resolveSwarmChangedRegions(plan.jobs[0], ['inkwell/apps/web/src/runtime/runtime.ts']), ['runtime.actions']);
-assert.strictEqual(createSwarmSemanticOwnershipStableKey({
-  kind: 'named-export',
-  declarationKind: 'function',
-  name: 'add',
-  exportName: 'add'
-}), 'exported-declaration:function:add:add');
-assert.strictEqual(createSwarmSemanticOwnershipStableKey({
-  kind: 'default-export',
-  declarationKind: 'function',
-  name: 'default',
-  exportName: 'build'
-}), `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND}:function:build:build`);
-const namespaceExportKey = createSwarmSemanticOwnershipStableKey({
-  kind: 'namespace-export',
-  source: './math.ts',
-  name: 'math'
-});
-const namespaceExportAliasKey = createSwarmSemanticOwnershipStableKey({
-  kind: 'namespace-export',
-  source: './math.ts',
-  name: 'default',
-  exportName: 'math'
-});
-const reExportKey = createSwarmSemanticOwnershipStableKey({
-  kind: 're-export',
-  source: './math.ts',
-  name: 'math'
-});
-const defaultReExportRegionId = createSwarmSemanticOwnershipRegionId({
-  file: 'src/index.ts',
-  kind: 're-export',
-  source: './math.ts',
-  name: 'default'
-});
-assert.strictEqual(namespaceExportKey, `${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND}:./math.ts:math`);
-assert.strictEqual(namespaceExportAliasKey, namespaceExportKey);
-assert.strictEqual(reExportKey, 're-export:./math.ts:math');
-assert.strictEqual(defaultReExportRegionId, 'src/index.ts#semanticOwnershipRegion:re-export:./math.ts:default');
-assert.notStrictEqual(namespaceExportKey, reExportKey);
-assert.strictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS.namespaceExport, FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND);
-assert.deepStrictEqual(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KIND_ORDER, [
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS.type,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS.cliCommand,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS.docsSection,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS.fixtureFamily,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS.testCase
-]);
-assert.strictEqual(createSwarmSemanticOwnershipStableKey({
-  kind: 'type',
-  declarationKind: 'type-alias',
-  name: 'MathNumber'
-}), 'type-declaration:type-alias:MathNumber:MathNumber');
-assert.strictEqual(createSwarmSemanticOwnershipStableKey({
-  kind: 'cli-command',
-  command: 'npm test'
-}), 'cli-command:npm_test');
-assert.strictEqual(createSwarmSemanticOwnershipStableKey({
-  kind: 'docs-section',
-  section: 'hierarchical-merge-queues'
-}), 'docs-section:hierarchical-merge-queues');
-assert.strictEqual(createSwarmSemanticOwnershipStableKey({
-  kind: 'fixture-family',
-  family: 'browser-smoke-fixtures'
-}), 'fixture-family:browser-smoke-fixtures');
-assert.strictEqual(createSwarmSemanticOwnershipStableKey({
-  kind: 'test-case',
-  testCase: 'semantic-ownership-keys'
-}), 'test-case:semantic-ownership-keys');
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'src/types.ts',
-  kind: 'type',
-  declarationKind: 'type-alias',
-  name: 'MathNumber'
-}), 'src/types.ts#semanticOwnershipRegion:type-declaration:type-alias:MathNumber:MathNumber');
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'src/index.ts',
-  kind: 'namespace-export',
-  source: './math.ts',
-  name: 'default',
-  exportName: 'math'
-}), `src/index.ts#semanticOwnershipRegion:${FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND}:./math.ts:math`);
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'src/cli.ts',
-  kind: 'cli-command',
-  command: 'npm test'
-}), 'src/cli.ts#semanticOwnershipRegion:cli-command:npm_test');
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'README.md',
-  kind: 'docs-section',
-  section: 'hierarchical-merge-queues'
-}), 'README.md#semanticOwnershipRegion:docs-section:hierarchical-merge-queues');
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'fixtures/browser-smoke.json',
-  kind: 'fixture-family',
-  family: 'browser-smoke-fixtures'
-}), 'fixtures/browser-smoke.json#semanticOwnershipRegion:fixture-family:browser-smoke-fixtures');
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'test/smoke.mjs',
-  kind: 'test-case',
-  testCase: 'semantic-ownership-keys'
-}), 'test/smoke.mjs#semanticOwnershipRegion:test-case:semantic-ownership-keys');
 assert.strictEqual(plan.summary.jobCount, 1);
 
 const selection = createSwarmTaskSelection(manifest, tasks, {
@@ -413,6 +880,95 @@ assert.strictEqual(mergedGateMetadata.verificationGates[0].metadata.packageId, '
 assert.strictEqual(mergedGateMetadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
 assert.strictEqual(mergedGateMetadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
 
+const backlog = createSwarmBacklog({
+  id: 'continuation-backlog',
+  title: 'Continuation backlog',
+  package: '@shapeshift-labs/frontier-swarm',
+  entries: [
+    {
+      id: 'entry-ready',
+      title: 'Ready entry',
+      entryKind: 'task',
+      status: 'ready',
+      lane: 'runtime',
+      targetRefs: ['src/index.ts'],
+      tags: ['backlog']
+    },
+    {
+      id: 'entry-blocked',
+      title: 'Blocked entry',
+      entryKind: 'feature',
+      status: 'blocked',
+      lane: 'runtime'
+    }
+  ],
+  metadata: { owner: 'smoke' }
+});
+assert.strictEqual(backlog.kind, 'frontier.swarm.backlog');
+assert.strictEqual(backlog.summary.entryCount, 2);
+assert.strictEqual(backlog.summary.readyCount, 1);
+assert.strictEqual(backlog.summary.blockedCount, 1);
+
+const queriedBacklog = querySwarmBacklog(backlog, { status: 'ready' });
+assert.strictEqual(queriedBacklog.summary.entryCount, 1);
+assert.strictEqual(queriedBacklog.entries[0].id, 'entry-ready');
+
+const mergedBacklog = mergeSwarmBacklogs({
+  base: backlog,
+  backlogs: [{
+    entries: [
+      {
+        id: 'entry-ready',
+        title: 'Ready entry updated',
+        entryKind: 'task',
+        status: 'verified',
+        lane: 'runtime',
+        tags: ['merged']
+      },
+      {
+        id: 'entry-new',
+        title: 'New entry',
+        entryKind: 'decision',
+        status: 'open',
+        lane: 'runtime'
+      }
+    ]
+  }],
+  tasks: [{
+    id: 'task-1',
+    title: 'Continuation task',
+    status: 'ready',
+    lane: 'runtime',
+    targetRefs: ['src/task.ts']
+  }],
+  metadata: { runId: 'merge-smoke' }
+});
+assert.strictEqual(mergedBacklog.summary.entryCount, 4);
+assert.strictEqual(mergedBacklog.summary.taskCount, 1);
+assert.strictEqual(mergedBacklog.summary.readyCount, 2);
+assert.strictEqual(mergedBacklog.entries.find((entry) => entry.id === 'entry-ready').status, 'verified');
+
+const backlogTaskPlan = createSwarmBacklogTaskPlan({
+  backlog: mergedBacklog,
+  recursive: true,
+  maxDepth: 2,
+  backlogPath: 'backlogs/continuation.json',
+  childArtifactPath: 'backlogs/continuation.child.json',
+  decomposeLane: 'runtime',
+  decomposeCompute: 'deep',
+  decomposeWorkKind: 'backlog-decompose',
+  metadata: { source: 'smoke' }
+});
+assert.strictEqual(backlogTaskPlan.kind, 'frontier.swarm.backlog-task-plan');
+assert.strictEqual(backlogTaskPlan.backlogId, mergedBacklog.id);
+assert.strictEqual(backlogTaskPlan.summary.taskCount, 3);
+assert.strictEqual(backlogTaskPlan.summary.runnableCount, 2);
+assert.strictEqual(backlogTaskPlan.summary.decompositionCount, 1);
+assert.strictEqual(backlogTaskPlan.metadata.backlogId, mergedBacklog.id);
+assert.strictEqual(backlogTaskPlan.metadata.source, 'smoke');
+assert.deepStrictEqual(backlogTaskPlan.runnableTaskIds, ['entry-new', 'task-1']);
+assert.deepStrictEqual(backlogTaskPlan.decompositionTaskIds, ['entry-blocked:decompose']);
+
 const scaleTasks = defineSwarmTasks(Array.from({ length: 1000 }, (_, index) => ({
   id: `scale-${index}`,
   lane: index % 2 === 0 ? 'runtime' : 'harness',
@@ -514,36 +1070,6 @@ assert.deepStrictEqual(priorityQueue.jobs.slice(0, 3).map((job) => job.taskId), 
 assert.strictEqual(priorityQueue.jobs[0].metadata.priorityPolicy.className, 'coordinator-drain');
 assert.strictEqual(priorityQueue.jobs[1].metadata.priorityPolicy.className, 'review');
 assert.strictEqual(priorityQueue.jobs.find((job) => job.taskId === 'speculative-0').metadata.priorityPolicy.className, 'speculative');
-
-const routingPolicy = createSwarmModelRoutingPolicy({
-  feedback: [
-    createSwarmModelRoutingFeedback({
-      lane: 'runtime',
-      workKind: 'implementation',
-      model: 'gpt-5.4-mini',
-      selected: true,
-      mergeDisposition: 'auto-mergeable',
-      mergeReadiness: 'verified-patch',
-      resultStatus: 'completed',
-      evidenceQuality: { band: 'verified', confidence: 'high' }
-    }),
-    createSwarmModelRoutingFeedback({
-      lane: 'harness',
-      workKind: 'evidence',
-      model: 'gpt-5.4-mini',
-      mergeDisposition: 'needs-port',
-      mergeReadiness: 'blocked',
-      resultStatus: 'completed',
-      evidenceQuality: { band: 'weak', confidence: 'medium' }
-    })
-  ]
-});
-assert.strictEqual(routingPolicy.summary.feedbackCount, 2);
-assert.strictEqual(routingPolicy.summary.preferenceCount, 2);
-assert.strictEqual(routingPolicy.summary.preferCount, 1);
-assert.strictEqual(routingPolicy.summary.avoidCount, 1);
-assert.ok(routingPolicy.preferences.some((entry) => entry.mode === 'prefer' && entry.lane === 'runtime'));
-assert.ok(routingPolicy.preferences.some((entry) => entry.mode === 'avoid' && entry.lane === 'harness'));
 
 const classifiedPool = createSwarmContinuousPoolState({
   generatedAt: 12600,
@@ -734,6 +1260,58 @@ assert.ok(panelRoute.panel.expectedCostUsd > riskRoute.recommended.estimatedCost
 assert.ok(panelRoute.panel.confidenceLift > 0);
 assert.ok(panelRoute.panel.residualRiskScore < 1);
 
+const modelRoutingFeedback = createSwarmModelRoutingFeedback({
+  scope: 'lane',
+  lane: 'runtime',
+  model: 'gpt-5.4-mini',
+  selected: true,
+  resultStatus: 'panel-observed',
+  evidenceQuality: {
+    band: 'strong',
+    score: 0.92,
+    confidence: 'high',
+    evidencePaths: ['evidence/model-routing.json']
+  },
+  tags: ['routing', 'panel'],
+  metadata: { source: 'smoke' }
+});
+assert.strictEqual(modelRoutingFeedback.kind, 'frontier.swarm.model-routing-feedback');
+assert.strictEqual(modelRoutingFeedback.scope, 'lane');
+assert.strictEqual(modelRoutingFeedback.selected, true);
+assert.deepStrictEqual(modelRoutingFeedback.tags, ['routing', 'panel']);
+
+const modelRoutingPolicy = createSwarmModelRoutingPolicy({
+  defaultMode: 'override',
+  signals: [{
+    mode: 'override',
+    lane: 'runtime',
+    workKind: 'continuation',
+    model: 'gpt-5.4-mini',
+    confidence: 'high',
+    reason: 'continuation should keep the selected model'
+  }],
+  feedback: [modelRoutingFeedback],
+  generatedAt: 13600,
+  metadata: { source: 'smoke' }
+});
+assert.strictEqual(modelRoutingPolicy.kind, 'frontier.swarm.model-routing-policy');
+assert.strictEqual(modelRoutingPolicy.defaultMode, 'override');
+assert.strictEqual(modelRoutingPolicy.signals[0].id, 'signal-1');
+assert.strictEqual(modelRoutingPolicy.preferences[0].mode, 'override');
+assert.strictEqual(modelRoutingPolicy.summary.signalCount, 1);
+assert.strictEqual(modelRoutingPolicy.summary.feedbackCount, 1);
+
+const modelRoutingPlan = createSwarmPlan(manifest, tasks, {
+  routingMode: 'override',
+  routingPolicy: modelRoutingPolicy,
+  routingContext: { continuation: true, reason: 'codex-routing' }
+});
+assert.strictEqual(modelRoutingPlan.routingMode, 'override');
+assert.strictEqual(modelRoutingPlan.routingPolicy.kind, 'frontier.swarm.model-routing-policy');
+assert.strictEqual(modelRoutingPlan.routingPolicy.signals[0].mode, 'override');
+assert.strictEqual(modelRoutingPlan.routingPolicy.feedback[0].kind, 'frontier.swarm.model-routing-feedback');
+assert.deepStrictEqual(modelRoutingPlan.routingContext, { continuation: true, reason: 'codex-routing' });
+
 const tournamentEvaluation = createSwarmPanelEvaluation({
   candidates: panelRoute.candidates,
   riskScore: 0.9,
@@ -756,9 +1334,11 @@ scaleRun = completeSwarmJob(scaleRun, {
   jobId: firstScaleJob.id,
   status: 'completed',
   changedPaths: [firstScaleJob.task.targetRefs[0]],
-  evidencePaths: ['agent-runs/scale/evidence.json']
+  evidencePaths: ['agent-runs/scale/evidence.json'],
+  traceShards: [{ kind: 'trace-summary', spanCount: 1, eventCount: 2 }]
 });
 assert.strictEqual(scaleRun.results[0].mergeReadiness, 'patch-candidate');
+assert.deepStrictEqual(scaleRun.results[0].traceShards, [{ kind: 'trace-summary', spanCount: 1, eventCount: 2 }]);
 assert.strictEqual(classifySwarmMergeReadiness({ jobId: 'discovery', status: 'completed', changedPaths: [] }), 'discovery-only');
 assert.strictEqual(classifySwarmMergeDisposition({ jobId: 'verified', status: 'verified', changedPaths: ['src/runtime/a.ts'], verification: [{ status: 0 }] }), 'auto-mergeable');
 const mergeBundle = createSwarmMergeBundle({
@@ -773,9 +1353,12 @@ const mergeBundle = createSwarmMergeBundle({
 assert.strictEqual(mergeBundle.disposition, 'needs-port');
 assert.strictEqual(mergeBundle.patchPath, 'agent-runs/scale/changes.patch');
 assert.deepStrictEqual(mergeBundle.queueItemIds, [firstScaleJob.taskId]);
+assert.deepStrictEqual(mergeBundle.traceShards, [{ kind: 'trace-summary', spanCount: 1, eventCount: 2 }]);
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageId, 'frontier-swarm');
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
+const dashboard = createSwarmCoordinatorDashboard({ bundles: [mergeBundle], generatedAt: 8050 });
+assert.deepStrictEqual(dashboard.jobs[0].traceShards, [{ kind: 'trace-summary', spanCount: 1, eventCount: 2 }]);
 const queueSnapshot = createSwarmQueueSnapshot({ plan: scalePlan, run: scaleRun, leases, generatedAt: 8000 });
 assert.strictEqual(queueSnapshot.summary.jobCount, 1000);
 assert.strictEqual(queueSnapshot.summary.leaseCount, 5);
@@ -1066,7 +1649,7 @@ assert.strictEqual(patchStackPlan.summary.jobCount, 2);
 assert.ok(patchStackPlan.stacks.some((stack) => stack.conflicts.length === 1));
 const defaultHierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, generatedAt: 7190 });
 assert.strictEqual(defaultHierarchicalQueue.summary.applyLocalCount, 2);
-assert.strictEqual(defaultHierarchicalQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:*');
+assert.strictEqual(defaultHierarchicalQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:root');
 assert.strictEqual(defaultHierarchicalQueue.summary.admissionPressure.applyLocalQueueItemCount, 2);
 assert.deepStrictEqual(
   defaultHierarchicalQueue.assignments.map((assignment) => assignment.queueItemIds).flat().sort(),
@@ -1095,9 +1678,29 @@ assert.deepStrictEqual(
   sameFileSliceQueue.assignments.map((assignment) => assignment.requiredLeaseKeys[0]).sort(),
   sameFileSliceQueue.assignments.map((assignment) => assignment.leaseKey).sort()
 );
-assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:root:*')));
+assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:root:root')));
 assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:lane:runtime')));
 assert.strictEqual(sameFileSliceQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
+const genericRootBundle = createSwarmMergeBundle({
+  result: {
+    jobId: 'generic-root-bundle',
+    status: 'verified',
+    changedPaths: ['src/generic.ts'],
+    changedRegions: ['scope.region'],
+    queueItemIds: ['generic-root-bundle'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/generic-root/changes.patch',
+  riskLevel: 'low'
+});
+const genericRootQueue = createSwarmHierarchicalMergeQueue({
+  index: createSwarmMergeIndex({ bundles: [genericRootBundle], generatedAt: 7196.5 }),
+  rootScopeId: 'scope:root',
+  generatedAt: 7196.6
+});
+assert.strictEqual(genericRootQueue.rootScopeId, 'scope:root');
+assert.strictEqual(genericRootQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:scope:root');
+assert.ok(genericRootQueue.assignments.every((assignment) => assignment.leaseKey.startsWith('merge:semantic:scope:root:')));
 const sameFileSliceDrainWorkA = createSwarmCoordinatorAgentDrainWork({
   queue: sameFileSliceQueue,
   coordinatorId: 'coordinator-a',
@@ -1176,7 +1779,7 @@ assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.scope
 assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.changedPaths[0] === 'src/synthetic/same-file.ts'));
 assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.requiredLeaseKeys[0] === assignment.leaseKey));
 assert.ok(syntheticSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys[0].startsWith('merge:path:')));
-const syntheticSemanticLeaseRecords = syntheticSliceQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic');
+const syntheticSemanticLeaseRecords = syntheticSliceQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic-region');
 assert.strictEqual(syntheticSemanticLeaseRecords.length, 2);
 assert.strictEqual(new Set(syntheticSemanticLeaseRecords.map((record) => record.leaseKey)).size, 2);
 assert.ok(syntheticSemanticLeaseRecords.every((record) => record.scopeKind === 'semantic-region'));
@@ -1226,7 +1829,7 @@ assert.strictEqual(syntheticOverlapQueue.summary.promoteCount, 0);
 assert.strictEqual(new Set(syntheticOverlapQueue.assignments.map((assignment) => assignment.scopeId)).size, 1);
 assert.strictEqual(new Set(syntheticOverlapQueue.assignments.map((assignment) => assignment.leaseKey)).size, 1);
 assert.ok(syntheticOverlapQueue.assignments.every((assignment) => assignment.reasons.includes('same-lease-scope-conflict')));
-const syntheticOverlapSemanticLeaseRecords = syntheticOverlapQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic');
+const syntheticOverlapSemanticLeaseRecords = syntheticOverlapQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic-region');
 assert.strictEqual(syntheticOverlapSemanticLeaseRecords.length, 1);
 assert.deepStrictEqual(
   syntheticOverlapSemanticLeaseRecords[0].activeQueueItemIds.sort(),
@@ -1276,6 +1879,11 @@ assert.ok(sameRegionQueue.assignments.every((assignment) => assignment.reasons.i
 assert.strictEqual(new Set(sameRegionQueue.assignments.map((assignment) => assignment.leaseKey)).size, 1);
 assert.strictEqual(sameRegionQueue.summary.admissionPressure.queueLocalQueueItemCount, 2);
 assert.ok(sameRegionQueue.assignments.every((assignment) => assignment.retrySlices === undefined));
+const sameRegionOutcomeModel = createSwarmQueueOutcomeModel({ queue: sameRegionQueue, generatedAt: 7251 });
+assert.strictEqual(sameRegionOutcomeModel.summary.continuationCount, 2);
+assert.strictEqual(sameRegionOutcomeModel.summary.visibleConflictCount, 0);
+assert.strictEqual(sameRegionOutcomeModel.summary.visibleReviewDebtCount, 0);
+assert.ok(sameRegionOutcomeModel.latestDecisions.every((decision) => decision.category === 'continuation'));
 const crossScopeQueue = createSwarmHierarchicalMergeQueue({ index: crossScopeIndex, generatedAt: 7260 });
 const crossScopeAssignment = crossScopeQueue.assignments.find((assignment) => assignment.jobId === crossScopeBundle.jobId);
 assert.strictEqual(crossScopeAssignment.action, 'rerun');
@@ -1342,8 +1950,10 @@ assert.strictEqual(admittedCrossScopeDrainWork.summary.appliedCount, 1);
 assert.strictEqual(admittedCrossScopeDrainWork.summary.rerunCount, 0);
 const highRiskQueue = createSwarmHierarchicalMergeQueue({ index: highRiskIndex, generatedAt: 7270 });
 const highRiskAssignment = highRiskQueue.assignments.find((assignment) => assignment.jobId === highRiskBundle.jobId);
-assert.strictEqual(highRiskAssignment.action, 'promote');
-assert.strictEqual(highRiskAssignment.promoteToScopeId, 'root');
+assert.strictEqual(highRiskQueue.summary.promoteCount, 0);
+assert.strictEqual(highRiskQueue.summary.queueLocalCount, 1);
+assert.strictEqual(highRiskAssignment.action, 'queue-local');
+assert.strictEqual(highRiskAssignment.promoteToScopeId, undefined);
 assert.ok(highRiskAssignment.reasons.includes('high-risk'));
 const parentScopeQueue = createSwarmHierarchicalMergeQueue({ index: parentScopeIndex, generatedAt: 7280 });
 const parentScopeAssignment = parentScopeQueue.assignments.find((assignment) => assignment.jobId === parentScopeBundle.jobId);
@@ -1401,10 +2011,18 @@ assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'lane'));
 assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'semantic-region'));
 assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'path'));
 assert.strictEqual(conflictQueue.scopes.some((scope) => scope.kind === 'custom'), false);
+assert.strictEqual(conflictQueue.scopeTree.rootScopeId, 'root');
+assert.ok(conflictQueue.scopeTree.scopeIdsByKind.root.includes('root'));
+assert.ok(conflictQueue.scopeTree.scopeIdsByKind.lane.includes('lane:runtime'));
+assert.ok(conflictQueue.scopeTree.scopeIdsByKind['semantic-region'].length >= 1);
+assert.ok(conflictQueue.scopeTree.scopeIdsByKind.path.length >= 1);
+assert.deepStrictEqual(conflictQueue.scopeTree.scopeIdsByKind.parent, []);
+assert.deepStrictEqual(conflictQueue.scopeTree.scopeIdsByKind.child, []);
+assert.deepStrictEqual(conflictQueue.scopeTree.scopeIdsByKind.custom, []);
 const conflictLeaseScopeClasses = new Set(conflictQueue.leaseRecords.map((record) => record.scopeClass));
 assert.ok(conflictLeaseScopeClasses.has('root'));
 assert.ok(conflictLeaseScopeClasses.has('lane'));
-assert.ok(conflictLeaseScopeClasses.has('semantic'));
+assert.ok(conflictLeaseScopeClasses.has('semantic-region'));
 assert.ok(conflictLeaseScopeClasses.has('path'));
 const rootConflictLeaseRecord = conflictQueue.leaseRecords.find((record) => record.scopeClass === 'root');
 assert.strictEqual(rootConflictLeaseRecord.promotion.state, 'receiving-promoted');
@@ -1439,6 +2057,8 @@ assert.deepStrictEqual(customScope.changedPaths, ['src/hot/runtime-website-conte
 assert.deepStrictEqual(customScope.changedRegions, ['content.docs']);
 assert.deepStrictEqual(customScope.metadata, { ownerKind: 'adapter-defined' });
 assert.deepStrictEqual(customScope.jobIds, []);
+assert.ok(customScopeQueue.scopeTree.scopeIdsByKind.custom.includes('scope:shared-runtime'));
+assert.ok(customScopeQueue.scopeTree.ancestorScopeIdsByScopeId['scope:shared-runtime'].includes('root'));
 assert.ok(customScopeQueue.assignments.every((assignment) => assignment.scopeId.startsWith('semantic-region:')));
 const parentChildScopeQueue = createSwarmHierarchicalMergeQueue({
   index: regionIndex,
@@ -1464,6 +2084,11 @@ assert.strictEqual(parentChildScopeQueue.scopes.find((scope) => scope.id === 'sc
 assert.strictEqual(parentChildScopeQueue.scopes.find((scope) => scope.id === 'scope:child').kind, 'child');
 assert.strictEqual(parentChildScopeQueue.leaseRecords.find((record) => record.scopeId === 'scope:parent').scopeClass, 'parent');
 assert.strictEqual(parentChildScopeQueue.leaseRecords.find((record) => record.scopeId === 'scope:child').scopeClass, 'child');
+assert.ok(parentChildScopeQueue.scopeTree.scopeIdsByKind.parent.includes('scope:parent'));
+assert.ok(parentChildScopeQueue.scopeTree.scopeIdsByKind.child.includes('scope:child'));
+assert.ok(parentChildScopeQueue.scopeTree.ancestorScopeIdsByScopeId['scope:child'].includes('scope:parent'));
+assert.ok(parentChildScopeQueue.scopeTree.childScopeIdsByScopeId['scope:parent'].includes('scope:child'));
+assert.ok(parentChildScopeQueue.scopeTree.leafScopeIds.includes('scope:child'));
 const sameLaneRuntimeJob = scalePlan.jobs.find((job) => job.id !== regionBundleA.jobId && job.lane === 'runtime');
 assert.ok(sameLaneRuntimeJob);
 const sameLaneUnregionedBundle = createSwarmMergeBundle({
@@ -1530,7 +2155,7 @@ assert.strictEqual(publicContractAssignment.action, 'promote');
 assert.strictEqual(publicContractAssignment.promoteToScopeId, 'root');
 assert.ok(publicContractAssignment.reasons.includes('public-contract-region'));
 assert.ok(publicContractAssignment.reasons.includes('parent-scope-region'));
-const terminalJobs = [scalePlan.jobs[8], scalePlan.jobs[9], scalePlan.jobs[10], scalePlan.jobs[11], scalePlan.jobs[12], scalePlan.jobs[13]];
+const terminalJobs = [scalePlan.jobs[8], scalePlan.jobs[9], scalePlan.jobs[10], scalePlan.jobs[11], scalePlan.jobs[12]];
 assert.ok(terminalJobs.every(Boolean));
 const terminalBundleStale = createSwarmMergeBundle({
   job: terminalJobs[0],
@@ -1549,24 +2174,10 @@ const terminalBundleRejected = createSwarmMergeBundle({
   result: {
     jobId: terminalJobs[1].id,
     status: 'failed',
-    exitCode: 1,
     changedPaths: ['src/terminal/rejected.ts'],
-    verification: [{ status: 1 }],
-    metadata: { generatedFailedEvidence: { paths: ['src/terminal/rejected.ts.rej'] } }
+    verification: [{ status: 1 }]
   },
   patchPath: 'agent-runs/terminal/rejected.patch',
-  riskLevel: 'high'
-});
-const terminalBundleOwnershipViolation = createSwarmMergeBundle({
-  job: terminalJobs[5],
-  result: {
-    jobId: terminalJobs[5].id,
-    status: 'failed',
-    changedPaths: ['src/terminal/ownership.ts'],
-    ownershipViolations: ['src/terminal/ownership.ts'],
-    verification: [{ status: 0 }]
-  },
-  patchPath: 'agent-runs/terminal/ownership.patch',
   riskLevel: 'high'
 });
 const terminalBundleDiscovery = createSwarmMergeBundle({
@@ -1602,7 +2213,6 @@ const terminalQueue = createSwarmHierarchicalMergeQueue({
     bundles: [
       terminalBundleStale,
       terminalBundleRejected,
-      terminalBundleOwnershipViolation,
       terminalBundleDiscovery,
       terminalBundleBlocked,
       terminalBundleCoordinatorReview
@@ -1611,7 +2221,7 @@ const terminalQueue = createSwarmHierarchicalMergeQueue({
   }),
   generatedAt: 7560
 });
-assert.strictEqual(terminalQueue.summary.rerunCount, 2);
+assert.strictEqual(terminalQueue.summary.rerunCount, 1);
 assert.strictEqual(terminalQueue.summary.rejectCount, 1);
 assert.strictEqual(terminalQueue.summary.recordOnlyCount, 1);
 assert.strictEqual(terminalQueue.summary.blockCount, 1);
@@ -1623,8 +2233,8 @@ assert.deepStrictEqual(terminalQueue.summary.admissionPressure, {
   queueLocalQueueItemCount: 0,
   promoteUpwardCount: 1,
   promoteUpwardQueueItemCount: 1,
-  rerunCount: 2,
-  rerunQueueItemCount: 2,
+  rerunCount: 1,
+  rerunQueueItemCount: 1,
   rejectedCount: 1,
   rejectedQueueItemCount: 1,
   recordOnlyCount: 1,
@@ -1636,19 +2246,11 @@ assert.deepStrictEqual(terminalQueue.byAction.block, [terminalBundleBlocked.jobI
 assert.deepStrictEqual(terminalQueue.byAction.promote, [terminalBundleCoordinatorReview.jobId]);
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).action, 'rerun');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId).action, 'reject');
-assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleOwnershipViolation.jobId).action, 'rerun');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId).action, 'record-only');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).action, 'block');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId).action, 'promote');
-assert.ok(terminalBundleRejected.reasons.includes('worker-exit-nonzero:1'));
-assert.ok(terminalBundleRejected.reasons.includes('generated-failed-evidence'));
-assert.ok(terminalBundleRejected.reasons.includes('generated-failed-evidence:src/terminal/rejected.ts.rej'));
-assert.ok(terminalBundleRejected.reasons.includes('verification-failed:verification'));
-assert.ok(terminalBundleOwnershipViolation.reasons.includes('ownership-violation:src/terminal/ownership.ts'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).reasons.includes('stale-against-head'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId).reasons.includes('failed-or-invalid-evidence'));
-assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleOwnershipViolation.jobId).reasons.includes('ownership-rescope-rerun'));
-assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleOwnershipViolation.jobId).reasons.includes('ownership-violations'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId).reasons.includes('discovery-only'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).reasons.includes('true-blocker'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId).reasons.includes('coordinator-queue-required'));
@@ -1839,9 +2441,9 @@ assert.ok(promoteDrainWork.promotedWork.some((entry) => (
 )));
 
 const terminalDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: terminalQueue, generatedAt: 7590 });
-assert.strictEqual(terminalDrainWork.summary.terminalCount, 5);
+assert.strictEqual(terminalDrainWork.summary.terminalCount, 4);
 assert.strictEqual(terminalDrainWork.summary.escalatedCount, 1);
-assert.strictEqual(terminalDrainWork.summary.rerunCount, 2);
+assert.strictEqual(terminalDrainWork.summary.rerunCount, 1);
 assert.strictEqual(terminalDrainWork.summary.rejectedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.recordedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.blockedCount, 1);
@@ -1855,14 +2457,14 @@ assert.ok(terminalDrainPromotedWork);
 assert.notStrictEqual(terminalDrainPromotedWork.parentQueueId, terminalDrainRootLease.queueId);
 assert.deepStrictEqual(terminalDrainSummary, {
   leaseCount: terminalDrainWork.leases.length,
-  assignmentCount: 6,
+  assignmentCount: 5,
   activeAssignmentCount: 1,
-  terminalCount: 5,
+  terminalCount: 4,
   promotedWorkCount: 1,
   blockerCount: 1,
-  queueItemCount: 6,
+  queueItemCount: 5,
   activeQueueItemCount: 1,
-  terminalQueueItemCount: 5,
+  terminalQueueItemCount: 4,
   promotedQueueItemCount: 1,
   blockerQueueItemCount: 1,
   admissionPressure: {
@@ -1872,8 +2474,8 @@ assert.deepStrictEqual(terminalDrainSummary, {
     queueLocalQueueItemCount: 0,
     promoteUpwardCount: 1,
     promoteUpwardQueueItemCount: 1,
-    rerunCount: 2,
-    rerunQueueItemCount: 2,
+    rerunCount: 1,
+    rerunQueueItemCount: 1,
     rejectedCount: 1,
     rejectedQueueItemCount: 1,
     recordOnlyCount: 1,
@@ -1919,7 +2521,6 @@ assert.deepStrictEqual(
   terminalDrainSummary
 );
 const drainRerun = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId);
-const drainOwnershipRerun = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleOwnershipViolation.jobId);
 const drainReject = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId);
 const drainRecordOnly = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId);
 const drainBlock = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId);
@@ -1927,9 +2528,7 @@ assert.deepStrictEqual(
   [drainRerun.decision, drainReject.decision, drainRecordOnly.decision, drainBlock.decision],
   ['rerun', 'rejected', 'recorded', 'blocked']
 );
-assert.strictEqual(drainOwnershipRerun.decision, 'rerun');
-assert.ok(drainOwnershipRerun.reasons.includes('ownership-rescope-rerun'));
-assert.ok([drainRerun, drainOwnershipRerun, drainReject, drainRecordOnly, drainBlock].every((assignment) => assignment.classification === 'terminal' && assignment.terminal === true));
+assert.ok([drainRerun, drainReject, drainRecordOnly, drainBlock].every((assignment) => assignment.classification === 'terminal' && assignment.terminal === true));
 assert.strictEqual(drainBlock.assignedAction, 'block');
 assert.ok(drainBlock.reasons.includes('true-blocker'));
 assert.deepStrictEqual(terminalDrainWork.blockers.map((decision) => decision.jobId), [terminalBundleBlocked.jobId]);
@@ -1950,16 +2549,28 @@ assert.strictEqual(
   'human-blocked'
 );
 assert.strictEqual(
-  classifySwarmQueueOutcome({ decision: 'rerun', reasons: ['stale-against-head'] }).category,
-  'stale-rerun'
-);
-assert.strictEqual(
-  classifySwarmQueueOutcome({ decision: 'queued', reasons: ['conflicting-changes'], conflictingJobIds: ['other-job'] }).category,
-  'conflict'
+  classifySwarmQueueOutcome({ decision: 'human-question', reasons: ['needs-human-answer'] }).category,
+  'human-blocked'
 );
 assert.strictEqual(
   classifySwarmQueueOutcome({ decision: 'human-question', reasons: ['needs-human-answer'] }).outcome,
   'human-question'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ outcome: 'no-change', reasons: ['no-op'] }).category,
+  'terminal'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ outcome: 'no-change', reasons: ['no-op'] }).outcome,
+  'no-change'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ category: 'terminal', decision: 'recorded', terminal: true }).outcome,
+  'no-change'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'rerun', reasons: ['stale-against-head'] }).category,
+  'stale-rerun'
 );
 assert.strictEqual(
   classifySwarmQueueOutcome({ decision: 'rerun', reasons: ['stale-against-head'] }).outcome,
@@ -1975,13 +2586,48 @@ assert.deepStrictEqual(
   ['applied', 'committed', 'superseded', 'no-change']
 );
 assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'queued', reasons: ['conflicting-changes'], conflictingJobIds: ['other-job'] }).category,
+  'conflict'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'queued', reasons: ['conflicting-changes'], conflictingJobIds: ['other-job'] }).outcome,
+  'conflict-blocked'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'blocked', reasons: ['human-question'] }).outcome,
+  'human-question'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ category: 'conflict', outcome: 'conflict', reasons: ['conflicting-changes'], conflictingJobIds: ['other-job'] }).outcome,
+  'conflict-blocked'
+);
+assert.strictEqual(
   classifySwarmQueueOutcome({ category: 'conflict', outcome: 'merge-conflict', reasons: ['conflicting-changes'], conflictingJobIds: ['other-job'] }).outcome,
   'conflict-blocked'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ category: 'human-blocked', outcome: 'blocked', reasons: ['human-question'] }).outcome,
+  'human-question'
 );
 assert.strictEqual(
   classifySwarmQueueOutcome({ category: 'human-blocked', outcome: 'human-blocked', reasons: ['human-question'] }).outcome,
   'human-question'
 );
+assert.strictEqual(
+  classifySwarmQueueOutcome({ category: 'stale-rerun', outcome: 'stale-rerun', reasons: ['stale-against-head'] }).outcome,
+  'rerun'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({
+    action: 'queue-local',
+    decision: 'queued',
+    conflictingJobIds: ['other-job'],
+    reasons: ['same-lease-scope-conflict']
+  }).category,
+  'continuation'
+);
+assert.strictEqual(normalizeSwarmTerminalOutcome({ outcome: 'recorded' }).label, 'no-change');
+assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'closed' }).label, 'no-change');
 
 const normalizedTerminalOutcomes = [
   normalizeSwarmTerminalOutcome('applied'),
@@ -2031,6 +2677,9 @@ assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.succe
   false,
   false
 ]);
+assert.strictEqual(FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS.includes('superseded'), true);
+assert.strictEqual(normalizeSwarmTerminalOutcome({ decision: 'human-question' }).category, 'blocked');
+assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'human blocked' }).label, 'human-question');
 assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'patch missing' }).incomplete, true);
 assert.strictEqual(normalizeSwarmTerminalOutcome({ outcome: 'bundle missing' }).incomplete, true);
 assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'patch missing' }).blocker, false);
@@ -2038,15 +2687,13 @@ assert.strictEqual(normalizeSwarmTerminalOutcome({ outcome: 'bundle missing' }).
 
 const terminalOutcomeModel = createSwarmQueueOutcomeModel({ drainWork: terminalDrainWork, generatedAt: 7600 });
 assert.strictEqual(terminalOutcomeModel.kind, FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND);
-assert.strictEqual(terminalOutcomeModel.summary.terminalCount, 3);
+assert.strictEqual(terminalOutcomeModel.summary.terminalCount, 2);
 assert.strictEqual(terminalOutcomeModel.summary.coordinatorReviewCount, 1);
 assert.strictEqual(terminalOutcomeModel.summary.humanBlockedCount, 1);
 assert.strictEqual(terminalOutcomeModel.summary.staleRerunCount, 1);
 assert.strictEqual(terminalOutcomeModel.summary.visibleReviewDebtCount, 1);
 assert.strictEqual(terminalOutcomeModel.visibleHumanBlockers[0].jobId, terminalBundleBlocked.jobId);
 assert.strictEqual(terminalOutcomeModel.visibleReruns[0].jobId, terminalBundleStale.jobId);
-assert.strictEqual(terminalOutcomeModel.visibleReruns.length, 1);
-assert.strictEqual(terminalOutcomeModel.latestDecisions.find((decision) => decision.jobId === terminalBundleOwnershipViolation.jobId)?.decision, 'rerun');
 assert.strictEqual(terminalOutcomeModel.visibleReviewDebt[0].jobId, terminalBundleCoordinatorReview.jobId);
 
 const queueAliasCollapse = collapseSwarmQueueOutcomeDecisions([
@@ -2196,6 +2843,46 @@ assert.strictEqual(redrainTerminalReconciliation.resolved[0].decisionId, 'new-co
 assert.strictEqual(redrainTerminalReconciliation.latestDecisionIdByAlias['job-redrain-old'], 'new-committed-redrain');
 assert.strictEqual(redrainTerminalReconciliation.latestDecisionIdByAlias['queue-redrain'], 'new-committed-redrain');
 
+const noChangeTerminalReconciliation = reconcileSwarmTerminalState({
+  collections: {
+    ready: [
+      { id: 'no-change-ready-item', jobId: 'job-no-change', taskId: 'task-no-change', queueItemIds: ['queue-no-change'] }
+    ]
+  },
+  decisions: [
+    { id: 'no-change-decision', jobId: 'job-no-change', taskId: 'task-no-change', queueItemIds: ['queue-no-change'], decision: 'no-change', generatedAt: 35 }
+  ],
+  generatedAt: 36
+});
+assert.strictEqual(noChangeTerminalReconciliation.summary.resolvedCount, 1);
+assert.strictEqual(noChangeTerminalReconciliation.summary.terminalUnresolvedCount, 0);
+assert.strictEqual(noChangeTerminalReconciliation.collections.done.length, 1);
+assert.strictEqual(noChangeTerminalReconciliation.resolved[0].decisionOutcome, 'no-change');
+
+const continuationNoChangeTerminalReconciliation = reconcileSwarmTerminalState({
+  collections: {
+    ready: [
+      { id: 'continuation-no-change-ready-item', jobId: 'job-continuation-no-change', taskId: 'task-continuation-no-change', queueItemIds: ['queue-continuation-no-change'] }
+    ]
+  },
+  decisions: [
+    {
+      id: 'continuation-no-change-decision',
+      jobId: 'job-continuation-no-change',
+      taskId: 'task-continuation-no-change',
+      queueItemIds: ['queue-continuation-no-change'],
+      category: 'continuation',
+      outcome: 'no-change',
+      generatedAt: 37
+    }
+  ],
+  generatedAt: 38
+});
+assert.strictEqual(continuationNoChangeTerminalReconciliation.summary.resolvedCount, 1);
+assert.strictEqual(continuationNoChangeTerminalReconciliation.summary.terminalUnresolvedCount, 0);
+assert.strictEqual(continuationNoChangeTerminalReconciliation.collections.done.length, 1);
+assert.strictEqual(continuationNoChangeTerminalReconciliation.resolved[0].decisionOutcome, 'no-change');
+
 const visibleTerminalReconciliation = reconcileSwarmTerminalState({
   collections: {
     failed: [
@@ -2223,6 +2910,10 @@ assert.strictEqual(visibleTerminalReconciliation.collections.terminal.length, 4)
 assert.deepStrictEqual(
   visibleTerminalReconciliation.terminalUnresolved.map((resolution) => resolution.decisionId).sort(),
   ['new-conflict-visible', 'new-question-visible', 'new-rejected-visible', 'new-rerun-visible']
+);
+assert.strictEqual(
+  visibleTerminalReconciliation.terminalUnresolved.find((resolution) => resolution.decisionId === 'new-question-visible').decisionOutcome,
+  'human-question'
 );
 
 const decomposed = decomposeSwarmFeature({

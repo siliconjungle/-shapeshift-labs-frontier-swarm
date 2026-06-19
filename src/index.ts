@@ -106,8 +106,6 @@ export const FRONTIER_SWARM_PANEL_EVALUATION_KIND = 'frontier.swarm.panel-evalua
 export const FRONTIER_SWARM_PANEL_EVALUATION_VERSION = 1;
 export const FRONTIER_SWARM_CONTINUOUS_POOL_STATE_KIND = 'frontier.swarm.continuous-pool-state';
 export const FRONTIER_SWARM_CONTINUOUS_POOL_STATE_VERSION = 1;
-export const FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_KIND = 'frontier.swarm.contextual-bandit-recommendations';
-export const FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_VERSION = 1;
 
 export const FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID = 'codex.gpt-5.5.xhigh';
 export const FRONTIER_SWARM_DEFAULT_MODEL = 'gpt-5.5';
@@ -364,22 +362,12 @@ export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND = 
 export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND = 'test-case';
 export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS = Object.freeze({
   export: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
-  namespaceExport: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
   type: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
   cliCommand: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND,
   docsSection: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND,
   fixtureFamily: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND,
   testCase: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND
 } as const);
-export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KIND_ORDER = Object.freeze([
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND,
-  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND
-] as const);
 
 export interface FrontierSwarmLaneInput {
   id: string;
@@ -966,6 +954,9 @@ export interface FrontierSwarmPlan {
   createdAt: number;
   filters: FrontierSwarmPlanFilter;
   limits: FrontierSwarmScheduleLimits;
+  routingMode?: FrontierSwarmModelRoutingMode;
+  routingPolicy?: FrontierSwarmModelRoutingPolicy;
+  routingContext?: JsonValue;
   validation: FrontierSwarmValidation;
   jobs: FrontierSwarmJob[];
   graph: FrontierSwarmJobGraph;
@@ -1541,7 +1532,7 @@ export interface FrontierSwarmJobResultInput {
   mergeDisposition?: FrontierSwarmMergeDisposition;
   verification?: readonly FrontierSwarmVerificationResultInput[];
   semanticImport?: FrontierSwarmSemanticImportSummary;
-  traceShards?: readonly unknown[];
+  traceShards?: readonly JsonValue[];
   lastMessage?: string;
   error?: unknown;
   metadata?: unknown;
@@ -1611,7 +1602,7 @@ export interface FrontierSwarmJobResult {
   mergeDisposition: FrontierSwarmMergeDisposition;
   verification: FrontierSwarmVerificationResult[];
   semanticImport?: FrontierSwarmSemanticImportSummary;
-  traceShards?: unknown[];
+  traceShards?: JsonValue[];
   lastMessage?: string;
   error?: string;
   metadata?: JsonObject;
@@ -1640,7 +1631,7 @@ export interface FrontierSwarmMergeBundleInput {
   branchName?: string;
   commit?: string;
   semanticImport?: FrontierSwarmSemanticImportSummary;
-  traceShards?: readonly unknown[];
+  traceShards?: readonly JsonValue[];
   metadata?: unknown;
   generatedAt?: number;
 }
@@ -1673,7 +1664,7 @@ export interface FrontierSwarmMergeBundle {
   commandsFailed: FrontierSwarmVerificationResult[];
   queueItemIds: string[];
   semanticImport?: FrontierSwarmSemanticImportSummary;
-  traceShards?: unknown[];
+  traceShards?: JsonValue[];
   branchName?: string;
   commit?: string;
   staleAgainstHead: boolean;
@@ -1803,9 +1794,10 @@ export interface FrontierSwarmMergeIndexEntry {
 export interface FrontierSwarmMergeConflict {
   jobIds: string[];
   key: string;
-  kind: 'path' | 'region';
+  kind: 'path' | 'region' | 'symbol';
   path?: string;
   region?: string;
+  symbol?: string;
 }
 
 export interface FrontierSwarmRegionOwnershipInput {
@@ -3044,7 +3036,7 @@ export type FrontierSwarmHierarchicalQueueLeaseScopeClass =
   | 'parent'
   | 'child'
   | 'lane'
-  | 'semantic'
+  | 'semantic-region'
   | 'path'
   | 'custom'
   | string;
@@ -3128,6 +3120,14 @@ export interface FrontierSwarmHierarchicalQueueLeaseRecord {
   metadata?: JsonObject;
 }
 
+export interface FrontierSwarmHierarchicalQueueScopeTree {
+  rootScopeId: string;
+  scopeIdsByKind: Record<string, string[]>;
+  ancestorScopeIdsByScopeId: Record<string, string[]>;
+  childScopeIdsByScopeId: Record<string, string[]>;
+  leafScopeIds: string[];
+}
+
 export interface FrontierSwarmHierarchicalMergeQueueInput {
   id?: string;
   index: FrontierSwarmMergeIndex;
@@ -3148,6 +3148,7 @@ export interface FrontierSwarmHierarchicalMergeQueue {
   admissionId?: string;
   generatedAt: number;
   rootScopeId: string;
+  scopeTree: FrontierSwarmHierarchicalQueueScopeTree;
   scopes: FrontierSwarmMergeQueueScope[];
   leaseRecords: FrontierSwarmHierarchicalQueueLeaseRecord[];
   assignments: FrontierSwarmMergeQueueAssignment[];
@@ -3244,15 +3245,16 @@ export type FrontierSwarmQueueTerminalOutcome =
   | 'applied'
   | 'committed'
   | 'superseded'
+  | 'no-change'
   | 'rejected'
   | 'recorded'
   | 'closed'
   | string;
 export type FrontierSwarmQueueContinuationOutcome = 'queued' | 'continued' | 'ready' | 'running' | 'leased' | string;
 export type FrontierSwarmQueueCoordinatorReviewOutcome = 'coordinator-review' | 'escalated' | 'needs-port' | string;
-export type FrontierSwarmQueueHumanBlockedOutcome = 'human-blocked' | 'blocked' | string;
+export type FrontierSwarmQueueHumanBlockedOutcome = 'human-blocked' | 'human-question' | 'blocked' | string;
 export type FrontierSwarmQueueStaleRerunOutcome = 'stale-rerun' | 'rerun' | string;
-export type FrontierSwarmQueueConflictOutcome = 'conflict' | 'merge-conflict' | string;
+export type FrontierSwarmQueueConflictOutcome = 'conflict' | 'merge-conflict' | 'conflict-blocked' | string;
 export type FrontierSwarmQueueOutcome =
   | FrontierSwarmQueueTerminalOutcome
   | FrontierSwarmQueueContinuationOutcome
@@ -3292,6 +3294,7 @@ export interface FrontierSwarmTerminalOutcomeInput {
   patchMissing?: boolean;
   bundleMissing?: boolean;
   conflictBlocked?: boolean;
+  humanQuestion?: boolean;
   humanBlocked?: boolean;
   coordinatorReview?: boolean;
   reasons?: readonly string[];
@@ -3986,6 +3989,9 @@ export function createSwarmPlan(
   const compiled = compileSwarm(manifestInput);
   const tasks = normalizeTaskList(taskInput);
   const jobs = selectSwarmTasks(compiled.manifest, tasks, options).map((task) => createJob(compiled, task, options));
+  const routingPolicy = options.routingPolicy && typeof options.routingPolicy === 'object' && !Array.isArray(options.routingPolicy)
+    ? createSwarmModelRoutingPolicy(options.routingPolicy as FrontierSwarmModelRoutingPolicyInput)
+    : undefined;
   const id = options.id ?? 'swarm-plan:' + stableHash([compiled.manifest.id, jobs.map((job) => job.id), options]);
   const graph = createSwarmJobGraph(jobs);
   const validation = validateTasksForManifest(compiled, tasks, graph);
@@ -4006,6 +4012,9 @@ export function createSwarmPlan(
       compute: options.compute
     },
     limits: normalizeScheduleLimits(compiled.manifest, options),
+    ...(options.routingMode ? { routingMode: options.routingMode } : {}),
+    ...(routingPolicy ? { routingPolicy } : {}),
+    ...(options.routingContext !== undefined ? { routingContext: toJsonValue(options.routingContext) } : {}),
     validation,
     jobs,
     graph,
@@ -4346,7 +4355,7 @@ export function checkSwarmOwnership(job: FrontierSwarmJob, changedPaths: readonl
 
 export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemanticOwnershipStableKeyInput): string {
   if (input.kind === 'named-export' || input.kind === 'default-export' || input.kind === 'exported-declaration' || input.kind === 'export') {
-    const name = semanticOwnershipExportDeclarationName(input);
+    const name = semanticOwnershipExportName(input);
     return semanticOwnershipStableKey(
       FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
       input.declarationKind ?? 'anonymous',
@@ -4355,13 +4364,13 @@ export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemant
     );
   }
   if (input.kind === 're-export') {
-    return semanticOwnershipStableKey('re-export', input.source ?? 'unknown-source', semanticOwnershipExportClauseName(input, '*'));
+    return semanticOwnershipStableKey('re-export', input.source ?? 'unknown-source', semanticOwnershipExportName(input, '*'));
   }
   if (input.kind === 'namespace-export') {
     return semanticOwnershipStableKey(
       FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
       input.source ?? 'unknown-source',
-      semanticOwnershipExportClauseName(input, '*')
+      semanticOwnershipExportName(input, '*')
     );
   }
   if (input.kind === 'type') {
@@ -4373,16 +4382,28 @@ export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemant
     );
   }
   if (input.kind === 'cli-command') {
-    return semanticOwnershipStableKey(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND, input.command ?? input.name ?? 'unknown-command');
+    return semanticOwnershipStableKey(
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND,
+      input.command ?? input.name ?? 'unknown-command'
+    );
   }
   if (input.kind === 'docs-section') {
-    return semanticOwnershipStableKey(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND, input.section ?? input.name ?? 'unknown-section');
+    return semanticOwnershipStableKey(
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND,
+      input.section ?? input.name ?? 'unknown-section'
+    );
   }
   if (input.kind === 'fixture-family') {
-    return semanticOwnershipStableKey(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND, input.family ?? input.name ?? 'unknown-family');
+    return semanticOwnershipStableKey(
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND,
+      input.family ?? input.name ?? 'unknown-family'
+    );
   }
   if (input.kind === 'test-case') {
-    return semanticOwnershipStableKey(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND, input.testCase ?? input.name ?? 'unknown-test-case');
+    return semanticOwnershipStableKey(
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND,
+      input.testCase ?? input.name ?? 'unknown-test-case'
+    );
   }
   return semanticOwnershipStableKey(input.kind, input.declarationKind ?? input.source ?? input.command ?? input.section ?? input.family ?? input.testCase ?? input.name ?? input.exportName ?? 'default');
 }
@@ -4393,16 +4414,162 @@ export function createSwarmSemanticOwnershipRegionId(input: FrontierSwarmSemanti
   return semanticOwnershipRegionId(file, createSwarmSemanticOwnershipStableKey(input));
 }
 
-export function resolveSwarmChangedRegions(job: FrontierSwarmJob, changedPaths: readonly string[]): string[] {
+export function resolveSwarmChangedRegions(
+  job: FrontierSwarmJob,
+  changedPaths: readonly string[],
+  semanticImport?: FrontierSwarmSemanticImportSummary
+): string[] {
   const changed = uniqueStrings(changedPaths);
-  const regions = new Set(job.changedRegions);
-  for (const region of job.ownershipRegions) {
-    if (region.globs.some((glob) => changed.some((file) => matchesGlob(file, glob)))) regions.add(region.id);
-    for (const selector of region.selectors) {
-      if (changed.includes(selector)) regions.add(region.id);
+  const regions = new Set<string>();
+  if (!semanticImport) {
+    for (const region of job.changedRegions) regions.add(region);
+    for (const region of job.ownershipRegions) {
+      if (region.globs.some((glob) => changed.some((file) => matchesGlob(file, glob)))) regions.add(region.id);
+      for (const selector of region.selectors) {
+        if (changed.includes(selector)) regions.add(region.id);
+      }
     }
+    return Array.from(regions).sort();
+  }
+  for (const file of changed) {
+    const semanticRegionIds = resolveSwarmSemanticChangedRegionsForPath(job, file, semanticImport);
+    if (semanticRegionIds.length > 0) {
+      for (const regionId of semanticRegionIds) regions.add(regionId);
+      continue;
+    }
+    const fallbackRegionIds = resolveSwarmPathChangedRegionsForPath(job, file, changed);
+    if (fallbackRegionIds.length > 0) {
+      for (const regionId of fallbackRegionIds) regions.add(regionId);
+      continue;
+    }
+    for (const regionId of job.changedRegions) regions.add(regionId);
   }
   return Array.from(regions).sort();
+}
+
+function resolveSwarmPathChangedRegionsForPath(job: FrontierSwarmJob, file: string, changedPaths: readonly string[]): string[] {
+  const regions = new Set<string>();
+  for (const region of job.ownershipRegions) {
+    if (region.globs.some((glob) => matchesGlob(file, glob))) regions.add(region.id);
+    if (region.selectors.some((selector) => changedPaths.includes(selector))) regions.add(region.id);
+  }
+  return Array.from(regions).sort();
+}
+
+function resolveSwarmSemanticChangedRegionsForPath(
+  job: FrontierSwarmJob,
+  file: string,
+  semanticImport: FrontierSwarmSemanticImportSummary
+): string[] {
+  const hints = semanticImportHintsForPath(semanticImport, file);
+  if (!hints.length) return [];
+  const matchedRegions = job.ownershipRegions.filter((region) => (
+    region.globs.some((glob) => matchesGlob(file, glob))
+    && region.selectors.some((selector) => hints.some((hint) => semanticRegionSelectorMatchesHint(selector, hint)))
+  ));
+  return uniqueStrings(matchedRegions.map((region) => region.id));
+}
+
+const SEMANTIC_IMPORT_HINT_KEYS = new Set([
+  'changedRegions',
+  'conflictKeys',
+  'declarationKinds',
+  'exportNames',
+  'names',
+  'ownedRegions',
+  'reasons',
+  'regions',
+  'selectors',
+  'symbols',
+  'touchedSemanticNodes',
+  'touchedSymbols'
+]);
+
+function semanticImportHintsForPath(semanticImport: FrontierSwarmSemanticImportSummary, file: string): string[] {
+  const records = semanticImportRecords(semanticImport);
+  const relevantRecords = records.filter((record) => semanticImportRecordPath(record) === file);
+  const sources = relevantRecords.length > 0 ? relevantRecords : records.length > 0 ? [] : [semanticImport];
+  return uniqueStrings(sources.flatMap((source) => semanticImportHintStringsForValue(
+    'mergeCandidate' in source && source.mergeCandidate !== undefined
+      ? source.mergeCandidate
+      : source
+  )));
+}
+
+function semanticImportRecords(semanticImport: FrontierSwarmSemanticImportSummary): Record<string, unknown>[] {
+  const records = (semanticImport as Record<string, unknown>).records;
+  return Array.isArray(records)
+    ? records.filter((record): record is Record<string, unknown> => !!record && typeof record === 'object' && !Array.isArray(record))
+    : [];
+}
+
+function semanticImportRecordPath(record: Record<string, unknown>): string | undefined {
+  return typeof record.path === 'string'
+    ? record.path
+    : typeof record.sourcePath === 'string'
+      ? record.sourcePath
+      : typeof record.file === 'string'
+        ? record.file
+        : undefined;
+}
+
+function semanticImportHintStringsForValue(value: unknown, key?: string, depth = 0): string[] {
+  if (value === undefined || value === null) return [];
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return key && SEMANTIC_IMPORT_HINT_KEYS.has(key) && normalized ? [normalized] : [];
+  }
+  if (depth >= 4 || typeof value !== 'object') return [];
+  if (Array.isArray(value)) return value.flatMap((item) => semanticImportHintStringsForValue(item, key, depth + 1));
+  return Object.entries(value as Record<string, unknown>).flatMap(([nextKey, nextValue]) => (
+    semanticImportHintStringsForValue(nextValue, nextKey, depth + 1)
+  ));
+}
+
+const SEMANTIC_IMPORT_CONFLICT_HINT_KEYS = new Set([
+  'exportNames',
+  'symbols',
+  'touchedSymbols'
+]);
+
+function semanticMergeConflictKeys(semanticImport: FrontierSwarmSemanticImportSummary): string[] {
+  const records = semanticImportRecords(semanticImport);
+  const sources = records.length > 0 ? records : [semanticImport];
+  return uniqueStrings(sources.flatMap((source) => semanticImportConflictHintStringsForValue(
+    'mergeCandidate' in source && source.mergeCandidate !== undefined
+      ? source.mergeCandidate
+      : source
+  ).map((symbol) => `symbol:${symbol}`)));
+}
+
+function semanticImportConflictHintStringsForValue(value: unknown, key?: string, depth = 0): string[] {
+  if (value === undefined || value === null) return [];
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return key && SEMANTIC_IMPORT_CONFLICT_HINT_KEYS.has(key) && normalized ? [normalized] : [];
+  }
+  if (depth >= 4 || typeof value !== 'object') return [];
+  if (Array.isArray(value)) return value.flatMap((item) => semanticImportConflictHintStringsForValue(item, key, depth + 1));
+  return Object.entries(value as Record<string, unknown>).flatMap(([nextKey, nextValue]) => (
+    semanticImportConflictHintStringsForValue(nextValue, nextKey, depth + 1)
+  ));
+}
+
+function semanticRegionSelectorMatchesHint(selector: string, hint: string): boolean {
+  const normalizedSelector = selector.trim();
+  const normalizedHint = hint.trim();
+  if (!normalizedSelector || !normalizedHint) return false;
+  if (normalizedSelector === normalizedHint) return true;
+  if (matchesGlob(normalizedHint, normalizedSelector) || matchesGlob(normalizedSelector, normalizedHint)) return true;
+  const selectorLeaf = normalizedSelector.split('.').pop();
+  const hintLeaf = normalizedHint.split('.').pop();
+  return (
+    (selectorLeaf !== undefined && selectorLeaf === normalizedHint)
+    || (hintLeaf !== undefined && hintLeaf === normalizedSelector)
+    || (selectorLeaf !== undefined && hintLeaf !== undefined && selectorLeaf === hintLeaf)
+    || normalizedHint.endsWith(`.${normalizedSelector}`)
+    || normalizedSelector.endsWith(`.${normalizedHint}`)
+  );
 }
 
 export function classifySwarmMergeReadiness(result: FrontierSwarmJobResultInput | FrontierSwarmJobResult): FrontierSwarmMergeReadiness {
@@ -4438,9 +4605,10 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
   const result = isSwarmJobResult(input.result) ? cloneJsonValue(input.result) as FrontierSwarmJobResult : normalizeResult(input.result);
   const job = input.job;
   const changedPaths = uniqueStrings(result.changedPaths);
+  const semanticImport = input.semanticImport !== undefined ? input.semanticImport : result.semanticImport;
   const changedRegions = uniqueStrings([
-    ...result.changedRegions,
-    ...(job ? resolveSwarmChangedRegions(job, changedPaths) : [])
+    ...(semanticImport !== undefined && job ? [] : result.changedRegions),
+    ...(job ? resolveSwarmChangedRegions(job, changedPaths, semanticImport) : [])
   ]);
   const evidencePaths = uniqueStrings([...(result.evidencePaths ?? []), ...(input.evidencePaths ?? [])]);
   const queueItemIds = uniqueStrings([...(result.queueItemIds ?? []), ...(input.queueItemIds ?? []), ...(job ? [job.taskId] : [])]);
@@ -4450,8 +4618,9 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
   const ownedFilesTouched = job ? changedPaths.filter((file) => job.allowedWrites.some((glob) => matchesGlob(file, glob))) : changedPaths;
   const reasons = mergeBundleReasons(result, disposition, input.staleAgainstHead ?? false);
   const metadata = mergeSwarmMetadata([input.metadata, job?.metadata, result.metadata]);
-  const semanticImport = input.semanticImport !== undefined ? input.semanticImport : result.semanticImport;
-  const traceShards = cloneJsonValue([...(input.traceShards ?? []), ...(result.traceShards ?? [])]);
+  const traceShards = input.traceShards !== undefined || result.traceShards !== undefined
+    ? cloneJsonValue([...(input.traceShards ?? []), ...(result.traceShards ?? [])])
+    : undefined;
   return {
     kind: FRONTIER_SWARM_MERGE_BUNDLE_KIND,
     version: FRONTIER_SWARM_MERGE_BUNDLE_VERSION,
@@ -4478,7 +4647,7 @@ export function createSwarmMergeBundle(input: FrontierSwarmMergeBundleInput): Fr
     commandsFailed,
     queueItemIds,
     ...(semanticImport !== undefined ? { semanticImport: cloneJsonValue(semanticImport) } : {}),
-    traceShards,
+    ...(traceShards !== undefined ? { traceShards } : {}),
     ...(input.branchName ? { branchName: input.branchName } : {}),
     ...(input.commit ? { commit: input.commit } : {}),
     staleAgainstHead: input.staleAgainstHead ?? false,
@@ -5742,6 +5911,7 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     localLeaders: input.localLeaders
   });
   const byLeaseKey = groupJobIdsByMany(linkedAssignments, (assignment) => assignment.requiredLeaseKeys ?? [assignment.leaseKey]);
+  const scopeTree = createHierarchicalQueueScopeTree(orderedScopes, rootScopeId);
   return {
     kind: FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_KIND,
     version: FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_VERSION,
@@ -5750,6 +5920,7 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     ...(input.admission ? { admissionId: input.admission.id } : {}),
     generatedAt,
     rootScopeId,
+    scopeTree,
     scopes: orderedScopes,
     leaseRecords,
     assignments: linkedAssignments,
@@ -6169,6 +6340,8 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
     || queueOutcomeHas(search, 'true-blocker', 'human-blocked', 'human-question')
   ) {
     category = 'human-blocked';
+  } else if (action === 'queue-local') {
+    category = 'continuation';
   } else if (conflict) {
     category = 'conflict';
   } else if (
@@ -6425,9 +6598,18 @@ function terminalOutcomeLabelFromText(value: string | undefined): FrontierSwarmT
   if (!token) return undefined;
   if (token === 'applied' || token === 'apply-local' || token === 'apply') return 'applied';
   if (token === 'committed' || token === 'commit') return 'committed';
-  if (token === 'superseded') return 'superseded';
   if (token === 'evidence-only' || token === 'evidenceonly' || token === 'evidence') return 'evidence-only';
-  if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
+  if (
+    token === 'no-change'
+    || token === 'nochange'
+    || token === 'no-op'
+    || token === 'noop'
+    || token === 'unchanged'
+    || token === 'recorded'
+    || token === 'record-only'
+    || token === 'recordonly'
+    || token === 'closed'
+  ) return 'no-change';
   if (token === 'generated-by-collector' || token === 'collector-generated' || token === 'generated-collector') return 'generated-by-collector';
   if (token === 'patch-missing' || token === 'missing-patch' || token === 'patchmissing') return 'patch-missing';
   if (token === 'bundle-missing' || token === 'missing-bundle' || token === 'bundlemissing') return 'bundle-missing';
@@ -6485,13 +6667,20 @@ export function normalizeSwarmTerminalOutcome(
       || terminalOutcomeTextMatches(input.outcome, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict')
       || terminalOutcomeTextMatches(input.status, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict')
       || terminalOutcomeTextMatches(input.decision, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict');
+  const humanQuestion = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'human-question')
+    : input.humanQuestion === true
+      || terminalOutcomeTextMatches(input.label, 'human-question')
+      || terminalOutcomeTextMatches(input.outcome, 'human-question')
+      || terminalOutcomeTextMatches(input.status, 'human-question')
+      || terminalOutcomeTextMatches(input.decision, 'human-question');
   const humanBlocked = typeof input === 'string'
-    ? terminalOutcomeTextMatches(input, 'human-blocked', 'human-question', 'blocked')
+    ? terminalOutcomeTextMatches(input, 'human-blocked', 'blocked')
     : input.humanBlocked === true
-      || terminalOutcomeTextMatches(input.label, 'human-blocked', 'human-question', 'blocked')
-      || terminalOutcomeTextMatches(input.outcome, 'human-blocked', 'human-question', 'blocked')
-      || terminalOutcomeTextMatches(input.status, 'human-blocked', 'human-question', 'blocked')
-      || terminalOutcomeTextMatches(input.decision, 'human-blocked', 'human-question', 'blocked');
+      || terminalOutcomeTextMatches(input.label, 'human-blocked', 'blocked')
+      || terminalOutcomeTextMatches(input.outcome, 'human-blocked', 'blocked')
+      || terminalOutcomeTextMatches(input.status, 'human-blocked', 'blocked')
+      || terminalOutcomeTextMatches(input.decision, 'human-blocked', 'blocked');
   const coordinatorReview = typeof input === 'string'
     ? terminalOutcomeTextMatches(input, 'coordinator-review', 'needs-port', 'escalated', 'review')
     : input.coordinatorReview === true
@@ -6513,7 +6702,7 @@ export function normalizeSwarmTerminalOutcome(
             ? 'generated-by-collector'
             : conflictBlocked
               ? 'conflict-blocked'
-              : humanBlocked
+              : humanQuestion || humanBlocked
                 ? 'human-question'
                 : coordinatorReview
                   ? 'coordinator-review'
@@ -6527,7 +6716,7 @@ export function normalizeSwarmTerminalOutcome(
         ? 'rerun'
         : label === 'rejected'
           ? 'rejected'
-          : label === 'conflict-blocked' || label === 'human-question' || label === 'human-blocked'
+          : label === 'conflict-blocked' || label === 'human-blocked' || label === 'human-question'
             ? 'blocked'
             : label === 'coordinator-review'
               ? 'review'
@@ -7285,9 +7474,10 @@ function groupOverlayEntries(entries: readonly FrontierSwarmQueueOverlayEntry[])
 }
 
 function mergeIndexConflictKeys(bundle: FrontierSwarmMergeBundle): string[] {
-  return bundle.changedRegions.length
-    ? bundle.changedRegions.map((region) => `region:${region}`).sort()
-    : bundle.changedPaths.map((file) => `path:${file}`).sort();
+  const semanticSymbolKeys = bundle.semanticImport ? semanticMergeConflictKeys(bundle.semanticImport) : [];
+  const regionKeys = bundle.changedRegions.map((region) => `region:${region}`);
+  const pathKeys = bundle.changedPaths.map((file) => `path:${file}`);
+  return uniqueStrings([...semanticSymbolKeys, ...regionKeys, ...pathKeys]).sort();
 }
 
 function createMergeIndexConflicts(entries: readonly FrontierSwarmMergeIndexEntry[]): FrontierSwarmMergeConflict[] {
@@ -7299,13 +7489,13 @@ function createMergeIndexConflicts(entries: readonly FrontierSwarmMergeIndexEntr
       if (!left || !right) continue;
       const keys = pairConflictKeys(left, right);
       for (const key of keys) {
-        const kind = key.startsWith('region:') ? 'region' as const : 'path' as const;
+        const kind = key.startsWith('symbol:') ? 'symbol' as const : key.startsWith('region:') ? 'region' as const : 'path' as const;
         const value = key.slice(key.indexOf(':') + 1);
         conflicts.push({
           jobIds: [left.jobId, right.jobId].sort(),
           key,
           kind,
-          ...(kind === 'region' ? { region: value } : { path: value })
+          ...(kind === 'region' ? { region: value } : kind === 'symbol' ? { symbol: value } : { path: value })
         });
       }
     }
@@ -7316,15 +7506,31 @@ function createMergeIndexConflicts(entries: readonly FrontierSwarmMergeIndexEntr
 }
 
 function pairConflictKeys(
-  left: Pick<FrontierSwarmJobResult | FrontierSwarmMergeIndexEntry, 'changedPaths' | 'changedRegions'>,
-  right: Pick<FrontierSwarmJobResult | FrontierSwarmMergeIndexEntry, 'changedPaths' | 'changedRegions'>
+  left: Pick<FrontierSwarmJobResult | FrontierSwarmMergeIndexEntry, 'changedPaths' | 'changedRegions'> & Partial<Pick<FrontierSwarmMergeIndexEntry, 'conflictKeys'>> & Partial<Pick<FrontierSwarmJobResult, 'semanticImport'>>,
+  right: Pick<FrontierSwarmJobResult | FrontierSwarmMergeIndexEntry, 'changedPaths' | 'changedRegions'> & Partial<Pick<FrontierSwarmMergeIndexEntry, 'conflictKeys'>> & Partial<Pick<FrontierSwarmJobResult, 'semanticImport'>>
 ): string[] {
-  if (left.changedRegions.length > 0 && right.changedRegions.length > 0) {
-    const rightRegions = new Set(right.changedRegions);
-    return left.changedRegions.filter((region) => rightRegions.has(region)).map((region) => `region:${region}`).sort();
+  const leftKeys = pairConflictKeysForInput(left);
+  const rightKeys = pairConflictKeysForInput(right);
+  const rightKeySet = new Set(rightKeys);
+  const sharedSymbols = leftKeys.filter((key) => key.startsWith('symbol:') && rightKeySet.has(key));
+  if (sharedSymbols.length > 0) return sharedSymbols.sort();
+  const leftRegions = leftKeys.filter((key) => key.startsWith('region:'));
+  const rightRegions = rightKeys.filter((key) => key.startsWith('region:'));
+  if (leftRegions.length > 0 && rightRegions.length > 0) {
+    const sharedRegions = leftRegions.filter((key) => rightKeySet.has(key));
+    return sharedRegions.sort();
   }
-  const rightPaths = new Set(right.changedPaths);
-  return left.changedPaths.filter((file) => rightPaths.has(file)).map((file) => `path:${file}`).sort();
+  return leftKeys.filter((key) => key.startsWith('path:') && rightKeySet.has(key)).sort();
+}
+
+function pairConflictKeysForInput(
+  input: Pick<FrontierSwarmJobResult | FrontierSwarmMergeIndexEntry, 'changedPaths' | 'changedRegions'> & Partial<Pick<FrontierSwarmMergeIndexEntry, 'conflictKeys'>> & Partial<Pick<FrontierSwarmJobResult, 'semanticImport'>>
+): string[] {
+  if (input.conflictKeys) return [...input.conflictKeys];
+  const semanticSymbolKeys = input.semanticImport ? semanticMergeConflictKeys(input.semanticImport) : [];
+  const regionKeys = input.changedRegions.map((region) => `region:${region}`);
+  const pathKeys = input.changedPaths.map((file) => `path:${file}`);
+  return uniqueStrings([...semanticSymbolKeys, ...regionKeys, ...pathKeys]).sort();
 }
 
 function groupJobIdsBy<T extends { jobId: string }>(items: readonly T[], key: (item: T) => string): Record<string, string[]> {
@@ -7344,6 +7550,28 @@ function groupJobIdsByMany<T extends { jobId: string }>(items: readonly T[], key
 function suggestedModuleId(file: string): string {
   const base = file.split('/').pop()?.replace(/\.[^.]+$/, '') ?? file;
   return slug(base).replace(/-/g, '.');
+}
+
+function semanticOwnershipStableKey(kind: string, ...parts: string[]): string {
+  return [kind, ...parts].map(stableIdPart).join(':');
+}
+
+function semanticOwnershipRegionId(file: string, stableKey: string): string {
+  return file + '#semanticOwnershipRegion:' + stableKey;
+}
+
+function semanticOwnershipExportName(input: Pick<FrontierSwarmSemanticOwnershipStableKeyInput, 'name' | 'exportName'>, fallback = 'default'): string {
+  const name = input.name?.trim();
+  if (name && name !== 'default') return name;
+  const exportName = input.exportName?.trim();
+  if (exportName) return exportName;
+  return fallback;
+}
+
+function stableIdPart(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_.@/$*-]+/g, '_').replace(/^_+|_+$/g, '');
+  if (normalized === '*') return 'star';
+  return normalized.length > 0 ? normalized : 'anonymous';
 }
 
 function reviewerLaneReasons(entry: FrontierSwarmMergeIndexEntry): string[] {
@@ -7390,7 +7618,7 @@ function ensureMergeQueueScope(
 }
 
 function mergeQueueRootLeaseKey(rootScopeId: string): string {
-  return rootScopeId === 'root' ? 'merge:root:*' : `merge:root:${rootScopeId}`;
+  return `merge:root:${rootScopeId}`;
 }
 
 function mergeQueueScopesForEntry(
@@ -7428,7 +7656,7 @@ function mergeQueueScopesForEntry(
     ...(entry.lane ? { lane: entry.lane } : {}),
     changedPaths: entry.changedPaths,
     changedRegions: [region],
-    leaseKey: `merge:semantic:${entry.lane ?? 'root'}:${region}`
+    leaseKey: `merge:semantic:${entry.lane ?? rootScopeId}:${region}`
   }));
   const shouldCreatePathScopes = changedRegions.length === 0 || unknownRegions.length > 0;
   const pathScopes = shouldCreatePathScopes
@@ -7636,7 +7864,7 @@ function hierarchicalQueueTerminalDecisionLink(
 }
 
 function hierarchicalQueueLeaseScopeClass(kind: FrontierSwarmMergeQueueScopeKind): FrontierSwarmHierarchicalQueueLeaseScopeClass {
-  if (kind === 'semantic-region' || kind === 'semantic') return 'semantic';
+  if (kind === 'semantic-region' || kind === 'semantic') return 'semantic-region';
   if (kind === 'root' || kind === 'parent' || kind === 'child' || kind === 'lane' || kind === 'path') return kind;
   return 'custom';
 }
@@ -7730,12 +7958,17 @@ function classifyMergeQueueAssignment(
   if (entry.staleAgainstHead || entry.disposition === 'stale-against-head') {
     return { action: 'rerun', reasons: uniqueStrings(['stale-against-head', ...reasons]) };
   }
-  if (entry.ownershipViolations.length > 0 && entry.changedPaths.length > 0 && entry.patchStatus !== 'failed-check') {
-    return { action: 'rerun', reasons: uniqueStrings(['ownership-rescope-rerun', 'ownership-violations', ...reasons]) };
+  if (
+    entry.ownershipViolations.length > 0
+    && entry.changedPaths.length > 0
+    && entry.patchStatus !== 'failed-check'
+  ) {
+    return { action: 'rerun', reasons: uniqueStrings(['ownership-rescope-rerun', ...reasons]) };
   }
   if (
     entry.disposition === 'rejected'
     || entry.status === 'failed'
+    || entry.ownershipViolations.length > 0
     || entry.patchStatus === 'failed-check'
   ) {
     return { action: 'reject', reasons: uniqueStrings(['failed-or-invalid-evidence', ...reasons]) };
@@ -7745,9 +7978,6 @@ function classifyMergeQueueAssignment(
   }
   if (entry.disposition === 'blocked' || entry.mergeReadiness === 'blocked' || entry.status === 'blocked') {
     return { action: 'block', reasons: uniqueStrings(['true-blocker', ...reasons]) };
-  }
-  if (entry.riskLevel === 'high') {
-    return { action: 'promote', reasons: uniqueStrings(['high-risk', ...reasons]) };
   }
   const cleanAutoMerge = entry.disposition === 'auto-mergeable' && entry.autoMergeable;
   if (cleanAutoMerge && (context.entryScopes?.parentDecisionRegions.length ?? 0) > 0) {
@@ -7857,7 +8087,6 @@ function mergeQueuePromotionScopeId(
   leafScopeIdsByJob: Map<string, string>,
   rootScopeId: string
 ): string {
-  if (entry.riskLevel === 'high') return rootScopeId;
   if (entry.conflictingJobIds.length > 0) {
     const conflictScopes = entry.conflictingJobIds
       .map((jobId) => leafScopeIdsByJob.get(jobId))
@@ -7880,6 +8109,43 @@ function mergeQueueScopeRank(kind: FrontierSwarmMergeQueueScopeKind): number {
   if (kind === 'semantic-region') return 4;
   if (kind === 'path') return 5;
   return 6;
+}
+
+function createHierarchicalQueueScopeTree(
+  scopes: readonly FrontierSwarmMergeQueueScope[],
+  rootScopeId: string
+): FrontierSwarmHierarchicalQueueScopeTree {
+  const scopesById = new Map(scopes.map((scope) => [scope.id, scope]));
+  const scopeIdsByKind: Record<string, string[]> = {
+    root: [],
+    parent: [],
+    child: [],
+    lane: [],
+    'semantic-region': [],
+    path: [],
+    custom: []
+  };
+  const ancestorScopeIdsByScopeId: Record<string, string[]> = {};
+  const childScopeIdsByScopeId: Record<string, string[]> = {};
+  for (const scope of scopes) {
+    scopeIdsByKind[scope.kind] = uniqueStrings([...(scopeIdsByKind[scope.kind] ?? []), scope.id]);
+    const ancestors = mergeQueueParentScopeIds(scope, scopesById);
+    ancestorScopeIdsByScopeId[scope.id] = ancestors;
+    const parentId = scope.parentId;
+    if (parentId) {
+      childScopeIdsByScopeId[parentId] = uniqueStrings([...(childScopeIdsByScopeId[parentId] ?? []), scope.id]);
+    }
+  }
+  const leafScopeIds = scopes
+    .filter((scope) => (childScopeIdsByScopeId[scope.id] ?? []).length === 0)
+    .map((scope) => scope.id);
+  return {
+    rootScopeId,
+    scopeIdsByKind,
+    ancestorScopeIdsByScopeId,
+    childScopeIdsByScopeId,
+    leafScopeIds
+  };
 }
 
 function coordinatorAgentDrainLeaseId(scope: Pick<FrontierSwarmMergeQueueScope, 'id' | 'kind' | 'leaseKey'>): string {
@@ -8532,9 +8798,14 @@ function defaultQueueOutcomeForCategory(
     if (queueOutcomeHas(search, 'committed')) return 'committed';
     if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied')) return 'applied';
     if (input.decision === 'superseded' || queueOutcomeHas(search, 'superseded')) return 'superseded';
-    if (input.decision === 'no-change' || queueOutcomeHas(search, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')) return 'no-change';
+    if (
+      action === 'record-only'
+      || input.decision === 'recorded'
+      || input.decision === 'closed'
+      || input.mergeReadiness === 'discovery-only'
+      || queueOutcomeHas(search, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged', 'recorded', 'record-only', 'recordonly', 'closed')
+    ) return 'no-change';
     if (action === 'reject' || input.decision === 'rejected' || input.disposition === 'rejected' || queueOutcomeHas(search, 'rejected')) return 'rejected';
-    if (action === 'record-only' || input.decision === 'recorded' || input.mergeReadiness === 'discovery-only' || queueOutcomeHas(search, 'recorded')) return 'recorded';
     return 'no-change';
   }
   if (category === 'stale-rerun') return 'rerun';
@@ -8561,13 +8832,21 @@ function canonicalizeSwarmQueueOutcome(value: string): FrontierSwarmQueueOutcome
   if (token === 'applied' || token === 'apply-local' || token === 'apply') return 'applied';
   if (token === 'committed' || token === 'commit') return 'committed';
   if (token === 'superseded') return 'superseded';
-  if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
+  if (
+    token === 'no-change'
+    || token === 'nochange'
+    || token === 'no-op'
+    || token === 'noop'
+    || token === 'unchanged'
+    || token === 'recorded'
+    || token === 'record-only'
+    || token === 'recordonly'
+    || token === 'closed'
+  ) return 'no-change';
   if (token === 'rejected' || token === 'reject' || token === 'failed' || token === 'failure') return 'rejected';
   if (token === 'rerun' || token === 're-run' || token === 'retry' || token === 'needs-rerun' || token === 'stale-rerun') return 'rerun';
   if (token === 'conflict-blocked' || token === 'merge-conflict' || token === 'textual-conflict' || token === 'conflict') return 'conflict-blocked';
   if (token === 'human-question' || token === 'human-blocked' || token === 'blocked') return 'human-question';
-  if (token === 'recorded') return 'recorded';
-  if (token === 'closed') return 'closed';
   return undefined;
 }
 
@@ -8744,14 +9023,14 @@ function queueOutcomeDecisionClosesTerminalState(decision: FrontierSwarmQueueOut
     return true;
   }
   const search = queueOutcomeSearch(decision);
-  return queueOutcomeHas(search, 'applied', 'committed', 'superseded', 'rejected', 'rerun', 'stale-against-head', 'conflict', 'human-question');
+  return queueOutcomeHas(search, 'applied', 'committed', 'superseded', 'no-change', 'rejected', 'rerun', 'stale-against-head', 'conflict', 'human-question');
 }
 
 function queueOutcomeDecisionIsResolvedOutput(decision: FrontierSwarmQueueOutcomeDecision): boolean {
-  if (decision.category !== 'terminal') return false;
   return decision.outcome === 'applied'
     || decision.outcome === 'committed'
     || decision.outcome === 'superseded'
+    || decision.outcome === 'no-change'
     || decision.outcome === 'recorded'
     || decision.outcome === 'closed';
 }
@@ -10643,7 +10922,7 @@ function normalizeResult(input: FrontierSwarmJobResultInput): FrontierSwarmJobRe
     mergeDisposition: input.mergeDisposition ?? classifySwarmMergeDisposition({ ...input, status }),
     verification: (input.verification ?? []).map(normalizeVerificationResult),
     ...(input.semanticImport !== undefined ? { semanticImport: cloneJsonValue(input.semanticImport) } : {}),
-    traceShards: cloneJsonValue([...(input.traceShards ?? [])]),
+    ...(input.traceShards !== undefined ? { traceShards: cloneJsonValue([...(input.traceShards ?? [])]) } : {}),
     ...(input.lastMessage ? { lastMessage: input.lastMessage } : {}),
     ...(input.error !== undefined ? { error: stringifyError(input.error) } : {}),
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
@@ -10986,14 +11265,7 @@ export function mergeSwarmBacklogs(input: {
 export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanInput): FrontierSwarmBacklogTaskPlan {
   const backlog = isBacklog(input.backlog) ? input.backlog : createSwarmBacklog(input.backlog);
   const extraEntries = (input.tasks ?? []).map((task) => normalizeTask(task)).map(taskToBacklogEntry);
-  const recursiveSourceIds = new Set(input.recursive
-    ? backlog.entries
-      .filter((entry) => shouldDecomposeBacklogEntry(entry))
-      .map((entry) => entry.id)
-    : []);
-  const runnable = [...backlog.entries, ...extraEntries]
-    .filter((entry) => entry.status === 'ready' || entry.status === 'open')
-    .filter((entry) => !recursiveSourceIds.has(entry.id));
+  const runnable = [...backlog.entries, ...extraEntries].filter((entry) => entry.status === 'ready' || entry.status === 'open');
   const tasks = runnable.map((entry) => normalizeTask({
     id: entry.taskId ?? entry.id,
     title: entry.title,
@@ -11011,7 +11283,7 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
     metadata: { backlogEntryId: entry.id, ...(entry.metadata ?? {}) }
   }));
   const decompositionTasks = input.recursive ? backlog.entries
-    .filter(shouldDecomposeBacklogEntry)
+    .filter((entry) => entry.entryKind === 'feature' || entry.childEntryIds.length > 0)
     .map((entry) => normalizeTask({
       id: `${entry.id}:decompose`,
       title: `Decompose ${entry.title}`,
@@ -11027,6 +11299,20 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
     }))
     : [];
   const allTasks = [...tasks, ...decompositionTasks];
+  const metadata = mergeSwarmMetadata([
+    backlog.metadata,
+    input.metadata,
+    {
+      backlogId: backlog.id,
+      ...(input.backlogPath ? { backlogPath: input.backlogPath } : {}),
+      ...(input.childArtifactPath ? { childArtifactPath: input.childArtifactPath } : {}),
+      ...(input.recursive !== undefined ? { recursive: input.recursive } : {}),
+      ...(input.maxDepth !== undefined ? { maxDepth: input.maxDepth } : {}),
+      ...(input.decomposeLane ? { decomposeLane: input.decomposeLane } : {}),
+      ...(input.decomposeCompute ? { decomposeCompute: input.decomposeCompute } : {}),
+      ...(input.decomposeWorkKind ? { decomposeWorkKind: input.decomposeWorkKind } : {})
+    }
+  ]);
   return {
     kind: 'frontier.swarm.backlog-task-plan',
     version: 1,
@@ -11039,12 +11325,8 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
     runnableTaskIds: tasks.map((task) => task.id),
     decompositionTaskIds: decompositionTasks.map((task) => task.id),
     summary: { taskCount: allTasks.length, runnableCount: tasks.length, decompositionCount: decompositionTasks.length },
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+    ...(metadata ? { metadata } : {})
   };
-}
-
-function shouldDecomposeBacklogEntry(entry: FrontierSwarmBacklogEntry): boolean {
-  return entry.entryKind === 'feature' || entry.childEntryIds.length > 0;
 }
 
 export type FrontierSwarmModelRoutingMode = 'fill' | 'observe' | 'override' | string;
@@ -11168,11 +11450,7 @@ export function createSwarmModelRoutingFeedback(input: FrontierSwarmModelRouting
 export function createSwarmModelRoutingPolicy(input: FrontierSwarmModelRoutingPolicyInput = {}): FrontierSwarmModelRoutingPolicy {
   const generatedAt = input.generatedAt ?? Date.now();
   const feedback = (input.feedback ?? []).map(createSwarmModelRoutingFeedback);
-  const explicitSignals = (input.signals ?? []).map((signal, index) => ({ id: `signal-${index + 1}`, ...signal }));
-  const signals = [
-    ...explicitSignals,
-    ...feedback.flatMap((entry, index) => modelRoutingSignalsFromFeedback(entry, index))
-  ];
+  const signals = (input.signals ?? []).map((signal, index) => ({ id: `signal-${index + 1}`, ...signal }));
   const preferences = signals.filter((signal) => signal.mode === 'prefer' || signal.mode === 'avoid' || signal.mode === 'override');
   return {
     kind: 'frontier.swarm.model-routing-policy',
@@ -11193,69 +11471,6 @@ export function createSwarmModelRoutingPolicy(input: FrontierSwarmModelRoutingPo
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
-}
-
-function modelRoutingSignalsFromFeedback(
-  feedback: FrontierSwarmModelRoutingFeedback,
-  index: number
-): FrontierSwarmModelRoutingPolicySignal[] {
-  const mode = modelRoutingSignalModeFromFeedback(feedback);
-  if (!mode || !feedback.model || feedback.model === 'unknown') return [];
-  return [{
-    id: `feedback-signal-${index + 1}`,
-    mode,
-    lane: feedback.lane,
-    ...(feedback.workKind ? { workKind: feedback.workKind } : {}),
-    model: feedback.model,
-    confidence: modelRoutingSignalConfidenceFromFeedback(feedback),
-    reason: modelRoutingSignalReasonFromFeedback(feedback, mode),
-    metadata: {
-      feedbackId: feedback.id,
-      ...(feedback.jobId ? { jobId: feedback.jobId } : {}),
-      ...(feedback.taskId ? { taskId: feedback.taskId } : {}),
-      ...(feedback.computeId ? { computeId: feedback.computeId } : {}),
-      ...(feedback.mergeDisposition ? { mergeDisposition: feedback.mergeDisposition } : {}),
-      ...(feedback.mergeReadiness ? { mergeReadiness: feedback.mergeReadiness } : {}),
-      ...(feedback.resultStatus ? { resultStatus: feedback.resultStatus } : {})
-    }
-  }];
-}
-
-function modelRoutingSignalModeFromFeedback(feedback: FrontierSwarmModelRoutingFeedback): FrontierSwarmModelRoutingMode | undefined {
-  const disposition = feedback.mergeDisposition;
-  const readiness = feedback.mergeReadiness;
-  const status = feedback.resultStatus;
-  if (feedback.selected || disposition === 'auto-mergeable' || disposition === 'applied') return 'prefer';
-  if (
-    status === 'failed'
-    || disposition === 'rejected'
-    || disposition === 'stale-against-head'
-    || disposition === 'needs-port'
-    || readiness === 'blocked'
-  ) {
-    return 'avoid';
-  }
-  const band = feedback.evidenceQuality?.band;
-  if (band === 'verified' || band === 'strong') return 'prefer';
-  if (band === 'weak' || band === 'missing' || band === 'none') return 'avoid';
-  return undefined;
-}
-
-function modelRoutingSignalConfidenceFromFeedback(feedback: FrontierSwarmModelRoutingFeedback): FrontierSwarmConfidence {
-  const confidence = feedback.evidenceQuality?.confidence;
-  return confidence === 'high' || confidence === 'medium' || confidence === 'low' ? confidence : 'low';
-}
-
-function modelRoutingSignalReasonFromFeedback(
-  feedback: FrontierSwarmModelRoutingFeedback,
-  mode: FrontierSwarmModelRoutingMode
-): string {
-  const disposition = feedback.mergeDisposition ?? 'unknown-disposition';
-  const readiness = feedback.mergeReadiness ?? 'unknown-readiness';
-  const status = feedback.resultStatus ?? 'unknown-status';
-  return mode === 'prefer'
-    ? `successful routing feedback: ${disposition}/${readiness}/${status}`
-    : `negative routing feedback: ${disposition}/${readiness}/${status}`;
 }
 
 export function createSwarmModelRoutingFeedbackFromBoard(input: { board?: unknown; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmModelRoutingFeedback {
@@ -11335,31 +11550,9 @@ export interface FrontierSwarmStrategyTournamentHistory {
   id: string;
   tournaments: FrontierSwarmStrategyTournament[];
   generatedAt: number;
-  summary: {
-    tournamentCount: number;
-    strategyCount: number;
-    matchCount: number;
-    verifiedCount: number;
-    rejectedCount: number;
-    undefinedCount: number;
-    topStrategyId?: string;
-    topAverageScore?: number;
-  };
   metadata?: JsonObject;
 }
-export interface FrontierSwarmStrategyTournamentComparisonEntry {
-  strategyId: string;
-  status: 'new' | 'removed' | 'regressed' | 'improved' | 'stable' | string;
-  baselineScore?: number;
-  currentScore?: number;
-  scoreDelta: number;
-  baselineSamples?: number;
-  currentSamples?: number;
-}
 export interface FrontierSwarmStrategyTournamentComparison {
-  kind?: 'frontier.swarm.strategy-tournament-comparison';
-  version?: 1;
-  id?: string;
   winnerId?: string;
   tournamentCount: number;
   candidateCount: number;
@@ -11367,111 +11560,7 @@ export interface FrontierSwarmStrategyTournamentComparison {
   currentId?: string;
   scoreDelta?: number;
   regression?: boolean;
-  generatedAt?: number;
-  entries?: FrontierSwarmStrategyTournamentComparisonEntry[];
-  summary?: {
-    strategyCount: number;
-    newCount: number;
-    removedCount: number;
-    regressedCount: number;
-    improvedCount: number;
-    stableCount: number;
-    largestRegression?: number;
-    largestImprovement?: number;
-  };
   metadata?: JsonObject;
-}
-export type FrontierSwarmBanditAlgorithm = 'deterministic-ucb1' | string;
-export type FrontierSwarmBanditTarget = 'strategy' | 'lane' | 'concurrency-key' | string;
-export type FrontierSwarmBanditAction = 'promote' | 'demote' | 'hold' | 'explore' | string;
-export interface FrontierSwarmContextualBanditPolicyInput {
-  algorithm?: FrontierSwarmBanditAlgorithm;
-  explorationWeight?: number;
-  minPromoteMatches?: number;
-  minPromoteVerified?: number;
-  promoteReward?: number;
-  demoteReward?: number;
-  maxNegativeRate?: number;
-  includeTargets?: readonly FrontierSwarmBanditTarget[];
-  metadata?: unknown;
-}
-export interface FrontierSwarmContextualBanditPolicy {
-  algorithm: FrontierSwarmBanditAlgorithm;
-  explorationWeight: number;
-  minPromoteMatches: number;
-  minPromoteVerified: number;
-  promoteReward: number;
-  demoteReward: number;
-  maxNegativeRate: number;
-  includeTargets: FrontierSwarmBanditTarget[];
-  metadata?: JsonObject;
-}
-export interface FrontierSwarmContextualBanditInput {
-  id?: string;
-  tournament?: FrontierSwarmStrategyTournament;
-  history?: FrontierSwarmStrategyTournamentHistory;
-  policy?: FrontierSwarmContextualBanditPolicyInput;
-  generatedAt?: number;
-  metadata?: unknown;
-}
-export interface FrontierSwarmBanditArmRecommendation {
-  id: string;
-  target: FrontierSwarmBanditTarget;
-  key: string;
-  action: FrontierSwarmBanditAction;
-  score: number;
-  rewardMean: number;
-  explorationBonus: number;
-  confidence: number;
-  matchCount: number;
-  totalMatchCount: number;
-  verifiedCount: number;
-  rejectedCount: number;
-  undefinedCount: number;
-  negativeRate: number;
-  strategyIds: string[];
-  lanes: string[];
-  concurrencyKeys: string[];
-  outcomeCounts: Record<string, number>;
-  reasonCodes: string[];
-  metadata?: JsonObject;
-}
-export interface FrontierSwarmContextualBanditRecommendations {
-  kind: typeof FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_KIND;
-  version: typeof FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_VERSION;
-  id: string;
-  generatedAt: number;
-  algorithm: FrontierSwarmBanditAlgorithm;
-  tournamentId?: string;
-  historyId?: string;
-  policy: FrontierSwarmContextualBanditPolicy;
-  recommendations: FrontierSwarmBanditArmRecommendation[];
-  byTarget: Record<string, string[]>;
-  summary: {
-    recommendationCount: number;
-    promoteCount: number;
-    demoteCount: number;
-    exploreCount: number;
-    holdCount: number;
-    totalMatchCount: number;
-    topRecommendationId?: string;
-    topScore?: number;
-  };
-  metadata?: JsonObject;
-}
-
-interface FrontierSwarmBanditArmStats {
-  target: FrontierSwarmBanditTarget;
-  key: string;
-  rewardSum: number;
-  matchCount: number;
-  verifiedCount: number;
-  rejectedCount: number;
-  undefinedCount: number;
-  strategyIds: string[];
-  lanes: string[];
-  concurrencyKeys: string[];
-  outcomeCounts: Record<string, number>;
 }
 
 export function createSwarmTournamentAdaptiveFeedback(input: {
@@ -11573,22 +11662,7 @@ export function createSwarmMergeTournament(input: {
 export function createSwarmStrategyTournamentHistory(input: { id?: string; tournaments?: readonly FrontierSwarmStrategyTournament[]; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmStrategyTournamentHistory {
   const generatedAt = input.generatedAt ?? Date.now();
   const tournaments = cloneJsonValue([...(input.tournaments ?? [])]);
-  const standings = tournaments.flatMap((tournament) => tournament.standings);
-  const scoreByStrategy = new Map<string, number[]>();
-  for (const standing of standings) scoreByStrategy.set(standing.strategyId, [...(scoreByStrategy.get(standing.strategyId) ?? []), standing.score]);
-  const top = Array.from(scoreByStrategy.entries())
-    .map(([strategyId, scores]) => ({ strategyId, averageScore: roundPercent(scores.reduce((sum, score) => sum + score, 0) / Math.max(1, scores.length)) }))
-    .sort((left, right) => right.averageScore - left.averageScore || left.strategyId.localeCompare(right.strategyId))[0];
-  const summary = {
-    tournamentCount: tournaments.length,
-    strategyCount: scoreByStrategy.size,
-    matchCount: tournaments.reduce((sum, tournament) => sum + tournament.summary.matchCount, 0),
-    verifiedCount: tournaments.reduce((sum, tournament) => sum + tournament.summary.verifiedCount, 0),
-    rejectedCount: tournaments.reduce((sum, tournament) => sum + tournament.summary.rejectedCount, 0),
-    undefinedCount: tournaments.reduce((sum, tournament) => sum + tournament.summary.undefinedCount, 0),
-    ...(top ? { topStrategyId: top.strategyId, topAverageScore: top.averageScore } : {})
-  };
-  return { kind: 'frontier.swarm.strategy-tournament-history', version: 1, id: input.id ?? 'swarm-strategy-tournament-history:' + stableHash([tournaments.map((entry) => entry.id), generatedAt]), tournaments, generatedAt, summary, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
+  return { kind: 'frontier.swarm.strategy-tournament-history', version: 1, id: input.id ?? 'swarm-strategy-tournament-history:' + stableHash([tournaments.map((entry) => entry.id), generatedAt]), tournaments, generatedAt, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
 }
 
 export function querySwarmStrategyTournament(tournament: FrontierSwarmStrategyTournament, query: {
@@ -11615,302 +11689,16 @@ export function querySwarmStrategyTournament(tournament: FrontierSwarmStrategyTo
   return { ...tournament, matches, standings: createTournamentStandings(matches), summary: { ...tournament.summary, matchCount: matches.length, strategyCount: uniqueStrings(matches.map((entry) => entry.strategyId)).length, gameCount: uniqueStrings(matches.map((entry) => entry.gameId)).length } };
 }
 
-export function normalizeContextualBanditPolicy(input: FrontierSwarmContextualBanditPolicyInput = {}): FrontierSwarmContextualBanditPolicy {
-  return {
-    algorithm: input.algorithm ?? 'deterministic-ucb1',
-    explorationWeight: nonNegativeNumber(input.explorationWeight, 0.32),
-    minPromoteMatches: positiveInteger(input.minPromoteMatches, 3),
-    minPromoteVerified: positiveInteger(input.minPromoteVerified, 1),
-    promoteReward: clamp01(input.promoteReward ?? 0.72),
-    demoteReward: clamp01(input.demoteReward ?? 0.35),
-    maxNegativeRate: clamp01(input.maxNegativeRate ?? 0.34),
-    includeTargets: uniqueStrings(input.includeTargets ?? ['strategy', 'lane', 'concurrency-key']),
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
-  };
-}
-
-export function createSwarmContextualBanditRecommendations(input: FrontierSwarmContextualBanditInput = {}): FrontierSwarmContextualBanditRecommendations {
-  const generatedAt = input.generatedAt ?? Date.now();
-  const policy = normalizeContextualBanditPolicy(input.policy);
-  const arms = createBanditArms(input, policy);
-  const totalMatchCount = Math.max(1, arms.reduce((sum, arm) => sum + arm.matchCount, 0));
-  const recommendations = arms
-    .map((arm) => recommendBanditArm(arm, policy, totalMatchCount))
-    .sort(compareBanditRecommendations);
-  const top = recommendations[0];
-  return {
-    kind: FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_KIND,
-    version: FRONTIER_SWARM_CONTEXTUAL_BANDIT_RECOMMENDATIONS_VERSION,
-    id: input.id ?? 'swarm-contextual-bandit:' + stableHash([input.tournament?.id, input.history?.id, policy, generatedAt]),
-    generatedAt,
-    algorithm: policy.algorithm,
-    ...(input.tournament ? { tournamentId: input.tournament.id } : {}),
-    ...(input.history ? { historyId: input.history.id } : {}),
-    policy,
-    recommendations,
-    byTarget: groupBanditRecommendationsByTarget(recommendations),
-    summary: {
-      recommendationCount: recommendations.length,
-      promoteCount: recommendations.filter((entry) => entry.action === 'promote').length,
-      demoteCount: recommendations.filter((entry) => entry.action === 'demote').length,
-      exploreCount: recommendations.filter((entry) => entry.action === 'explore').length,
-      holdCount: recommendations.filter((entry) => entry.action === 'hold').length,
-      totalMatchCount,
-      ...(top ? { topRecommendationId: top.id, topScore: top.score } : {})
-    },
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
-  };
-}
-
-function createBanditArms(
-  input: FrontierSwarmContextualBanditInput,
-  policy: FrontierSwarmContextualBanditPolicy
-): FrontierSwarmBanditArmStats[] {
-  const arms = new Map<string, FrontierSwarmBanditArmStats>();
-  for (const tournament of input.history?.tournaments ?? (input.tournament ? [input.tournament] : [])) {
-    const candidatesById = new Map(tournament.candidates.map((candidate) => [String(candidate.id ?? candidate.strategyId ?? ''), candidate]));
-    const matchesByStrategy = new Map<string, FrontierSwarmStrategyTournamentMatch[]>();
-    for (const match of tournament.matches) {
-      matchesByStrategy.set(match.strategyId, [...(matchesByStrategy.get(match.strategyId) ?? []), match]);
-    }
-    for (const standing of tournament.standings) {
-      const matches = matchesByStrategy.get(standing.strategyId) ?? [];
-      const candidate = candidatesById.get(standing.strategyId);
-      const lanes = uniqueStrings([
-        readJsonString(candidate, 'lane'),
-        ...matches.flatMap((match) => match.tags).filter((tag) => tag !== 'auto-mergeable' && tag !== 'needs-port' && tag !== 'rejected' && tag !== 'blocked')
-      ]);
-      const concurrencyKeys = uniqueStrings([
-        readJsonString(candidate, 'concurrencyKey'),
-        readJsonString(candidate, 'concurrency-key'),
-        readJsonString(toJsonObject(candidate?.metadata), 'concurrencyKey')
-      ]);
-      const reward = clamp01(standing.score / 100);
-      const base = {
-        rewardSum: reward * standing.samples,
-        matchCount: standing.samples,
-        verifiedCount: verifiedOutcomeCount(standing.outcomeCounts),
-        rejectedCount: rejectedOutcomeCount(standing.outcomeCounts),
-        undefinedCount: Number(standing.outcomeCounts.unknown ?? 0),
-        strategyIds: [standing.strategyId],
-        lanes,
-        concurrencyKeys,
-        outcomeCounts: standing.outcomeCounts
-      };
-      if (policy.includeTargets.includes('strategy')) addBanditArm(arms, 'strategy', standing.strategyId, base);
-      if (policy.includeTargets.includes('lane')) for (const lane of lanes) addBanditArm(arms, 'lane', lane, base);
-      if (policy.includeTargets.includes('concurrency-key')) for (const key of concurrencyKeys) addBanditArm(arms, 'concurrency-key', key, base);
-    }
-  }
-  return Array.from(arms.values()).filter((arm) => arm.matchCount > 0);
-}
-
-function addBanditArm(
-  arms: Map<string, FrontierSwarmBanditArmStats>,
-  target: FrontierSwarmBanditTarget,
-  key: string,
-  input: Omit<FrontierSwarmBanditArmStats, 'target' | 'key'>
-): void {
-  const id = `${target}:${key}`;
-  const current = arms.get(id) ?? emptyBanditArm(target, key);
-  arms.set(id, {
-    ...current,
-    rewardSum: current.rewardSum + input.rewardSum,
-    matchCount: current.matchCount + input.matchCount,
-    verifiedCount: current.verifiedCount + input.verifiedCount,
-    rejectedCount: current.rejectedCount + input.rejectedCount,
-    undefinedCount: current.undefinedCount + input.undefinedCount,
-    strategyIds: uniqueStrings([...current.strategyIds, ...input.strategyIds]),
-    lanes: uniqueStrings([...current.lanes, ...input.lanes]),
-    concurrencyKeys: uniqueStrings([...current.concurrencyKeys, ...input.concurrencyKeys]),
-    outcomeCounts: mergeNumberRecords(current.outcomeCounts, input.outcomeCounts)
-  });
-}
-
-function recommendBanditArm(
-  arm: FrontierSwarmBanditArmStats,
-  policy: FrontierSwarmContextualBanditPolicy,
-  totalMatchCount: number
-): FrontierSwarmBanditArmRecommendation {
-  const rewardMean = arm.matchCount ? arm.rewardSum / arm.matchCount : 0;
-  const explorationBonus = arm.matchCount ? policy.explorationWeight * Math.sqrt(Math.log(totalMatchCount + 1) / arm.matchCount) : policy.explorationWeight;
-  const negativeRate = arm.matchCount ? (arm.rejectedCount + arm.undefinedCount) / arm.matchCount : 0;
-  const confidence = clamp01(Math.min(arm.matchCount / policy.minPromoteMatches, 1) * (1 - negativeRate));
-  const action = banditAction(arm, policy, rewardMean, negativeRate);
-  const reasonCodes = banditReasonCodes(arm, policy, rewardMean, negativeRate, action);
-  const score = roundPercent((rewardMean + explorationBonus) * 100);
-  return {
-    id: 'swarm-bandit-arm:' + stableHash([arm.target, arm.key, arm.matchCount, rewardMean, explorationBonus, action]),
-    target: arm.target,
-    key: arm.key,
-    action,
-    score,
-    rewardMean: roundScore(rewardMean),
-    explorationBonus: roundScore(explorationBonus),
-    confidence: roundScore(confidence),
-    matchCount: arm.matchCount,
-    totalMatchCount,
-    verifiedCount: arm.verifiedCount,
-    rejectedCount: arm.rejectedCount,
-    undefinedCount: arm.undefinedCount,
-    negativeRate: roundScore(negativeRate),
-    strategyIds: arm.strategyIds,
-    lanes: arm.lanes,
-    concurrencyKeys: arm.concurrencyKeys,
-    outcomeCounts: arm.outcomeCounts,
-    reasonCodes
-  };
-}
-
-function banditAction(
-  arm: FrontierSwarmBanditArmStats,
-  policy: FrontierSwarmContextualBanditPolicy,
-  reward: number,
-  negativeRate: number
-): FrontierSwarmBanditAction {
-  if (arm.matchCount < policy.minPromoteMatches) return reward >= policy.demoteReward ? 'explore' : 'hold';
-  if (reward <= policy.demoteReward || negativeRate > policy.maxNegativeRate) return 'demote';
-  if (reward >= policy.promoteReward && arm.verifiedCount >= policy.minPromoteVerified) return 'promote';
-  return 'hold';
-}
-
-function banditReasonCodes(
-  arm: FrontierSwarmBanditArmStats,
-  policy: FrontierSwarmContextualBanditPolicy,
-  reward: number,
-  negativeRate: number,
-  action: FrontierSwarmBanditAction
-): string[] {
-  return uniqueStrings([
-    policy.algorithm,
-    action,
-    arm.matchCount < policy.minPromoteMatches ? 'sample-below-promotion-floor' : undefined,
-    reward >= policy.promoteReward ? 'reward-above-promotion-threshold' : undefined,
-    reward <= policy.demoteReward ? 'reward-below-demotion-threshold' : undefined,
-    negativeRate > policy.maxNegativeRate ? 'negative-rate-above-threshold' : undefined,
-    arm.verifiedCount >= policy.minPromoteVerified ? 'verified-sample-present' : undefined
-  ]);
-}
-
-function emptyBanditArm(target: FrontierSwarmBanditTarget, key: string): FrontierSwarmBanditArmStats {
-  return { target, key, rewardSum: 0, matchCount: 0, verifiedCount: 0, rejectedCount: 0, undefinedCount: 0, strategyIds: [], lanes: [], concurrencyKeys: [], outcomeCounts: {} };
-}
-
-function groupBanditRecommendationsByTarget(recommendations: readonly FrontierSwarmBanditArmRecommendation[]): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const recommendation of recommendations) out[recommendation.target] = uniqueStrings([...(out[recommendation.target] ?? []), recommendation.id]);
-  return Object.fromEntries(Object.entries(out).sort(([left], [right]) => left.localeCompare(right)));
-}
-
-function compareBanditRecommendations(left: FrontierSwarmBanditArmRecommendation, right: FrontierSwarmBanditArmRecommendation): number {
-  return banditActionRank(left.action) - banditActionRank(right.action) || right.score - left.score || left.target.localeCompare(right.target) || left.key.localeCompare(right.key);
-}
-
-function banditActionRank(action: FrontierSwarmBanditAction): number {
-  return { promote: 0, explore: 1, demote: 2, hold: 3 }[action] ?? 4;
-}
-
-function verifiedOutcomeCount(counts: Record<string, number>): number {
-  return Number(counts['auto-mergeable'] ?? 0) + Number(counts['needs-port'] ?? 0) + Number(counts.verified ?? 0) + Number(counts.landed ?? 0);
-}
-
-function rejectedOutcomeCount(counts: Record<string, number>): number {
-  return Number(counts.rejected ?? 0) + Number(counts.blocked ?? 0) + Number(counts['stale-against-head'] ?? 0);
-}
-
-function mergeNumberRecords(left: Record<string, number>, right: Record<string, number>): Record<string, number> {
-  const out = { ...left };
-  for (const [key, value] of Object.entries(right)) out[key] = (out[key] ?? 0) + value;
-  return Object.fromEntries(Object.entries(out).sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey)));
-}
-
-function readJsonString(value: unknown, key: string): string | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) && typeof (value as Record<string, unknown>)[key] === 'string'
-    ? (value as Record<string, string>)[key]
-    : undefined;
-}
-
-function nonNegativeNumber(value: number | undefined, fallback: number): number {
-  return Math.max(0, Number.isFinite(value) ? Number(value) : fallback);
-}
-
-function positiveInteger(value: number | undefined, fallback: number): number {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
-}
-
-function roundPercent(value: number): number {
-  return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
-}
-
 export function compareSwarmStrategyTournaments(input: FrontierSwarmStrategyTournamentHistory | readonly FrontierSwarmStrategyTournament[] | { baseline: FrontierSwarmStrategyTournament; current: FrontierSwarmStrategyTournament; scoreThreshold?: number }): FrontierSwarmStrategyTournamentComparison {
   if (!Array.isArray(input) && (input as { baseline?: unknown }).baseline && (input as { current?: unknown }).current) {
     const { baseline, current, scoreThreshold } = input as { baseline: FrontierSwarmStrategyTournament; current: FrontierSwarmStrategyTournament; scoreThreshold?: number };
-    const threshold = Math.abs(scoreThreshold ?? 0);
-    const baselineById = new Map(baseline.standings.map((standing) => [standing.strategyId, standing]));
-    const currentById = new Map(current.standings.map((standing) => [standing.strategyId, standing]));
-    const entries = uniqueStrings([...baselineById.keys(), ...currentById.keys()])
-      .sort()
-      .map((strategyId) => compareTournamentStanding(strategyId, baselineById.get(strategyId), currentById.get(strategyId), threshold));
-    const regressions = entries.map((entry) => entry.scoreDelta).filter((score) => score < 0);
-    const improvements = entries.map((entry) => entry.scoreDelta).filter((score) => score > 0);
     const scoreDelta = (current.summary.topScore ?? 0) - (baseline.summary.topScore ?? 0);
-    return {
-      kind: 'frontier.swarm.strategy-tournament-comparison',
-      version: 1,
-      id: 'swarm-strategy-comparison:' + stableHash([baseline.id, current.id, threshold]),
-      winnerId: current.winnerId,
-      tournamentCount: 2,
-      candidateCount: baseline.candidates.length + current.candidates.length,
-      baselineId: baseline.id,
-      currentId: current.id,
-      generatedAt: Date.now(),
-      scoreDelta,
-      regression: scoreDelta < -threshold,
-      entries,
-      summary: {
-        strategyCount: entries.length,
-        newCount: entries.filter((entry) => entry.status === 'new').length,
-        removedCount: entries.filter((entry) => entry.status === 'removed').length,
-        regressedCount: entries.filter((entry) => entry.status === 'regressed').length,
-        improvedCount: entries.filter((entry) => entry.status === 'improved').length,
-        stableCount: entries.filter((entry) => entry.status === 'stable').length,
-        ...(regressions.length ? { largestRegression: Math.min(...regressions) } : {}),
-        ...(improvements.length ? { largestImprovement: Math.max(...improvements) } : {})
-      }
-    };
+    return { winnerId: current.winnerId, tournamentCount: 2, candidateCount: baseline.candidates.length + current.candidates.length, baselineId: baseline.id, currentId: current.id, scoreDelta, regression: scoreDelta < -Math.abs(scoreThreshold ?? 0) };
   }
   const tournaments: readonly FrontierSwarmStrategyTournament[] = Array.isArray(input)
     ? input as readonly FrontierSwarmStrategyTournament[]
     : (input as FrontierSwarmStrategyTournamentHistory).tournaments;
   return { winnerId: tournaments.find((entry: FrontierSwarmStrategyTournament) => entry.winnerId)?.winnerId, tournamentCount: tournaments.length, candidateCount: tournaments.reduce((sum: number, entry: FrontierSwarmStrategyTournament) => sum + entry.candidates.length, 0) };
-}
-
-function compareTournamentStanding(
-  strategyId: string,
-  baseline: FrontierSwarmStrategyTournamentStanding | undefined,
-  current: FrontierSwarmStrategyTournamentStanding | undefined,
-  threshold: number
-): FrontierSwarmStrategyTournamentComparisonEntry {
-  if (!baseline && current) {
-    return { strategyId, status: 'new', currentScore: current.score, currentSamples: current.samples, scoreDelta: current.score };
-  }
-  if (baseline && !current) {
-    return { strategyId, status: 'removed', baselineScore: baseline.score, baselineSamples: baseline.samples, scoreDelta: -baseline.score };
-  }
-  const baselineScore = baseline?.score ?? 0;
-  const currentScore = current?.score ?? 0;
-  const scoreDelta = roundPercent(currentScore - baselineScore);
-  const status = scoreDelta < -threshold ? 'regressed' : scoreDelta > threshold ? 'improved' : 'stable';
-  return {
-    strategyId,
-    status,
-    baselineScore,
-    currentScore,
-    scoreDelta,
-    ...(baseline ? { baselineSamples: baseline.samples } : {}),
-    ...(current ? { currentSamples: current.samples } : {})
-  };
 }
 
 export interface FrontierSwarmAdaptiveLoadDecision { action: 'increase' | 'decrease' | 'hold' | string; target: string; key?: string; previous?: number; next?: number; reason: string; metadata?: JsonObject }
@@ -11958,7 +11746,7 @@ export interface FrontierSwarmCoordinatorDashboardJob {
   ownershipViolations: string[];
   tests: { passed: number; failed: number; requiredFailed: number };
   semanticImport?: FrontierSwarmSemanticImportSummary;
-  traceShards?: unknown[];
+  traceShards?: JsonValue[];
   staleAgainstHead: boolean;
   duplicateGroupId?: string;
   evidencePaths: string[];
@@ -12088,7 +11876,7 @@ function bundleToCoordinatorDashboardJob(bundle: FrontierSwarmMergeBundle): Fron
     ownershipViolations: [...bundle.ownershipViolations],
     tests: { passed: bundle.commandsPassed.length, failed, requiredFailed },
     ...(bundle.semanticImport ? { semanticImport: cloneJsonValue(bundle.semanticImport) } : {}),
-    ...(bundle.traceShards ? { traceShards: cloneJsonValue(bundle.traceShards) } : {}),
+    ...(bundle.traceShards !== undefined ? { traceShards: cloneJsonValue(bundle.traceShards) } : {}),
     staleAgainstHead: bundle.staleAgainstHead,
     evidencePaths: [...bundle.evidencePaths],
     ...(contextBudget ? { contextBudget } : {}),
@@ -12217,38 +12005,6 @@ function titleFromId(id: string): string {
 
 function slug(value: string): string {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item';
-}
-
-function semanticOwnershipStableKey(kind: string, ...parts: string[]): string {
-  return [kind, ...parts].map(stableIdPart).join(':');
-}
-
-function semanticOwnershipRegionId(file: string, stableKey: string): string {
-  return file + '#semanticOwnershipRegion:' + stableKey;
-}
-
-function semanticOwnershipExportDeclarationName(input: Pick<FrontierSwarmSemanticOwnershipStableKeyInput, 'name' | 'exportName'>, fallback = 'default'): string {
-  const name = input.name?.trim();
-  if (name && name !== 'default') return name;
-  const exportName = input.exportName?.trim();
-  if (exportName) return exportName;
-  return fallback;
-}
-
-function semanticOwnershipExportClauseName(input: Pick<FrontierSwarmSemanticOwnershipStableKeyInput, 'name' | 'exportName'>, fallback = '*'): string {
-  const name = input.name?.trim();
-  const exportName = input.exportName?.trim();
-  if (name && name !== 'default') return name;
-  if (exportName && exportName !== 'default') return exportName;
-  if (name) return name;
-  if (exportName) return exportName;
-  return fallback;
-}
-
-function stableIdPart(value: string): string {
-  const normalized = value.trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_.@/$*-]+/g, '_').replace(/^_+|_+$/g, '');
-  if (normalized === '*') return 'star';
-  return normalized.length > 0 ? normalized : 'anonymous';
 }
 
 function uniqueStrings(values: readonly (string | undefined | null)[]): string[] {
