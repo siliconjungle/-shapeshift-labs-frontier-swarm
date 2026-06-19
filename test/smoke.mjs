@@ -3,9 +3,12 @@ import {
   FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND,
   FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID,
   FRONTIER_SWARM_PRIORITY_POLICY_KIND,
+  FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
   checkSwarmOwnership,
   classifySwarmMergeDisposition,
   classifySwarmMergeReadiness,
+  classifySwarmQueueOutcome,
+  collapseSwarmQueueOutcomeDecisions,
   completeSwarmJob,
   compileSwarm,
   checkSwarmBudget,
@@ -36,6 +39,8 @@ import {
   createSwarmPatchStackPlan,
   createSwarmParityOracle,
   createSwarmProgressModel,
+  createSwarmQueueOutcomeDecision,
+  createSwarmQueueOutcomeModel,
   createSwarmRebaseReport,
   createSwarmReferenceOraclePlan,
   createSwarmReferenceOracleResponse,
@@ -1397,6 +1402,109 @@ assert.strictEqual(drainCoordinatorReview.assignedAction, 'promote');
 assert.strictEqual(drainCoordinatorReview.decision, 'escalated');
 assert.strictEqual(drainCoordinatorReview.classification, 'non-terminal');
 assert.strictEqual(drainCoordinatorReview.terminal, false);
+
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'escalated', disposition: 'needs-port', reasons: ['needs-human-port'] }).category,
+  'coordinator-review'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'blocked', reasons: ['true-blocker'] }).category,
+  'human-blocked'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'rerun', reasons: ['stale-against-head'] }).category,
+  'stale-rerun'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'queued', reasons: ['conflicting-changes'], conflictingJobIds: ['other-job'] }).category,
+  'conflict'
+);
+
+const terminalOutcomeModel = createSwarmQueueOutcomeModel({ drainWork: terminalDrainWork, generatedAt: 7600 });
+assert.strictEqual(terminalOutcomeModel.kind, FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND);
+assert.strictEqual(terminalOutcomeModel.summary.terminalCount, 2);
+assert.strictEqual(terminalOutcomeModel.summary.coordinatorReviewCount, 1);
+assert.strictEqual(terminalOutcomeModel.summary.humanBlockedCount, 1);
+assert.strictEqual(terminalOutcomeModel.summary.staleRerunCount, 1);
+assert.strictEqual(terminalOutcomeModel.summary.visibleReviewDebtCount, 1);
+assert.strictEqual(terminalOutcomeModel.visibleHumanBlockers[0].jobId, terminalBundleBlocked.jobId);
+assert.strictEqual(terminalOutcomeModel.visibleReruns[0].jobId, terminalBundleStale.jobId);
+assert.strictEqual(terminalOutcomeModel.visibleReviewDebt[0].jobId, terminalBundleCoordinatorReview.jobId);
+
+const queueAliasCollapse = collapseSwarmQueueOutcomeDecisions([
+  createSwarmQueueOutcomeDecision({
+    id: 'old-review-queue',
+    jobId: 'job-review-old',
+    taskId: 'task-review',
+    queueItemIds: ['queue-review'],
+    decision: 'escalated',
+    reasons: ['coordinator-queue-required'],
+    generatedAt: 1
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'old-rerun-queue',
+    subjectId: 'task-review',
+    decision: 'rerun',
+    reasons: ['stale-against-head'],
+    generatedAt: 2
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'new-applied-queue',
+    queueItemIds: ['queue-review'],
+    decision: 'applied',
+    generatedAt: 3
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'old-conflict-task',
+    taskId: 'task-conflict',
+    queueItemIds: ['queue-conflict'],
+    decision: 'escalated',
+    reasons: ['conflicting-changes'],
+    conflictingJobIds: ['other-job'],
+    generatedAt: 1
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'new-rejected-task',
+    taskId: 'task-conflict',
+    decision: 'rejected',
+    generatedAt: 4
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'old-review-job',
+    jobId: 'job-direct',
+    decision: 'escalated',
+    reasons: ['needs-port'],
+    generatedAt: 1
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'new-committed-job',
+    subjectId: 'job-direct',
+    category: 'terminal',
+    outcome: 'committed',
+    generatedAt: 5
+  })
+]);
+assert.strictEqual(queueAliasCollapse.summary.subjectCount, 3);
+assert.strictEqual(queueAliasCollapse.summary.latestDecisionCount, 3);
+assert.strictEqual(queueAliasCollapse.summary.supersededDecisionCount, 4);
+assert.strictEqual(queueAliasCollapse.summary.terminalCount, 3);
+assert.strictEqual(queueAliasCollapse.summary.visibleReviewDebtCount, 0);
+assert.strictEqual(queueAliasCollapse.summary.visibleRerunCount, 0);
+assert.strictEqual(queueAliasCollapse.summary.visibleConflictCount, 0);
+assert.deepStrictEqual(
+  queueAliasCollapse.latestDecisions.map((decision) => decision.id).sort(),
+  ['new-applied-queue', 'new-committed-job', 'new-rejected-task']
+);
+assert.strictEqual(queueAliasCollapse.subjectIdByAlias['task-review'], 'queue-review');
+assert.strictEqual(queueAliasCollapse.subjectIdByAlias['job-review-old'], 'queue-review');
+assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['task-review'], 'new-applied-queue');
+assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['job-review-old'], 'new-applied-queue');
+assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['queue-review'], 'new-applied-queue');
+assert.strictEqual(queueAliasCollapse.subjectIdByAlias['task-conflict'], 'queue-conflict');
+assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['queue-conflict'], 'new-rejected-task');
+assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['task-conflict'], 'new-rejected-task');
+assert.strictEqual(queueAliasCollapse.subjectIdByAlias['job-direct'], 'job-direct');
+assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['job-direct'], 'new-committed-job');
 
 const decomposed = decomposeSwarmFeature({
   featureId: 'feature-x',

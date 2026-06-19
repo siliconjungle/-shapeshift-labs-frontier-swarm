@@ -22,6 +22,8 @@ Caller-provided `scopes` are serialized as opaque queue scopes. Their `id`, `kin
 
 This keeps the root coordinator from becoming the only place where work can make progress. A child queue can apply verified work under its own lease, leave clean overflow in `queue-local`, and promote only the items that need a parent decision. Adapters such as `@shapeshift-labs/frontier-swarm-codex` can layer run, collect, Loom, auto-drain, rerun, reject, discovery, and blocker workflows on top of the generic queue data.
 
+`createSwarmQueueOutcomeModel()` and `collapseSwarmQueueOutcomeDecisions()` provide a repo-agnostic outcome layer for autonomous merge queues. The model separates `terminal`, `continuation`, `coordinator-review`, `human-blocked`, `stale-rerun`, and `conflict` categories so "needs coordinator review" does not get reported as a true human blocker. Queue subjects are collapsed across `queueItemIds`, `taskId`, and `jobId` aliases, and only the latest decision for each subject contributes to visible review debt, blockers, reruns, and conflicts. This lets a newer committed/applied/rejected decision close old review or rerun records without requiring runners to mutate historical queue files.
+
 
 ## Related Packages
 

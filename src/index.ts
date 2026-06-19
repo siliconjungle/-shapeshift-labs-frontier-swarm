@@ -94,6 +94,8 @@ export const FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_KIND = 'frontier.swarm.hier
 export const FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_VERSION = 1;
 export const FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND = 'frontier.swarm.coordinator-agent-drain-work';
 export const FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_VERSION = 1;
+export const FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND = 'frontier.swarm.queue-outcome-model';
+export const FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_VERSION = 1;
 export const FRONTIER_SWARM_PRIORITY_POLICY_KIND = 'frontier.swarm.priority-policy';
 export const FRONTIER_SWARM_PRIORITY_POLICY_VERSION = 1;
 
@@ -2814,6 +2816,155 @@ export type FrontierSwarmCoordinatorAgentDrainDecision =
 
 export type FrontierSwarmCoordinatorAgentDrainClassification = 'terminal' | 'non-terminal' | string;
 
+export type FrontierSwarmQueueOutcomeCategory =
+  | 'terminal'
+  | 'continuation'
+  | 'coordinator-review'
+  | 'human-blocked'
+  | 'stale-rerun'
+  | 'conflict'
+  | string;
+
+export type FrontierSwarmQueueTerminalOutcome =
+  | 'applied'
+  | 'committed'
+  | 'rejected'
+  | 'recorded'
+  | 'closed'
+  | string;
+export type FrontierSwarmQueueContinuationOutcome = 'queued' | 'continued' | 'ready' | 'running' | 'leased' | string;
+export type FrontierSwarmQueueCoordinatorReviewOutcome = 'coordinator-review' | 'escalated' | 'needs-port' | string;
+export type FrontierSwarmQueueHumanBlockedOutcome = 'human-blocked' | 'blocked' | string;
+export type FrontierSwarmQueueStaleRerunOutcome = 'stale-rerun' | 'rerun' | string;
+export type FrontierSwarmQueueConflictOutcome = 'conflict' | 'merge-conflict' | string;
+export type FrontierSwarmQueueOutcome =
+  | FrontierSwarmQueueTerminalOutcome
+  | FrontierSwarmQueueContinuationOutcome
+  | FrontierSwarmQueueCoordinatorReviewOutcome
+  | FrontierSwarmQueueHumanBlockedOutcome
+  | FrontierSwarmQueueStaleRerunOutcome
+  | FrontierSwarmQueueConflictOutcome;
+
+export interface FrontierSwarmQueueOutcomeClassification {
+  category: FrontierSwarmQueueOutcomeCategory;
+  outcome: FrontierSwarmQueueOutcome;
+  terminal: boolean;
+  closesSubject: boolean;
+  coordinatorReview: boolean;
+  humanBlocked: boolean;
+  staleOrRerun: boolean;
+  conflict: boolean;
+  reviewDebt: boolean;
+}
+
+export interface FrontierSwarmQueueOutcomeDecisionInput {
+  id?: string;
+  subjectId?: string;
+  subjectAliases?: readonly string[];
+  jobId?: string;
+  taskId?: string;
+  queueItemId?: string;
+  queueItemIds?: readonly string[];
+  queueId?: string;
+  lane?: string;
+  action?: FrontierSwarmMergeQueueAssignmentAction;
+  assignedAction?: FrontierSwarmMergeQueueAssignmentAction;
+  decision?: FrontierSwarmCoordinatorAgentDrainDecision | string;
+  category?: FrontierSwarmQueueOutcomeCategory;
+  outcome?: FrontierSwarmQueueOutcome;
+  terminal?: boolean;
+  reasons?: readonly string[];
+  disposition?: FrontierSwarmMergeDisposition;
+  mergeReadiness?: FrontierSwarmMergeReadiness;
+  status?: string;
+  conflictingJobIds?: readonly string[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmQueueOutcomeDecision {
+  id: string;
+  subjectId: string;
+  subjectAliases: string[];
+  jobId?: string;
+  taskId?: string;
+  queueItemIds: string[];
+  queueId?: string;
+  lane?: string;
+  action?: FrontierSwarmMergeQueueAssignmentAction;
+  assignedAction?: FrontierSwarmMergeQueueAssignmentAction;
+  decision?: FrontierSwarmCoordinatorAgentDrainDecision | string;
+  category: FrontierSwarmQueueOutcomeCategory;
+  outcome: FrontierSwarmQueueOutcome;
+  terminal: boolean;
+  closesSubject: boolean;
+  coordinatorReview: boolean;
+  humanBlocked: boolean;
+  staleOrRerun: boolean;
+  conflict: boolean;
+  reviewDebt: boolean;
+  reasons: string[];
+  disposition?: FrontierSwarmMergeDisposition;
+  mergeReadiness?: FrontierSwarmMergeReadiness;
+  status?: string;
+  conflictingJobIds: string[];
+  generatedAt: number;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmQueueOutcomeModelInput {
+  id?: string;
+  decisions?: readonly (FrontierSwarmQueueOutcomeDecisionInput | FrontierSwarmQueueOutcomeDecision)[];
+  queue?: FrontierSwarmHierarchicalMergeQueue;
+  drainWork?: FrontierSwarmCoordinatorAgentDrainWork;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmQueueOutcomeSubject {
+  subjectId: string;
+  aliases: string[];
+  latestDecision: FrontierSwarmQueueOutcomeDecision;
+  supersededDecisions: FrontierSwarmQueueOutcomeDecision[];
+}
+
+export interface FrontierSwarmQueueOutcomeModel {
+  kind: typeof FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND;
+  version: typeof FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_VERSION;
+  id: string;
+  generatedAt: number;
+  decisions: FrontierSwarmQueueOutcomeDecision[];
+  subjects: FrontierSwarmQueueOutcomeSubject[];
+  latestDecisions: FrontierSwarmQueueOutcomeDecision[];
+  supersededDecisions: FrontierSwarmQueueOutcomeDecision[];
+  visibleReviewDebt: FrontierSwarmQueueOutcomeDecision[];
+  visibleHumanBlockers: FrontierSwarmQueueOutcomeDecision[];
+  visibleReruns: FrontierSwarmQueueOutcomeDecision[];
+  visibleConflicts: FrontierSwarmQueueOutcomeDecision[];
+  bySubjectId: Record<string, string>;
+  subjectIdByAlias: Record<string, string>;
+  latestDecisionIdByAlias: Record<string, string>;
+  byCategory: Record<string, string[]>;
+  byOutcome: Record<string, string[]>;
+  summary: {
+    decisionCount: number;
+    subjectCount: number;
+    latestDecisionCount: number;
+    supersededDecisionCount: number;
+    terminalCount: number;
+    continuationCount: number;
+    coordinatorReviewCount: number;
+    humanBlockedCount: number;
+    staleRerunCount: number;
+    conflictCount: number;
+    visibleReviewDebtCount: number;
+    visibleHumanBlockedCount: number;
+    visibleRerunCount: number;
+    visibleConflictCount: number;
+  };
+  metadata?: JsonObject;
+}
+
 export interface FrontierSwarmCoordinatorAgentDrainWorkInput {
   id?: string;
   queue: FrontierSwarmHierarchicalMergeQueue;
@@ -4878,6 +5029,267 @@ export function summarizeSwarmCoordinatorAgentDrainWork(
   };
 }
 
+export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisionInput): FrontierSwarmQueueOutcomeClassification {
+  const explicitCategory = input.category?.trim();
+  const search = queueOutcomeSearch(input);
+  const action = input.assignedAction ?? input.action;
+  const conflict = uniqueStrings(input.conflictingJobIds ?? []).length > 0
+    || queueOutcomeHas(search, 'conflict', 'conflicting-changes', 'merge-conflict', 'textual-conflict', 'semantic-overlap');
+  let category: FrontierSwarmQueueOutcomeCategory;
+
+  if (explicitCategory) {
+    category = explicitCategory;
+  } else if (
+    queueOutcomeHas(search, 'committed', 'applied', 'rejected', 'recorded', 'closed')
+    || action === 'apply-local'
+    || action === 'reject'
+    || action === 'record-only'
+    || input.disposition === 'rejected'
+    || input.mergeReadiness === 'discovery-only'
+  ) {
+    category = 'terminal';
+  } else if (
+    action === 'rerun'
+    || input.decision === 'rerun'
+    || input.disposition === 'stale-against-head'
+    || queueOutcomeHas(search, 'stale-against-head', 'stale-rerun', 'needs-rerun')
+  ) {
+    category = 'stale-rerun';
+  } else if (
+    action === 'block'
+    || input.decision === 'blocked'
+    || input.disposition === 'blocked'
+    || input.mergeReadiness === 'blocked'
+    || queueOutcomeHas(search, 'true-blocker', 'human-blocked', 'human-question')
+  ) {
+    category = 'human-blocked';
+  } else if (conflict) {
+    category = 'conflict';
+  } else if (
+    action === 'promote'
+    || input.decision === 'escalated'
+    || input.disposition === 'needs-port'
+    || input.status === 'needs-human-port'
+    || queueOutcomeHas(
+      search,
+      'coordinator-review',
+      'coordinator-queue-required',
+      'needs-human-port',
+      'needs-port',
+      'review',
+      'public-api-or-contract-region',
+      'unknown-semantic-region',
+      'high-risk'
+    )
+  ) {
+    category = 'coordinator-review';
+  } else if (
+    input.terminal === true
+    || queueOutcomeHas(search, 'terminal')
+  ) {
+    category = 'terminal';
+  } else {
+    category = 'continuation';
+  }
+
+  const outcome = input.outcome?.trim() || defaultQueueOutcomeForCategory(category, input, search);
+  const terminal = category === 'terminal';
+  return {
+    category,
+    outcome,
+    terminal,
+    closesSubject: terminal,
+    coordinatorReview: category === 'coordinator-review',
+    humanBlocked: category === 'human-blocked',
+    staleOrRerun: category === 'stale-rerun',
+    conflict: category === 'conflict',
+    reviewDebt: category === 'coordinator-review' || category === 'conflict'
+  };
+}
+
+export function createSwarmQueueOutcomeDecision(
+  input: FrontierSwarmQueueOutcomeDecisionInput | FrontierSwarmQueueOutcomeDecision
+): FrontierSwarmQueueOutcomeDecision {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const queueItemId = 'queueItemId' in input ? input.queueItemId : undefined;
+  const queueItemIds = uniqueStrings([
+    queueItemId,
+    ...(input.queueItemIds ?? [])
+  ]);
+  const subjectAliases = uniqueStrings([
+    input.subjectId,
+    ...(input.subjectAliases ?? []),
+    ...queueItemIds,
+    input.taskId,
+    input.jobId
+  ]);
+  const subjectId = input.subjectId?.trim()
+    || queueItemIds[0]
+    || input.taskId?.trim()
+    || input.jobId?.trim()
+    || input.id?.trim()
+    || 'unknown-subject';
+  const classification = classifySwarmQueueOutcome(input);
+  const action = input.action ?? input.assignedAction;
+  const assignedAction = input.assignedAction;
+  const reasons = uniqueStrings(input.reasons ?? []);
+  const conflictingJobIds = uniqueStrings(input.conflictingJobIds ?? []);
+  const decision: FrontierSwarmQueueOutcomeDecision = {
+    id: input.id ?? 'swarm-queue-outcome-decision:' + stableHash([subjectId, subjectAliases, action, input.decision, classification.category, classification.outcome, generatedAt]),
+    subjectId,
+    subjectAliases: subjectAliases.length ? subjectAliases : [subjectId],
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    queueItemIds,
+    ...(input.queueId ? { queueId: input.queueId } : {}),
+    ...(input.lane ? { lane: input.lane } : {}),
+    ...(action ? { action } : {}),
+    ...(assignedAction ? { assignedAction } : {}),
+    ...(input.decision ? { decision: input.decision } : {}),
+    ...classification,
+    reasons,
+    ...(input.disposition ? { disposition: input.disposition } : {}),
+    ...(input.mergeReadiness ? { mergeReadiness: input.mergeReadiness } : {}),
+    ...(input.status ? { status: input.status } : {}),
+    conflictingJobIds,
+    generatedAt,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+  return decision;
+}
+
+export function createSwarmQueueOutcomeModel(input: FrontierSwarmQueueOutcomeModelInput = {}): FrontierSwarmQueueOutcomeModel {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const rawDecisions: FrontierSwarmQueueOutcomeDecisionInput[] = [
+    ...(input.queue ? queueOutcomeInputsFromMergeQueue(input.queue) : []),
+    ...(input.drainWork ? queueOutcomeInputsFromDrainWork(input.drainWork) : []),
+    ...(input.decisions ?? []).map((decision) => ({ ...decision }))
+  ];
+  const records = rawDecisions.map((decision, index) => ({
+    index,
+    decision: createSwarmQueueOutcomeDecision({
+      ...decision,
+      generatedAt: decision.generatedAt ?? generatedAt
+    })
+  }));
+  const parent = new Map<string, string>();
+  const find = (alias: string): string => {
+    const current = parent.get(alias) ?? alias;
+    if (current === alias) {
+      parent.set(alias, alias);
+      return alias;
+    }
+    const root = find(current);
+    parent.set(alias, root);
+    return root;
+  };
+  const union = (left: string, right: string): void => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot === rightRoot) return;
+    const [nextRoot, nextChild] = [leftRoot, rightRoot].sort();
+    parent.set(nextChild, nextRoot);
+  };
+
+  for (const { decision } of records) {
+    const aliases = decision.subjectAliases.length ? decision.subjectAliases : [decision.subjectId];
+    for (const alias of aliases) find(alias);
+    for (const alias of aliases.slice(1)) union(aliases[0] as string, alias);
+  }
+
+  const recordsByRoot = new Map<string, typeof records>();
+  for (const record of records) {
+    const root = find(record.decision.subjectAliases[0] ?? record.decision.subjectId);
+    recordsByRoot.set(root, [...(recordsByRoot.get(root) ?? []), record]);
+  }
+
+  const subjects: FrontierSwarmQueueOutcomeSubject[] = [];
+  for (const componentRecords of recordsByRoot.values()) {
+    const aliases = uniqueStrings(componentRecords.flatMap((record) => record.decision.subjectAliases)).sort();
+    const subjectId = preferredQueueOutcomeSubjectId(componentRecords.map((record) => record.decision), aliases);
+    const latestRecord = componentRecords.reduce((latest, candidate) => (
+      queueOutcomeRecordIsLater(candidate, latest) ? candidate : latest
+    ));
+    const canonicalize = (decision: FrontierSwarmQueueOutcomeDecision): FrontierSwarmQueueOutcomeDecision => ({
+      ...decision,
+      subjectId,
+      subjectAliases: aliases
+    });
+    const latestDecision = canonicalize(latestRecord.decision);
+    const supersededDecisions = componentRecords
+      .filter((record) => record !== latestRecord)
+      .sort((left, right) => left.decision.generatedAt - right.decision.generatedAt || left.index - right.index)
+      .map((record) => canonicalize(record.decision));
+    subjects.push({ subjectId, aliases, latestDecision, supersededDecisions });
+  }
+  subjects.sort((left, right) => left.subjectId.localeCompare(right.subjectId));
+
+  const latestDecisions = subjects.map((subject) => subject.latestDecision);
+  const supersededDecisions = subjects.flatMap((subject) => subject.supersededDecisions);
+  const decisions = [...latestDecisions, ...supersededDecisions].sort((left, right) => (
+    left.generatedAt - right.generatedAt || left.id.localeCompare(right.id)
+  ));
+  const visibleReviewDebt = latestDecisions.filter((decision) => decision.reviewDebt);
+  const visibleHumanBlockers = latestDecisions.filter((decision) => decision.humanBlocked);
+  const visibleReruns = latestDecisions.filter((decision) => decision.staleOrRerun);
+  const visibleConflicts = latestDecisions.filter((decision) => decision.conflict);
+  const bySubjectId: Record<string, string> = {};
+  const subjectIdByAlias: Record<string, string> = {};
+  const latestDecisionIdByAlias: Record<string, string> = {};
+  for (const subject of subjects) {
+    bySubjectId[subject.subjectId] = subject.latestDecision.id;
+    for (const alias of subject.aliases) {
+      subjectIdByAlias[alias] = subject.subjectId;
+      latestDecisionIdByAlias[alias] = subject.latestDecision.id;
+    }
+  }
+  const byCategory = groupDecisionIdsBy(latestDecisions, (decision) => decision.category);
+  const byOutcome = groupDecisionIdsBy(latestDecisions, (decision) => decision.outcome);
+  return {
+    kind: FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
+    version: FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_VERSION,
+    id: input.id ?? 'swarm-queue-outcome-model:' + stableHash([latestDecisions, supersededDecisions, generatedAt]),
+    generatedAt,
+    decisions,
+    subjects,
+    latestDecisions,
+    supersededDecisions,
+    visibleReviewDebt,
+    visibleHumanBlockers,
+    visibleReruns,
+    visibleConflicts,
+    bySubjectId,
+    subjectIdByAlias,
+    latestDecisionIdByAlias,
+    byCategory,
+    byOutcome,
+    summary: {
+      decisionCount: decisions.length,
+      subjectCount: subjects.length,
+      latestDecisionCount: latestDecisions.length,
+      supersededDecisionCount: supersededDecisions.length,
+      terminalCount: latestDecisions.filter((decision) => decision.category === 'terminal').length,
+      continuationCount: latestDecisions.filter((decision) => decision.category === 'continuation').length,
+      coordinatorReviewCount: latestDecisions.filter((decision) => decision.category === 'coordinator-review').length,
+      humanBlockedCount: latestDecisions.filter((decision) => decision.category === 'human-blocked').length,
+      staleRerunCount: latestDecisions.filter((decision) => decision.category === 'stale-rerun').length,
+      conflictCount: latestDecisions.filter((decision) => decision.category === 'conflict').length,
+      visibleReviewDebtCount: visibleReviewDebt.length,
+      visibleHumanBlockedCount: visibleHumanBlockers.length,
+      visibleRerunCount: visibleReruns.length,
+      visibleConflictCount: visibleConflicts.length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function collapseSwarmQueueOutcomeDecisions(
+  input: FrontierSwarmQueueOutcomeModelInput | readonly (FrontierSwarmQueueOutcomeDecisionInput | FrontierSwarmQueueOutcomeDecision)[]
+): FrontierSwarmQueueOutcomeModel {
+  if (Array.isArray(input)) return createSwarmQueueOutcomeModel({ decisions: input });
+  return createSwarmQueueOutcomeModel(input as FrontierSwarmQueueOutcomeModelInput);
+}
+
 export function resolveSwarmCompute(
   manifestInput: FrontierSwarmManifest | FrontierSwarmManifestInput,
   taskInput: FrontierSwarmTask | FrontierSwarmTaskInput
@@ -6077,6 +6489,143 @@ function countUniqueDrainQueueItems(items: readonly { queueItemIds: readonly str
     for (const id of item.queueItemIds) ids.add(id);
   }
   return ids.size;
+}
+
+function queueOutcomeSearch(input: FrontierSwarmQueueOutcomeDecisionInput): string {
+  return [
+    input.category,
+    input.outcome,
+    input.action,
+    input.assignedAction,
+    input.decision,
+    input.disposition,
+    input.mergeReadiness,
+    input.status,
+    ...(input.reasons ?? [])
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function queueOutcomeHas(search: string, ...phrases: readonly string[]): boolean {
+  const normalized = search.replace(/[^a-z0-9]+/gu, '-');
+  return phrases.some((phrase) => {
+    const lower = phrase.toLowerCase();
+    return search.includes(lower) || normalized.includes(lower.replace(/[^a-z0-9]+/gu, '-'));
+  });
+}
+
+function defaultQueueOutcomeForCategory(
+  category: FrontierSwarmQueueOutcomeCategory,
+  input: FrontierSwarmQueueOutcomeDecisionInput,
+  search: string
+): FrontierSwarmQueueOutcome {
+  const action = input.assignedAction ?? input.action;
+  if (category === 'terminal') {
+    if (queueOutcomeHas(search, 'committed')) return 'committed';
+    if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied')) return 'applied';
+    if (action === 'reject' || input.decision === 'rejected' || input.disposition === 'rejected' || queueOutcomeHas(search, 'rejected')) return 'rejected';
+    if (action === 'record-only' || input.decision === 'recorded' || input.mergeReadiness === 'discovery-only' || queueOutcomeHas(search, 'recorded')) return 'recorded';
+    return 'closed';
+  }
+  if (category === 'stale-rerun') return queueOutcomeHas(search, 'stale') ? 'stale-rerun' : 'rerun';
+  if (category === 'human-blocked') return 'human-blocked';
+  if (category === 'conflict') return 'conflict';
+  if (category === 'coordinator-review') {
+    if (input.decision === 'escalated' || action === 'promote') return 'escalated';
+    if (input.disposition === 'needs-port' || queueOutcomeHas(search, 'needs-port', 'needs-human-port')) return 'needs-port';
+    return 'coordinator-review';
+  }
+  if (category === 'continuation') {
+    if (input.decision === 'queued' || action === 'queue-local' || input.status === 'queued') return 'queued';
+    if (input.status === 'ready') return 'ready';
+    if (input.status === 'running') return 'running';
+    if (input.status === 'leased') return 'leased';
+    return 'continued';
+  }
+  return category;
+}
+
+function queueOutcomeInputsFromMergeQueue(queue: FrontierSwarmHierarchicalMergeQueue): FrontierSwarmQueueOutcomeDecisionInput[] {
+  return queue.assignments.map((assignment) => ({
+    subjectAliases: uniqueStrings([assignment.taskId, assignment.jobId, ...assignment.queueItemIds]),
+    jobId: assignment.jobId,
+    ...(assignment.taskId ? { taskId: assignment.taskId } : {}),
+    queueItemIds: [...assignment.queueItemIds],
+    queueId: assignment.scopeId,
+    ...(assignment.lane ? { lane: assignment.lane } : {}),
+    action: assignment.action,
+    decision: coordinatorAgentDrainDecisionForAction(assignment.action),
+    terminal: coordinatorAgentDrainActionIsTerminal(assignment.action),
+    reasons: [...assignment.reasons],
+    disposition: assignment.disposition,
+    mergeReadiness: assignment.mergeReadiness,
+    conflictingJobIds: [...assignment.conflictingJobIds],
+    generatedAt: queue.generatedAt,
+    metadata: {
+      source: 'hierarchical-merge-queue',
+      queueId: queue.id,
+      mergeIndexId: queue.mergeIndexId
+    }
+  }));
+}
+
+function queueOutcomeInputsFromDrainWork(work: FrontierSwarmCoordinatorAgentDrainWork): FrontierSwarmQueueOutcomeDecisionInput[] {
+  return work.assignments.map((assignment) => ({
+    subjectAliases: uniqueStrings([assignment.taskId, assignment.jobId, ...assignment.queueItemIds]),
+    jobId: assignment.jobId,
+    ...(assignment.taskId ? { taskId: assignment.taskId } : {}),
+    queueItemIds: [...assignment.queueItemIds],
+    queueId: assignment.queueId,
+    ...(assignment.lane ? { lane: assignment.lane } : {}),
+    action: assignment.assignedAction,
+    assignedAction: assignment.assignedAction,
+    decision: assignment.decision,
+    terminal: assignment.terminal,
+    reasons: [...assignment.reasons],
+    disposition: assignment.disposition,
+    mergeReadiness: assignment.mergeReadiness,
+    conflictingJobIds: [...assignment.conflictingJobIds],
+    generatedAt: work.generatedAt,
+    metadata: {
+      source: 'coordinator-agent-drain-work',
+      drainWorkId: work.id,
+      queueId: work.queueId,
+      mergeIndexId: work.mergeIndexId
+    }
+  }));
+}
+
+function preferredQueueOutcomeSubjectId(
+  decisions: readonly FrontierSwarmQueueOutcomeDecision[],
+  aliases: readonly string[]
+): string {
+  const queueItemIds = uniqueStrings(decisions.flatMap((decision) => decision.queueItemIds)).sort();
+  if (queueItemIds[0]) return queueItemIds[0];
+  const taskIds = uniqueStrings(decisions.map((decision) => decision.taskId)).sort();
+  if (taskIds[0]) return taskIds[0];
+  const jobIds = uniqueStrings(decisions.map((decision) => decision.jobId)).sort();
+  if (jobIds[0]) return jobIds[0];
+  return aliases[0] ?? 'unknown-subject';
+}
+
+function queueOutcomeRecordIsLater(
+  candidate: { index: number; decision: FrontierSwarmQueueOutcomeDecision },
+  latest: { index: number; decision: FrontierSwarmQueueOutcomeDecision }
+): boolean {
+  return candidate.decision.generatedAt > latest.decision.generatedAt
+    || candidate.decision.generatedAt === latest.decision.generatedAt && candidate.index > latest.index;
+}
+
+function groupDecisionIdsBy(
+  decisions: readonly FrontierSwarmQueueOutcomeDecision[],
+  key: (decision: FrontierSwarmQueueOutcomeDecision) => string
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const decision of decisions) {
+    const group = key(decision);
+    out[group] = [...(out[group] ?? []), decision.id];
+  }
+  for (const ids of Object.values(out)) ids.sort();
+  return out;
 }
 
 function hashBucket(value: string, buckets: number): number {
