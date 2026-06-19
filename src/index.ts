@@ -583,6 +583,7 @@ export interface FrontierSwarmPlanFilter {
   includeCompleted?: boolean;
   limit?: number;
   compute?: string;
+  spreadLanes?: boolean;
 }
 
 export type FrontierSwarmPriorityClass = 'coordinator-drain' | 'review' | 'standard' | 'speculative' | string;
@@ -1473,7 +1474,7 @@ export interface FrontierSwarmJobResultInput {
   riskLevel?: FrontierSwarmRiskLevel;
   mergeDisposition?: FrontierSwarmMergeDisposition;
   verification?: readonly FrontierSwarmVerificationResultInput[];
-  semanticImport?: unknown;
+  semanticImport?: FrontierSwarmSemanticImportSummary;
   traceShards?: readonly unknown[];
   lastMessage?: string;
   error?: unknown;
@@ -1502,6 +1503,29 @@ export interface FrontierSwarmVerificationResult {
   metadata?: JsonObject;
 }
 
+export interface FrontierSwarmSemanticImportSummary {
+  total: number;
+  candidates?: number;
+  selected: number;
+  eligible?: number;
+  imported: number;
+  errors: number;
+  selection?: unknown;
+  omitted?: unknown;
+  maxFiles?: number;
+  skipped?: unknown;
+  sourceMapMappingCount: number;
+  readiness?: Record<string, unknown>;
+  lossesBySeverity?: Record<string, unknown>;
+  semanticIndex?: { symbols?: number; [key: string]: unknown };
+  semanticSidecars?: { ownershipRegions?: number; patchHints?: number; [key: string]: unknown };
+  dependencies?: unknown;
+  semanticEditScripts?: unknown;
+  semanticEditProjection?: unknown;
+  semanticEditReplay?: unknown;
+  [key: string]: unknown;
+}
+
 export interface FrontierSwarmJobResult {
   jobId: string;
   status: FrontierSwarmJobStatus;
@@ -1520,7 +1544,7 @@ export interface FrontierSwarmJobResult {
   riskLevel: FrontierSwarmRiskLevel;
   mergeDisposition: FrontierSwarmMergeDisposition;
   verification: FrontierSwarmVerificationResult[];
-  semanticImport?: unknown;
+  semanticImport?: FrontierSwarmSemanticImportSummary;
   traceShards?: unknown[];
   lastMessage?: string;
   error?: string;
@@ -1549,7 +1573,7 @@ export interface FrontierSwarmMergeBundleInput {
   staleAgainstHead?: boolean;
   branchName?: string;
   commit?: string;
-  semanticImport?: unknown;
+  semanticImport?: FrontierSwarmSemanticImportSummary;
   traceShards?: readonly unknown[];
   metadata?: unknown;
   generatedAt?: number;
@@ -1582,7 +1606,7 @@ export interface FrontierSwarmMergeBundle {
   commandsPassed: FrontierSwarmVerificationResult[];
   commandsFailed: FrontierSwarmVerificationResult[];
   queueItemIds: string[];
-  semanticImport?: unknown;
+  semanticImport?: FrontierSwarmSemanticImportSummary;
   traceShards?: unknown[];
   branchName?: string;
   commit?: string;
@@ -6549,7 +6573,7 @@ export function createSwarmSchedule(input: FrontierSwarmPlan | FrontierSwarmSche
   const runningByResource = resourceUsageFromScheduled(runningJobs);
   const ready: FrontierSwarmScheduledJob[] = [];
   const blocked: FrontierSwarmBlockedJob[] = [];
-  const sortedJobs = orderJobsByPriorityPolicy(plan.jobs);
+  const sortedJobs = plan.filters.spreadLanes ? orderJobsByPriorityPolicy(plan.jobs) : sortJobsByPriorityPolicy(plan.jobs);
   for (const job of sortedJobs) {
     if (completed.has(job.id) || failed.has(job.id) || runningJobs.some((running) => running.jobId === job.id)) continue;
     const dependencyIds = plan.graph.dependenciesByJobId[job.id] ?? [];
@@ -9100,6 +9124,16 @@ function orderJobsByPriorityPolicy(jobs: readonly FrontierSwarmJob[]): FrontierS
   })));
 }
 
+function sortJobsByPriorityPolicy(jobs: readonly FrontierSwarmJob[]): FrontierSwarmJob[] {
+  return jobs.map((job, index) => ({
+    item: job,
+    id: job.id,
+    lane: job.lane,
+    decision: priorityDecisionForJob(job),
+    index
+  })).sort(comparePriorityPolicyRecords).map((record) => record.item);
+}
+
 function orderQueueJobsByPriorityPolicy(jobs: readonly FrontierSwarmQueueJob[]): FrontierSwarmQueueJob[] {
   return roundRobinPriorityPolicy(jobs.map((job, index) => ({
     item: job,
@@ -10666,10 +10700,14 @@ export interface FrontierSwarmBacklog {
 
 export interface FrontierSwarmBacklogTaskPlanInput {
   backlog: FrontierSwarmBacklog | FrontierSwarmBacklogInput;
+  tasks?: readonly (FrontierSwarmTaskInput | FrontierSwarmTask)[];
+  backlogPath?: string;
   recursive?: boolean;
   maxDepth?: number;
   childArtifactPath?: string;
+  decomposeLane?: string;
   decomposeCompute?: string;
+  decomposeWorkKind?: string;
   metadata?: unknown;
 }
 
@@ -10690,6 +10728,8 @@ export interface FrontierSwarmBacklogTaskPlan {
   id: string;
   backlogId: string;
   generatedAt: number;
+  backlogPath?: string;
+  childArtifactPath?: string;
   tasks: FrontierSwarmTask[];
   runnableTaskIds: string[];
   decompositionTaskIds: string[];
@@ -10732,19 +10772,41 @@ export function querySwarmBacklog(backlogInput: FrontierSwarmBacklog | FrontierS
   return createSwarmBacklog({ ...backlog, entries, tasks: backlog.tasks.filter((task) => entries.some((entry) => entry.taskId === task.id || entry.id === task.id)) });
 }
 
-export function mergeSwarmBacklogs(input: { base: FrontierSwarmBacklog | FrontierSwarmBacklogInput; entries?: readonly FrontierSwarmBacklogEntryInput[]; tasks?: readonly FrontierSwarmTaskInput[] }): FrontierSwarmBacklog {
+export function mergeSwarmBacklogs(input: {
+  base: FrontierSwarmBacklog | FrontierSwarmBacklogInput;
+  backlogs?: readonly (FrontierSwarmBacklog | FrontierSwarmBacklogInput)[];
+  entries?: readonly FrontierSwarmBacklogEntryInput[];
+  tasks?: readonly FrontierSwarmTaskInput[];
+  generatedAt?: number;
+  metadata?: unknown;
+}): FrontierSwarmBacklog {
   const base = isBacklog(input.base) ? input.base : createSwarmBacklog(input.base);
   const byId = new Map(base.entries.map((entry) => [entry.id, entry]));
+  for (const backlogInput of input.backlogs ?? []) {
+    const backlog = isBacklog(backlogInput) ? backlogInput : createSwarmBacklog(backlogInput);
+    for (const entry of backlog.entries) byId.set(entry.id, { ...(byId.get(entry.id) ?? entry), ...entry, tags: uniqueStrings([...(byId.get(entry.id)?.tags ?? []), ...entry.tags]) });
+  }
   for (const raw of input.entries ?? []) {
     const entry = normalizeBacklogEntry(raw);
     byId.set(entry.id, { ...(byId.get(entry.id) ?? entry), ...entry, tags: uniqueStrings([...(byId.get(entry.id)?.tags ?? []), ...entry.tags]) });
   }
-  return createSwarmBacklog({ ...base, entries: Array.from(byId.values()), tasks: [...base.tasks, ...(input.tasks ?? []).map((task) => normalizeTask(task))] });
+  return createSwarmBacklog({
+    ...base,
+    generatedAt: input.generatedAt ?? base.generatedAt,
+    entries: Array.from(byId.values()),
+    tasks: [
+      ...base.tasks,
+      ...(input.backlogs ?? []).flatMap((backlogInput) => (isBacklog(backlogInput) ? backlogInput : createSwarmBacklog(backlogInput)).tasks),
+      ...(input.tasks ?? []).map((task) => normalizeTask(task))
+    ],
+    metadata: mergeSwarmMetadata([base.metadata, input.metadata])
+  });
 }
 
 export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanInput): FrontierSwarmBacklogTaskPlan {
   const backlog = isBacklog(input.backlog) ? input.backlog : createSwarmBacklog(input.backlog);
-  const runnable = backlog.entries.filter((entry) => entry.status === 'ready' || entry.status === 'open');
+  const extraEntries = (input.tasks ?? []).map((task) => normalizeTask(task)).map(taskToBacklogEntry);
+  const runnable = [...backlog.entries, ...extraEntries].filter((entry) => entry.status === 'ready' || entry.status === 'open');
   const tasks = runnable.map((entry) => normalizeTask({
     id: entry.taskId ?? entry.id,
     title: entry.title,
@@ -10768,10 +10830,10 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
       title: `Decompose ${entry.title}`,
       objective: `Break ${entry.title} into child tasks.`,
       status: 'ready',
-      lane: entry.lane,
+      lane: input.decomposeLane ?? entry.lane,
       layer: entry.layer,
       compute: input.decomposeCompute,
-      kind: 'backlog-decompose',
+      kind: input.decomposeWorkKind ?? 'backlog-decompose',
       targetRefs: input.childArtifactPath ? [input.childArtifactPath] : [],
       allowedWrites: input.childArtifactPath ? [input.childArtifactPath] : [],
       metadata: { source: { kind: 'entry', id: entry.id, taskId: entry.taskId }, continuation: { remainingDepth: Math.max(0, input.maxDepth ?? 1), childArtifactPath: input.childArtifactPath } }
@@ -10784,6 +10846,8 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
     id: 'swarm-backlog-task-plan:' + stableHash([backlog.id, allTasks.map((task) => task.id), input.recursive, input.maxDepth]),
     backlogId: backlog.id,
     generatedAt: Date.now(),
+    ...(input.backlogPath ? { backlogPath: input.backlogPath } : {}),
+    ...(input.childArtifactPath ? { childArtifactPath: input.childArtifactPath } : {}),
     tasks: allTasks,
     runnableTaskIds: tasks.map((task) => task.id),
     decompositionTaskIds: decompositionTasks.map((task) => task.id),
@@ -10796,21 +10860,48 @@ export type FrontierSwarmModelRoutingMode = 'fill' | 'observe' | 'override' | st
 export type FrontierSwarmModelRoutingScope = 'global' | 'repository' | 'package' | 'lane' | 'task' | string;
 export type FrontierSwarmEvidenceQualityBand = 'missing' | 'weak' | 'adequate' | 'strong' | string;
 
+export interface FrontierSwarmModelRoutingEvidenceQuality {
+  band: FrontierSwarmEvidenceQualityBand | string;
+  score?: number;
+  confidence?: FrontierSwarmConfidence | string;
+  evidencePaths?: readonly string[];
+  verifierKinds?: readonly string[];
+  missingEvidence?: readonly string[];
+  deterministic?: boolean;
+  humanReviewed?: boolean;
+  metadata?: JsonObject;
+}
+
 export interface FrontierSwarmModelRoutingFeedbackInput {
   id?: string;
   scope?: FrontierSwarmModelRoutingScope;
   policyId?: string;
+  repository?: string;
+  package?: string;
+  runId?: string;
+  planId?: string;
+  jobId?: string;
   taskId?: string;
+  taskKind?: string;
   lane?: string;
   layer?: string;
   workKind?: string;
   computeId?: string;
+  computeKind?: string;
   model?: string;
+  modelTier?: string;
+  reasoningEffort?: string;
+  serviceTier?: string;
   resultStatus?: string;
+  mergeReadiness?: FrontierSwarmMergeReadiness | string;
   mergeDisposition?: FrontierSwarmMergeDisposition;
+  riskLevel?: FrontierSwarmRiskLevel | string;
+  evidenceQuality?: FrontierSwarmModelRoutingEvidenceQuality;
   selected?: boolean;
+  tags?: readonly string[];
   generatedAt?: number;
   metadata?: unknown;
+  [key: string]: unknown;
 }
 
 export interface FrontierSwarmModelRoutingFeedback extends FrontierSwarmModelRoutingFeedbackInput {
@@ -10821,6 +10912,7 @@ export interface FrontierSwarmModelRoutingFeedback extends FrontierSwarmModelRou
   lane: string;
   model: string;
   taskKind: string;
+  tags: string[];
   generatedAt: number;
   metadata?: JsonObject;
 }
@@ -10855,8 +10947,9 @@ export interface FrontierSwarmModelRoutingPolicy {
   defaultMode: FrontierSwarmModelRoutingMode;
   signals: FrontierSwarmModelRoutingPolicySignal[];
   feedback: FrontierSwarmModelRoutingFeedback[];
+  preferences: FrontierSwarmModelRoutingPolicySignal[];
   generatedAt: number;
-  summary: { signalCount: number; feedbackCount: number; selectedCount: number };
+  summary: { signalCount: number; feedbackCount: number; selectedCount: number; preferenceCount: number; preferCount: number; avoidCount: number };
   metadata?: JsonObject;
 }
 
@@ -10864,7 +10957,7 @@ export function createSwarmModelRoutingFeedback(input: FrontierSwarmModelRouting
   const generatedAt = input.generatedAt ?? Date.now();
   const lane = input.lane ?? 'global';
   const model = input.model ?? input.computeId ?? 'unknown';
-  const { metadata: rawMetadata, ...rest } = input;
+  const { metadata: rawMetadata, tags: rawTags, ...rest } = input;
   const metadata = toJsonObject(rawMetadata);
   return {
     kind: 'frontier.swarm.model-routing-feedback',
@@ -10873,7 +10966,8 @@ export function createSwarmModelRoutingFeedback(input: FrontierSwarmModelRouting
     scope: input.scope ?? 'task',
     lane,
     model,
-    taskKind: input.workKind ?? 'task',
+    taskKind: input.taskKind ?? input.workKind ?? 'task',
+    tags: uniqueStrings(rawTags ?? []),
     generatedAt,
     ...rest,
     ...(metadata ? { metadata } : {})
@@ -10884,6 +10978,7 @@ export function createSwarmModelRoutingPolicy(input: FrontierSwarmModelRoutingPo
   const generatedAt = input.generatedAt ?? Date.now();
   const feedback = (input.feedback ?? []).map(createSwarmModelRoutingFeedback);
   const signals = (input.signals ?? []).map((signal, index) => ({ id: `signal-${index + 1}`, ...signal }));
+  const preferences = signals.filter((signal) => signal.mode === 'prefer' || signal.mode === 'avoid' || signal.mode === 'override');
   return {
     kind: 'frontier.swarm.model-routing-policy',
     version: 1,
@@ -10891,8 +10986,16 @@ export function createSwarmModelRoutingPolicy(input: FrontierSwarmModelRoutingPo
     defaultMode: input.defaultMode ?? 'observe',
     signals,
     feedback,
+    preferences,
     generatedAt,
-    summary: { signalCount: signals.length, feedbackCount: feedback.length, selectedCount: feedback.filter((entry) => entry.selected).length },
+    summary: {
+      signalCount: signals.length,
+      feedbackCount: feedback.length,
+      selectedCount: feedback.filter((entry) => entry.selected).length,
+      preferenceCount: preferences.length,
+      preferCount: preferences.filter((entry) => entry.mode === 'prefer' || entry.mode === 'override').length,
+      avoidCount: preferences.filter((entry) => entry.mode === 'avoid').length
+    },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
 }
@@ -10905,96 +11008,430 @@ export function createSwarmModelRoutingFeedbackFromPanel(input: { panel?: unknow
   return createSwarmModelRoutingFeedback({ scope: 'task', resultStatus: 'panel-observed', generatedAt: input.generatedAt, metadata: input.metadata });
 }
 
-export interface FrontierSwarmAdaptiveObservationInput { kind?: string; jobId?: string; lane?: string; score?: number; metadata?: unknown }
-export interface FrontierSwarmTournamentAdaptiveRecommendation { id: string; model?: string; computeId?: string; score: number; reason: string; metadata?: JsonObject }
-export interface FrontierSwarmTournamentAdaptiveFeedback { kind: 'frontier.swarm.tournament-adaptive-feedback'; version: 1; id: string; observations: FrontierSwarmAdaptiveObservationInput[]; recommendations: FrontierSwarmTournamentAdaptiveRecommendation[]; generatedAt: number; metadata?: JsonObject }
-export interface FrontierSwarmStrategyTournament { kind: 'frontier.swarm.strategy-tournament'; version: 1; id: string; candidates: Record<string, unknown>[]; winnerId?: string; generatedAt: number; metadata?: JsonObject }
-export interface FrontierSwarmStrategyTournamentHistory { kind: 'frontier.swarm.strategy-tournament-history'; version: 1; id: string; tournaments: FrontierSwarmStrategyTournament[]; generatedAt: number; metadata?: JsonObject }
-export interface FrontierSwarmStrategyTournamentComparison { winnerId?: string; tournamentCount: number; candidateCount: number; metadata?: JsonObject }
+export interface FrontierSwarmAdaptiveObservationInput {
+  kind?: string;
+  severity?: 'info' | 'warning' | 'error' | string;
+  at?: number;
+  jobId?: string;
+  lane?: string;
+  score?: number;
+  value?: number;
+  reason?: string;
+  reasons?: readonly string[];
+  metadata?: unknown;
+}
+export interface FrontierSwarmTournamentAdaptiveRecommendation {
+  id?: string;
+  action?: 'increase' | 'decrease' | 'hold' | 'observe' | string;
+  target?: string;
+  key?: string;
+  model?: string;
+  computeId?: string;
+  score?: number;
+  reason?: string;
+  metadata?: JsonObject;
+}
+export interface FrontierSwarmTournamentAdaptiveFeedback {
+  kind: 'frontier.swarm.tournament-adaptive-feedback';
+  version: 1;
+  id: string;
+  tournamentId?: string;
+  historyId?: string;
+  observations: FrontierSwarmAdaptiveObservationInput[];
+  recommendations: FrontierSwarmTournamentAdaptiveRecommendation[];
+  summary: { observationCount: number; recommendationCount: number; reduceSignals: number; increaseSignals: number; holdSignals: number };
+  generatedAt: number;
+  metadata?: JsonObject;
+}
+export interface FrontierSwarmStrategyTournamentStanding { id: string; strategyId: string; score: number; rank: number; samples: number; outcomeCounts: Record<string, number>; metadata?: JsonObject }
+export interface FrontierSwarmStrategyTournamentMatch { id: string; strategyId: string; gameId: string; outcome: string; score: number; tags: string[]; metadata?: JsonObject }
+export interface FrontierSwarmStrategyTournamentSummary {
+  strategyCount: number;
+  gameCount: number;
+  matchCount: number;
+  verifiedCount: number;
+  rejectedCount: number;
+  undefinedCount: number;
+  sampleConfidence: FrontierSwarmConfidence;
+  decisionGrade: string;
+  topStrategyId?: string;
+  topScore?: number;
+  outcomeCounts: Record<string, number>;
+}
+export interface FrontierSwarmStrategyTournament {
+  kind: 'frontier.swarm.strategy-tournament';
+  version: 1;
+  id: string;
+  title?: string;
+  candidates: Record<string, unknown>[];
+  standings: FrontierSwarmStrategyTournamentStanding[];
+  matches: FrontierSwarmStrategyTournamentMatch[];
+  summary: FrontierSwarmStrategyTournamentSummary;
+  winnerId?: string;
+  generatedAt: number;
+  metadata?: JsonObject;
+}
+export interface FrontierSwarmStrategyTournamentHistory {
+  kind: 'frontier.swarm.strategy-tournament-history';
+  version: 1;
+  id: string;
+  tournaments: FrontierSwarmStrategyTournament[];
+  generatedAt: number;
+  metadata?: JsonObject;
+}
+export interface FrontierSwarmStrategyTournamentComparison {
+  winnerId?: string;
+  tournamentCount: number;
+  candidateCount: number;
+  baselineId?: string;
+  currentId?: string;
+  scoreDelta?: number;
+  regression?: boolean;
+  metadata?: JsonObject;
+}
 
-export function createSwarmTournamentAdaptiveFeedback(input: { observations?: readonly FrontierSwarmAdaptiveObservationInput[]; recommendations?: readonly Partial<FrontierSwarmTournamentAdaptiveRecommendation>[]; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmTournamentAdaptiveFeedback {
+export function createSwarmTournamentAdaptiveFeedback(input: {
+  tournament?: FrontierSwarmStrategyTournament;
+  history?: FrontierSwarmStrategyTournamentHistory;
+  comparison?: FrontierSwarmStrategyTournamentComparison;
+  observations?: readonly FrontierSwarmAdaptiveObservationInput[];
+  recommendations?: readonly Partial<FrontierSwarmTournamentAdaptiveRecommendation>[];
+  scoreFloor?: number;
+  regressionThreshold?: number;
+  generatedAt?: number;
+  metadata?: unknown;
+} = {}): FrontierSwarmTournamentAdaptiveFeedback {
   const generatedAt = input.generatedAt ?? Date.now();
+  const observations = cloneJsonValue([
+    ...(input.observations ?? []),
+    ...(input.comparison?.regression ? [{ kind: 'tournament-regression', severity: 'warning', value: input.comparison.scoreDelta, reason: 'current tournament regressed against baseline' }] : []),
+    ...(input.tournament && input.scoreFloor !== undefined && (input.tournament.summary.topScore ?? 0) < input.scoreFloor ? [{ kind: 'low-tournament-score', severity: 'warning', value: input.tournament.summary.topScore, reason: 'top tournament score is below floor' }] : [])
+  ]);
   const recommendations = (input.recommendations ?? []).map((entry, index) => ({
     id: entry.id ?? `recommendation-${index + 1}`,
+    ...(entry.action ? { action: entry.action } : {}),
+    ...(entry.target ? { target: entry.target } : {}),
+    ...(entry.key ? { key: entry.key } : {}),
     score: entry.score ?? 0,
     reason: entry.reason ?? 'observed',
     ...(entry.model ? { model: entry.model } : {}),
     ...(entry.computeId ? { computeId: entry.computeId } : {}),
     ...(toJsonObject(entry.metadata) ? { metadata: toJsonObject(entry.metadata) } : {})
   }));
+  if (input.comparison?.regression) recommendations.push({ id: `recommendation-${recommendations.length + 1}`, action: 'decrease', target: 'strategy', score: input.comparison.scoreDelta ?? 0, reason: 'regression detected' });
+  if (recommendations.length === 0 && observations.length > 0) recommendations.push({ id: 'recommendation-1', action: 'observe', target: 'strategy', score: observations.reduce((sum, entry) => sum + (entry.value ?? entry.score ?? 0), 0), reason: 'adaptive observations recorded' });
+  const summary = {
+    observationCount: observations.length,
+    recommendationCount: recommendations.length,
+    reduceSignals: recommendations.filter((entry) => entry.action === 'decrease').length,
+    increaseSignals: recommendations.filter((entry) => entry.action === 'increase').length,
+    holdSignals: recommendations.filter((entry) => entry.action === 'hold' || entry.action === 'observe' || !entry.action).length
+  };
   return {
     kind: 'frontier.swarm.tournament-adaptive-feedback',
     version: 1,
-    id: 'swarm-tournament-adaptive-feedback:' + stableHash([input.observations, recommendations, generatedAt]),
-    observations: cloneJsonValue([...(input.observations ?? [])]),
+    id: 'swarm-tournament-adaptive-feedback:' + stableHash([input.tournament?.id, input.history?.id, observations, recommendations, generatedAt]),
+    ...(input.tournament ? { tournamentId: input.tournament.id } : {}),
+    ...(input.history ? { historyId: input.history.id } : {}),
+    observations,
     recommendations,
+    summary,
     generatedAt,
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
 }
 
-export function createSwarmMergeTournament(input: { candidates?: readonly Record<string, unknown>[]; winnerId?: string; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmStrategyTournament {
+export function createSwarmMergeTournament(input: {
+  id?: string;
+  title?: string;
+  candidates?: readonly Record<string, unknown>[];
+  bundles?: readonly FrontierSwarmMergeBundle[];
+  mergeIndex?: FrontierSwarmMergeIndex;
+  strategyMode?: string;
+  winnerId?: string;
+  generatedAt?: number;
+  metadata?: unknown;
+} = {}): FrontierSwarmStrategyTournament {
   const generatedAt = input.generatedAt ?? Date.now();
-  const candidates = cloneJsonValue([...(input.candidates ?? [])]);
-  return { kind: 'frontier.swarm.strategy-tournament', version: 1, id: 'swarm-strategy-tournament:' + stableHash([candidates, input.winnerId, generatedAt]), candidates, ...(input.winnerId ? { winnerId: input.winnerId } : {}), generatedAt, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
+  const bundleCandidates = (input.bundles ?? []).map((bundle) => ({ id: bundle.jobId, lane: bundle.lane, disposition: bundle.disposition, score: mergeBundleTournamentScore(bundle), bundle }));
+  const candidates = cloneJsonValue([...(input.candidates ?? []), ...bundleCandidates]) as Record<string, unknown>[];
+  const matches = candidates.map((candidate, index) => {
+    const strategyId = String(candidate.lane ?? candidate.strategyId ?? candidate.id ?? `strategy-${index + 1}`);
+    const outcome = String(candidate.disposition ?? candidate.outcome ?? 'unknown');
+    return {
+      id: `match-${index + 1}`,
+      strategyId,
+      gameId: String(candidate.jobId ?? candidate.id ?? `game-${index + 1}`),
+      outcome,
+      score: Number(candidate.score ?? 0),
+      tags: uniqueStrings([input.strategyMode, outcome, String(candidate.lane ?? '')]),
+      ...(toJsonObject(candidate) ? { metadata: toJsonObject(candidate) } : {})
+    };
+  });
+  const standings = createTournamentStandings(matches);
+  const outcomeCounts = countStrings(matches.map((entry) => entry.outcome));
+  const top = standings[0];
+  const summary: FrontierSwarmStrategyTournamentSummary = {
+    strategyCount: standings.length,
+    gameCount: uniqueStrings(matches.map((entry) => entry.gameId)).length,
+    matchCount: matches.length,
+    verifiedCount: matches.filter((entry) => entry.outcome === 'auto-mergeable' || entry.outcome === 'needs-port').length,
+    rejectedCount: matches.filter((entry) => entry.outcome === 'rejected' || entry.outcome === 'blocked').length,
+    undefinedCount: matches.filter((entry) => entry.outcome === 'unknown').length,
+    sampleConfidence: matches.length >= 10 ? 'high' : matches.length >= 3 ? 'medium' : 'low',
+    decisionGrade: top && top.score > 0 ? 'usable' : 'insufficient-signal',
+    ...(top ? { topStrategyId: top.strategyId, topScore: top.score } : {}),
+    outcomeCounts
+  };
+  return { kind: 'frontier.swarm.strategy-tournament', version: 1, id: input.id ?? 'swarm-strategy-tournament:' + stableHash([candidates, input.winnerId, generatedAt]), ...(input.title ? { title: input.title } : {}), candidates, standings, matches, summary, ...(input.winnerId ?? top?.strategyId ? { winnerId: input.winnerId ?? top?.strategyId } : {}), generatedAt, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
 }
 
-export function createSwarmStrategyTournamentHistory(input: { tournaments?: readonly FrontierSwarmStrategyTournament[]; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmStrategyTournamentHistory {
+export function createSwarmStrategyTournamentHistory(input: { id?: string; tournaments?: readonly FrontierSwarmStrategyTournament[]; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmStrategyTournamentHistory {
   const generatedAt = input.generatedAt ?? Date.now();
   const tournaments = cloneJsonValue([...(input.tournaments ?? [])]);
-  return { kind: 'frontier.swarm.strategy-tournament-history', version: 1, id: 'swarm-strategy-tournament-history:' + stableHash([tournaments.map((entry) => entry.id), generatedAt]), tournaments, generatedAt, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
+  return { kind: 'frontier.swarm.strategy-tournament-history', version: 1, id: input.id ?? 'swarm-strategy-tournament-history:' + stableHash([tournaments.map((entry) => entry.id), generatedAt]), tournaments, generatedAt, ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {}) };
 }
 
-export function querySwarmStrategyTournament(tournament: FrontierSwarmStrategyTournament): FrontierSwarmStrategyTournament {
-  return tournament;
+export function querySwarmStrategyTournament(tournament: FrontierSwarmStrategyTournament, query: {
+  strategyId?: string;
+  gameId?: string;
+  outcome?: string;
+  tag?: string;
+  payoffTag?: string;
+  strategyTag?: string;
+  gameTag?: string;
+  minScore?: number;
+  maxScore?: number;
+} = {}): FrontierSwarmStrategyTournament {
+  const matches = tournament.matches.filter((match) => (
+    (!query.strategyId || match.strategyId === query.strategyId)
+    && (!query.gameId || match.gameId === query.gameId)
+    && (!query.outcome || match.outcome === query.outcome)
+    && (!query.tag || match.tags.includes(query.tag))
+    && (!query.strategyTag || match.tags.includes(query.strategyTag))
+    && (!query.gameTag || match.tags.includes(query.gameTag))
+    && (query.minScore === undefined || match.score >= query.minScore)
+    && (query.maxScore === undefined || match.score <= query.maxScore)
+  ));
+  return { ...tournament, matches, standings: createTournamentStandings(matches), summary: { ...tournament.summary, matchCount: matches.length, strategyCount: uniqueStrings(matches.map((entry) => entry.strategyId)).length, gameCount: uniqueStrings(matches.map((entry) => entry.gameId)).length } };
 }
 
-export function compareSwarmStrategyTournaments(history: FrontierSwarmStrategyTournamentHistory | readonly FrontierSwarmStrategyTournament[]): FrontierSwarmStrategyTournamentComparison {
-  const tournaments: readonly FrontierSwarmStrategyTournament[] = Array.isArray(history)
-    ? history as readonly FrontierSwarmStrategyTournament[]
-    : (history as FrontierSwarmStrategyTournamentHistory).tournaments;
+export function compareSwarmStrategyTournaments(input: FrontierSwarmStrategyTournamentHistory | readonly FrontierSwarmStrategyTournament[] | { baseline: FrontierSwarmStrategyTournament; current: FrontierSwarmStrategyTournament; scoreThreshold?: number }): FrontierSwarmStrategyTournamentComparison {
+  if (!Array.isArray(input) && (input as { baseline?: unknown }).baseline && (input as { current?: unknown }).current) {
+    const { baseline, current, scoreThreshold } = input as { baseline: FrontierSwarmStrategyTournament; current: FrontierSwarmStrategyTournament; scoreThreshold?: number };
+    const scoreDelta = (current.summary.topScore ?? 0) - (baseline.summary.topScore ?? 0);
+    return { winnerId: current.winnerId, tournamentCount: 2, candidateCount: baseline.candidates.length + current.candidates.length, baselineId: baseline.id, currentId: current.id, scoreDelta, regression: scoreDelta < -Math.abs(scoreThreshold ?? 0) };
+  }
+  const tournaments: readonly FrontierSwarmStrategyTournament[] = Array.isArray(input)
+    ? input as readonly FrontierSwarmStrategyTournament[]
+    : (input as FrontierSwarmStrategyTournamentHistory).tournaments;
   return { winnerId: tournaments.find((entry: FrontierSwarmStrategyTournament) => entry.winnerId)?.winnerId, tournamentCount: tournaments.length, candidateCount: tournaments.reduce((sum: number, entry: FrontierSwarmStrategyTournament) => sum + entry.candidates.length, 0) };
 }
 
-export interface FrontierSwarmAdaptiveLoadPlan { kind: 'frontier.swarm.adaptive-load-plan'; version: 1; id: string; planId?: string; observations: FrontierSwarmAdaptiveObservationInput[]; generatedAt: number; limits: FrontierSwarmScheduleLimits; metadata?: JsonObject }
+export interface FrontierSwarmAdaptiveLoadDecision { action: 'increase' | 'decrease' | 'hold' | string; target: string; key?: string; previous?: number; next?: number; reason: string; metadata?: JsonObject }
+export interface FrontierSwarmAdaptiveLoadPlan { kind: 'frontier.swarm.adaptive-load-plan'; version: 1; id: string; planId?: string; mode: string; observations: FrontierSwarmAdaptiveObservationInput[]; decisions: FrontierSwarmAdaptiveLoadDecision[]; generatedAt: number; limits: FrontierSwarmScheduleLimits; effectiveLimits: FrontierSwarmScheduleLimits; summary: { observationCount: number; decisionCount: number; bottleneckCount: number }; metadata?: JsonObject }
 
-export function createSwarmAdaptiveLoadPlan(input: { plan?: FrontierSwarmPlan; observations?: readonly FrontierSwarmAdaptiveObservationInput[]; currentLimits?: Partial<FrontierSwarmScheduleLimits>; maxLimits?: Partial<FrontierSwarmScheduleLimits>; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmAdaptiveLoadPlan {
+export function createSwarmAdaptiveLoadPlan(input: { plan?: FrontierSwarmPlan; run?: FrontierSwarmRun; mode?: string; observations?: readonly FrontierSwarmAdaptiveObservationInput[]; currentLimits?: Partial<FrontierSwarmScheduleLimits>; minLimits?: Partial<FrontierSwarmScheduleLimits>; maxLimits?: Partial<FrontierSwarmScheduleLimits>; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmAdaptiveLoadPlan {
   const generatedAt = input.generatedAt ?? Date.now();
+  const currentMax = input.currentLimits?.maxReadyJobs ?? input.maxLimits?.maxReadyJobs ?? input.plan?.limits.maxReadyJobs ?? input.plan?.jobs.length ?? 1;
+  const warningCount = (input.observations ?? []).filter((entry) => entry.severity === 'warning' || entry.severity === 'error').length;
+  const nextMax = Math.max(input.minLimits?.maxReadyJobs ?? 1, Math.min(input.maxLimits?.maxReadyJobs ?? currentMax, warningCount > 0 ? currentMax - 1 : currentMax));
+  const decisions: FrontierSwarmAdaptiveLoadDecision[] = nextMax === currentMax ? [] : [{ action: nextMax < currentMax ? 'decrease' : 'increase', target: 'maxReadyJobs', previous: currentMax, next: nextMax, reason: warningCount > 0 ? 'adaptive warning pressure' : 'adaptive throughput headroom' }];
+  const effectiveLimits: FrontierSwarmScheduleLimits = { maxLaneConcurrency: {}, maxConcurrencyKeyConcurrency: {}, maxComputeConcurrency: {}, resourceQuotas: {}, ...(input.currentLimits ?? {}), ...(input.maxLimits ?? {}), maxReadyJobs: nextMax };
   return {
     kind: 'frontier.swarm.adaptive-load-plan',
     version: 1,
     id: 'swarm-adaptive-load-plan:' + stableHash([input.plan?.id, input.observations, generatedAt]),
     ...(input.plan ? { planId: input.plan.id } : {}),
+    mode: input.mode ?? 'balanced',
     observations: cloneJsonValue([...(input.observations ?? [])]),
+    decisions,
     generatedAt,
-    limits: { maxLaneConcurrency: {}, maxConcurrencyKeyConcurrency: {}, maxComputeConcurrency: {}, resourceQuotas: {}, ...(input.currentLimits ?? {}), ...(input.maxLimits ?? {}) },
+    limits: effectiveLimits,
+    effectiveLimits,
+    summary: { observationCount: input.observations?.length ?? 0, decisionCount: decisions.length, bottleneckCount: warningCount },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
 }
 
-export function createSwarmScheduleInputFromAdaptiveLoadPlan(plan: FrontierSwarmPlan, adaptivePlan: FrontierSwarmAdaptiveLoadPlan): FrontierSwarmScheduleInput {
-  return { plan, ...adaptivePlan.limits };
+export function createSwarmScheduleInputFromAdaptiveLoadPlan(plan: FrontierSwarmPlan, adaptivePlan: FrontierSwarmAdaptiveLoadPlan, extra: Omit<FrontierSwarmScheduleInput, 'plan'> = {}): FrontierSwarmScheduleInput {
+  return { plan, ...adaptivePlan.effectiveLimits, ...extra };
 }
 
 export interface FrontierSwarmCoordinatorProcessInput { id?: string; role?: string; lane?: string; status?: string; metadata?: unknown }
-export interface FrontierSwarmCoordinatorDashboard { kind: 'frontier.swarm.coordinator-dashboard'; version: 1; id: string; generatedAt: number; processes: FrontierSwarmCoordinatorProcessInput[]; summary: { processCount: number; activeCount: number }; metadata?: JsonObject }
+export interface FrontierSwarmCoordinatorDashboardJob {
+  jobId: string;
+  taskId?: string;
+  lane?: string;
+  status: FrontierSwarmJobStatus | string;
+  liveness: 'running' | 'finished' | 'unknown' | string;
+  disposition: FrontierSwarmMergeDisposition | string;
+  mergeReadiness?: FrontierSwarmMergeReadiness | string;
+  mergeScore: number;
+  changedPaths: string[];
+  changedRegions: string[];
+  ownershipViolations: string[];
+  tests: { passed: number; failed: number; requiredFailed: number };
+  semanticImport?: FrontierSwarmSemanticImportSummary;
+  traceShards?: unknown[];
+  staleAgainstHead: boolean;
+  duplicateGroupId?: string;
+  evidencePaths: string[];
+  contextBudget?: unknown;
+  metadata?: JsonObject;
+}
+export interface FrontierSwarmCoordinatorDashboardSummary {
+  processCount: number;
+  activeCount: number;
+  jobCount: number;
+  staleAgainstHeadCount: number;
+  readyToApplyCount: number;
+  needsHumanPortCount: number;
+  failedEvidenceCount: number;
+  averageMergeScore: number;
+  [key: string]: unknown;
+}
+export interface FrontierSwarmCoordinatorDashboard {
+  kind: 'frontier.swarm.coordinator-dashboard';
+  version: 1;
+  id: string;
+  generatedAt: number;
+  processes: FrontierSwarmCoordinatorProcessInput[];
+  jobs: FrontierSwarmCoordinatorDashboardJob[];
+  duplicateGroups: Array<{ id: string; jobIds: string[] }>;
+  evidenceIndex?: FrontierSwarmEvidenceIndex;
+  summary: FrontierSwarmCoordinatorDashboardSummary;
+  metadata?: JsonObject;
+}
 
-export function createSwarmCoordinatorDashboard(input: { processes?: readonly FrontierSwarmCoordinatorProcessInput[]; generatedAt?: number; metadata?: unknown } = {}): FrontierSwarmCoordinatorDashboard {
+export function createSwarmCoordinatorDashboard(input: {
+  plan?: FrontierSwarmPlan;
+  run?: FrontierSwarmRun;
+  bundles?: readonly FrontierSwarmMergeBundle[];
+  mergeIndex?: FrontierSwarmMergeIndex;
+  queueOverlay?: FrontierSwarmQueueOverlay;
+  evidenceIndex?: FrontierSwarmEvidenceIndex;
+  admission?: FrontierSwarmMergeAdmission;
+  processes?: readonly FrontierSwarmCoordinatorProcessInput[];
+  generatedAt?: number;
+  metadata?: unknown;
+} = {}): FrontierSwarmCoordinatorDashboard {
   const generatedAt = input.generatedAt ?? Date.now();
   const processes = cloneJsonValue([...(input.processes ?? [])]);
+  const jobs = (input.bundles ?? []).map(bundleToCoordinatorDashboardJob);
+  const duplicateGroups = createDashboardDuplicateGroups(jobs);
+  const averageMergeScore = jobs.length ? Math.round(jobs.reduce((sum, job) => sum + job.mergeScore, 0) / jobs.length * 100) / 100 : 0;
   return {
     kind: 'frontier.swarm.coordinator-dashboard',
     version: 1,
-    id: 'swarm-coordinator-dashboard:' + stableHash([processes, generatedAt]),
+    id: 'swarm-coordinator-dashboard:' + stableHash([processes, jobs.map((job) => job.jobId), generatedAt]),
     generatedAt,
     processes,
-    summary: { processCount: processes.length, activeCount: processes.filter((entry) => entry.status === 'active' || entry.status === 'running').length },
+    jobs,
+    duplicateGroups,
+    ...(input.evidenceIndex ? { evidenceIndex: input.evidenceIndex } : {}),
+    summary: {
+      processCount: processes.length,
+      activeCount: processes.filter((entry) => entry.status === 'active' || entry.status === 'running').length,
+      jobCount: jobs.length,
+      staleAgainstHeadCount: jobs.filter((job) => job.staleAgainstHead).length,
+      readyToApplyCount: jobs.filter((job) => job.disposition === 'auto-mergeable').length,
+      needsHumanPortCount: jobs.filter((job) => job.disposition === 'needs-port').length,
+      failedEvidenceCount: jobs.filter((job) => job.tests.requiredFailed > 0 || job.disposition === 'rejected' || job.disposition === 'blocked').length,
+      averageMergeScore
+    },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
 }
 
 export function querySwarmCoordinatorDashboard(dashboard: FrontierSwarmCoordinatorDashboard): FrontierSwarmCoordinatorDashboard {
   return dashboard;
+}
+
+function mergeBundleTournamentScore(bundle: FrontierSwarmMergeBundle): number {
+  let score = 0;
+  if (bundle.autoMergeable) score += 100;
+  if (bundle.disposition === 'needs-port') score += 70;
+  if (bundle.disposition === 'discovery-only') score += 25;
+  if (bundle.status === 'verified' || bundle.status === 'completed') score += 20;
+  score += Math.min(20, bundle.commandsPassed.length * 5);
+  score -= Math.min(60, bundle.commandsFailed.filter((entry) => entry.required !== false).length * 20);
+  score -= bundle.staleAgainstHead ? 30 : 0;
+  score -= Math.min(30, bundle.ownershipViolations.length * 10);
+  return Math.round(score * 100) / 100;
+}
+
+function createTournamentStandings(matches: readonly FrontierSwarmStrategyTournamentMatch[]): FrontierSwarmStrategyTournamentStanding[] {
+  const byStrategy = new Map<string, { scores: number[]; outcomes: string[] }>();
+  for (const match of matches) {
+    const entry = byStrategy.get(match.strategyId) ?? { scores: [], outcomes: [] };
+    entry.scores.push(match.score);
+    entry.outcomes.push(match.outcome);
+    byStrategy.set(match.strategyId, entry);
+  }
+  return Array.from(byStrategy.entries())
+    .map(([strategyId, entry]) => ({
+      id: `standing:${strategyId}`,
+      strategyId,
+      score: entry.scores.length ? Math.round(entry.scores.reduce((sum, value) => sum + value, 0) / entry.scores.length * 100) / 100 : 0,
+      rank: 0,
+      samples: entry.scores.length,
+      outcomeCounts: countStrings(entry.outcomes)
+    }))
+    .sort((left, right) => right.score - left.score || left.strategyId.localeCompare(right.strategyId))
+    .map((entry, index) => ({ ...entry, rank: index + 1 }));
+}
+
+function bundleToCoordinatorDashboardJob(bundle: FrontierSwarmMergeBundle): FrontierSwarmCoordinatorDashboardJob {
+  const failed = bundle.commandsFailed.length;
+  const requiredFailed = bundle.commandsFailed.filter((entry) => entry.required !== false).length;
+  const metadata = toJsonObject(bundle.metadata);
+  const contextBudget = metadata && typeof metadata.contextBudget === 'object' && metadata.contextBudget && !Array.isArray(metadata.contextBudget)
+    ? metadata.contextBudget as Record<string, unknown>
+    : undefined;
+  return {
+    jobId: bundle.jobId,
+    ...(bundle.taskId ? { taskId: bundle.taskId } : {}),
+    ...(bundle.lane ? { lane: bundle.lane } : {}),
+    status: bundle.status,
+    liveness: bundle.status === 'running' ? 'running' : 'finished',
+    disposition: bundle.disposition,
+    mergeReadiness: bundle.mergeReadiness,
+    mergeScore: mergeBundleTournamentScore(bundle),
+    changedPaths: [...bundle.changedPaths],
+    changedRegions: [...bundle.changedRegions],
+    ownershipViolations: [...bundle.ownershipViolations],
+    tests: { passed: bundle.commandsPassed.length, failed, requiredFailed },
+    ...(bundle.semanticImport ? { semanticImport: cloneJsonValue(bundle.semanticImport) } : {}),
+    ...(bundle.traceShards ? { traceShards: cloneJsonValue(bundle.traceShards) } : {}),
+    staleAgainstHead: bundle.staleAgainstHead,
+    evidencePaths: [...bundle.evidencePaths],
+    ...(contextBudget ? { contextBudget } : {}),
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function createDashboardDuplicateGroups(jobs: readonly FrontierSwarmCoordinatorDashboardJob[]): Array<{ id: string; jobIds: string[] }> {
+  const byPaths = new Map<string, string[]>();
+  for (const job of jobs) {
+    const key = job.changedPaths.slice().sort().join('\n');
+    if (!key) continue;
+    const group = byPaths.get(key) ?? [];
+    group.push(job.jobId);
+    byPaths.set(key, group);
+  }
+  return Array.from(byPaths.entries())
+    .filter(([, jobIds]) => jobIds.length > 1)
+    .map(([key, jobIds], index) => ({ id: `duplicate-group-${index + 1}:${stableHash(key)}`, jobIds }));
+}
+
+function countStrings(values: readonly string[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const value of values) {
+    const key = String(value || 'unknown');
+    out[key] = (out[key] ?? 0) + 1;
+  }
+  return out;
 }
 
 function normalizeBacklogEntry(input: FrontierSwarmBacklogEntryInput): FrontierSwarmBacklogEntry {
