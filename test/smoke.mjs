@@ -59,6 +59,7 @@ import {
   createSwarmModelRoutingFeedback,
   createSwarmModelRoutingPolicy,
   createSwarmModelRoute,
+  FRONTIER_SWARM_TASK_MODEL_PROFILES,
   createSwarmOracleCorpus,
   createSwarmPatchStackPlan,
   createSwarmParityOracle,
@@ -105,6 +106,7 @@ import {
   resolveSwarmChangedRegions,
   checkSwarmRegionOwnership,
   resolveSwarmCompute,
+  resolveSwarmTaskModelProfile,
   routeSwarmEventToMailboxes,
   mergeSwarmMetadata,
   summarizeSwarmCoordinatorAgentDrainWork,
@@ -1529,6 +1531,11 @@ const routerHistory = [
   { compute: 'fast', attempts: 12, successRate: 0.86, confidence: 0.72, averageDurationMs: 42000 },
   { compute: 'deep', attempts: 8, successRate: 0.94, confidence: 0.9, averageDurationMs: 130000 }
 ];
+const implementationProfile = resolveSwarmTaskModelProfile({ workKind: 'implementation' });
+assert.strictEqual(implementationProfile.modelTier, 'cheap');
+assert.strictEqual(implementationProfile.costBand, 'low');
+assert.ok(implementationProfile.strengths.includes('small patch synthesis'));
+assert.strictEqual(FRONTIER_SWARM_TASK_MODEL_PROFILES.find((profile) => profile.workKind === 'review').modelTier, 'deep');
 const cheapRoute = createSwarmModelRoute({
   manifest,
   task: {
@@ -1546,6 +1553,9 @@ assert.strictEqual(cheapRoute.kind, FRONTIER_SWARM_MODEL_ROUTE_KIND);
 assert.strictEqual(cheapRoute.route, 'single-cheap');
 assert.deepStrictEqual(cheapRoute.recommendedComputeIds, ['fast']);
 assert.strictEqual(cheapRoute.summary.cheapestCapableComputeId, 'fast');
+assert.strictEqual(cheapRoute.taskProfile.workKind, 'agent-task');
+assert.strictEqual(cheapRoute.taskProfile.modelTier, 'balanced');
+assert.ok(cheapRoute.reasons.includes('task-kind-cost:medium'));
 assert.ok(cheapRoute.candidates.find((candidate) => candidate.compute.id === 'fast').estimatedCostUsd < cheapRoute.candidates.find((candidate) => candidate.compute.id === 'deep').estimatedCostUsd);
 
 const riskRoute = createSwarmModelRoute({

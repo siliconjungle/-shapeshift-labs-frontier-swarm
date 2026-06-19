@@ -402,6 +402,8 @@ const route = createSwarmModelRoute({
 });
 ```
 
+`FRONTIER_SWARM_TASK_MODEL_PROFILES` records the default task-kind profile catalog, and `resolveSwarmTaskModelProfile(task)` chooses the profile from `task.workKind`. Each profile captures the expected model tier, cost band, context shape, strengths, and known failure modes for that kind of task. `createSwarmModelRoute` exposes the resolved `taskProfile` on the route record so callers can explain the routing decision without hardcoding task-kind logic.
+
 `createSwarmModelRoutingFeedback` and `createSwarmModelRoutingPolicy` cover the serializable feedback/policy layer above the model router, and `createSwarmPlan(..., { routingMode, routingPolicy, routingContext })` now preserves that routing state on the returned plan for continuation code.
 
 The returned record includes scored candidates, estimated cost and latency, price/outcome telemetry fallbacks, panel confidence lift, residual risk, and a human-readable explanation for `single-cheap`, `single-deep`, `panel`, or `tournament` recommendations.

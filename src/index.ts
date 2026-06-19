@@ -207,6 +207,8 @@ export type FrontierSwarmRebaseStatus =
 export type FrontierSwarmModelRouteStrategy = 'single-cheap' | 'single-deep' | 'panel' | 'tournament' | string;
 export type FrontierSwarmPanelStrategy = 'panel' | 'tournament' | 'auto' | string;
 export type FrontierSwarmTimePressure = 'relaxed' | 'normal' | 'soon' | 'urgent' | string;
+export type FrontierSwarmTaskModelTier = 'cheap' | 'balanced' | 'deep' | 'panel' | string;
+export type FrontierSwarmTaskModelCostBand = 'low' | 'medium' | 'high' | string;
 export type FrontierSwarmContinuousPoolPhase =
   | 'active'
   | 'queued'
@@ -815,6 +817,17 @@ export interface FrontierSwarmPanelRouteInput {
   metadata?: unknown;
 }
 
+export interface FrontierSwarmTaskModelProfile {
+  workKind: string;
+  modelTier: FrontierSwarmTaskModelTier;
+  costBand: FrontierSwarmTaskModelCostBand;
+  model?: string;
+  context: string;
+  strengths: string[];
+  failureModes: string[];
+  notes?: string[];
+}
+
 export interface FrontierSwarmModelRouterInput {
   id?: string;
   manifest?: FrontierSwarmManifest | FrontierSwarmManifestInput;
@@ -895,6 +908,7 @@ export interface FrontierSwarmModelRoute {
   id: string;
   generatedAt: number;
   taskId: string;
+  taskProfile?: FrontierSwarmTaskModelProfile;
   route: FrontierSwarmModelRouteStrategy;
   recommendedComputeIds: string[];
   fuserComputeId?: string;
@@ -4059,9 +4073,112 @@ export function createSwarmTaskSelection(
   };
 }
 
+export const FRONTIER_SWARM_TASK_MODEL_PROFILES: readonly FrontierSwarmTaskModelProfile[] = [
+  {
+    workKind: 'agent-task',
+    modelTier: 'balanced',
+    costBand: 'medium',
+    model: FRONTIER_SWARM_DEFAULT_MODEL,
+    context: 'General agent work with mixed implementation and investigation context, where the safest default is a compact but capable model.',
+    strengths: ['balanced reasoning', 'narrow patch synthesis', 'staying within the supplied task scope'],
+    failureModes: ['can underperform on very large investigations', 'may need escalation for broad cross-file reasoning']
+  },
+  {
+    workKind: 'implementation',
+    modelTier: 'cheap',
+    costBand: 'low',
+    model: 'gpt-5.4-mini',
+    context: 'Narrow repository edits with explicit ownership, local tests, and bounded acceptance criteria.',
+    strengths: ['small patch synthesis', 'tight scope control', 'fast iteration on concrete code changes'],
+    failureModes: ['can miss wider architectural context', 'may need a deeper model for multi-step refactors']
+  },
+  {
+    workKind: 'planning',
+    modelTier: 'balanced',
+    costBand: 'medium',
+    model: FRONTIER_SWARM_DEFAULT_MODEL,
+    context: 'Task decomposition, lane shaping, and work breakdown before implementation starts.',
+    strengths: ['structured decomposition', 'lane mapping', 'turning ambiguity into an actionable queue'],
+    failureModes: ['can over-plan when the right move is a quick implementation', 'may need downstream validation']
+  },
+  {
+    workKind: 'evidence',
+    modelTier: 'cheap',
+    costBand: 'low',
+    model: 'gpt-5.4-mini',
+    context: 'Evidence collection, harness execution, and compact status capture.',
+    strengths: ['concise tool use', 'fast command-driven iteration', 'keeping logs compact'],
+    failureModes: ['can miss subtle root causes without more context', 'may overfit to the first failing probe']
+  },
+  {
+    workKind: 'benchmark',
+    modelTier: 'cheap',
+    costBand: 'low',
+    model: 'gpt-5.4-mini',
+    context: 'Perf-sensitive or repeatable benchmark work where steady execution matters more than broad synthesis.',
+    strengths: ['repeatable command orchestration', 'careful measurement hygiene', 'low overhead loops'],
+    failureModes: ['can waste budget on instrumentation churn', 'may need a deeper model for optimization strategy']
+  },
+  {
+    workKind: 'debug',
+    modelTier: 'deep',
+    costBand: 'high',
+    model: FRONTIER_SWARM_DEFAULT_MODEL,
+    context: 'Trace-heavy diagnosis where the best answer comes from correlating symptoms across files, logs, or runtime state.',
+    strengths: ['root-cause isolation', 'multi-step reasoning over evidence', 'following causal chains'],
+    failureModes: ['can require richer traces than were supplied', 'may be too expensive for trivial fixes']
+  },
+  {
+    workKind: 'review',
+    modelTier: 'deep',
+    costBand: 'high',
+    model: FRONTIER_SWARM_DEFAULT_MODEL,
+    context: 'Patch review, regression hunting, and semantic comparison against existing behavior.',
+    strengths: ['cross-file consistency checks', 'spotting missing tests', 'finding policy or ownership regressions'],
+    failureModes: ['can over-index on style nits', 'often unnecessary for tiny mechanical changes']
+  },
+  {
+    workKind: 'oracle',
+    modelTier: 'deep',
+    costBand: 'high',
+    model: FRONTIER_SWARM_DEFAULT_MODEL,
+    context: 'Reference-oracle work that compares outputs, traces, or fixtures against a stable baseline.',
+    strengths: ['precise comparison', 'fixture-aware reasoning', 'keeping the oracle contract explicit'],
+    failureModes: ['needs stable fixtures or traces', 'can be brittle if the oracle itself is noisy']
+  },
+  {
+    workKind: 'research',
+    modelTier: 'deep',
+    costBand: 'high',
+    model: FRONTIER_SWARM_DEFAULT_MODEL,
+    context: 'Source passes and research synthesis where broad context and synthesis matter more than quick turnarounds.',
+    strengths: ['broad evidence gathering', 'synthesis across sources', 'turning unknowns into a structured summary'],
+    failureModes: ['can drift into speculation', 'usually slower than a task-specific implementation pass']
+  }
+];
+
+export function resolveSwarmTaskModelProfile(
+  task: FrontierSwarmTask,
+  profiles: readonly FrontierSwarmTaskModelProfile[] = FRONTIER_SWARM_TASK_MODEL_PROFILES
+): FrontierSwarmTaskModelProfile {
+  const byWorkKind = new Map(profiles.map((profile) => [profile.workKind, profile] as const));
+  const workKindProfile = byWorkKind.get(task.workKind);
+  if (workKindProfile) return workKindProfile;
+  return {
+    workKind: task.workKind,
+    modelTier: 'balanced',
+    costBand: 'medium',
+    model: FRONTIER_SWARM_DEFAULT_MODEL,
+    context: 'General-purpose task work with mixed context, where the router should stay conservative until task-specific telemetry says otherwise.',
+    strengths: ['balanced reasoning', 'general task handling', 'safe default routing'],
+    failureModes: ['may need escalation for wider investigations', 'can underperform on deeply specialized tasks']
+  };
+}
+
 export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): FrontierSwarmModelRoute {
   const generatedAt = input.generatedAt ?? Date.now();
   const task = isSwarmTask(input.task) ? cloneJsonValue(input.task) as FrontierSwarmTask : normalizeTask(input.task);
+  const taskProfile = resolveSwarmTaskModelProfile(task);
   const computes = routerComputes(input);
   const tokenEstimate = normalizeModelTokenEstimate(input.tokenEstimate, task);
   const budget = input.budget ? normalizeBudget(input.budget) : task.budget;
@@ -4122,7 +4239,8 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
     riskDemand,
     qualityThreshold,
     budgetCapped,
-    missingTelemetry: candidates.some((candidate) => !candidate.priceKnown || !candidate.outcomeKnown)
+    missingTelemetry: candidates.some((candidate) => !candidate.priceKnown || !candidate.outcomeKnown),
+    taskProfile
   });
   return {
     kind: FRONTIER_SWARM_MODEL_ROUTE_KIND,
@@ -4130,6 +4248,7 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
     id: input.id ?? 'swarm-model-route:' + stableHash([task.id, route, recommendedComputeIds, generatedAt]),
     generatedAt,
     taskId: task.id,
+    taskProfile,
     route,
     recommendedComputeIds,
     ...(panel.fuserComputeId && (route === 'panel' || route === 'tournament') ? { fuserComputeId: panel.fuserComputeId } : {}),
@@ -10463,9 +10582,12 @@ function modelRouteReasons(
   selected: FrontierSwarmModelRouteCandidate,
   cheapest: FrontierSwarmModelRouteCandidate | undefined,
   panel: FrontierSwarmPanelEvaluation,
-  input: { riskDemand: number; qualityThreshold: number; budgetCapped: boolean; missingTelemetry: boolean }
+  input: { riskDemand: number; qualityThreshold: number; budgetCapped: boolean; missingTelemetry: boolean; taskProfile: FrontierSwarmTaskModelProfile }
 ): string[] {
   const reasons: string[] = [];
+  reasons.push(`task-kind-profile:${input.taskProfile.workKind}`);
+  reasons.push(`task-kind-tier:${input.taskProfile.modelTier}`);
+  reasons.push(`task-kind-cost:${input.taskProfile.costBand}`);
   if (route === 'panel' || route === 'tournament') {
     reasons.push('panel-confidence-lift-selected', ...panel.reasons);
   } else if (route === 'single-cheap') {
