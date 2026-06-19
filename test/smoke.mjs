@@ -2,6 +2,8 @@ import assert from 'node:assert';
 import {
   FRONTIER_SWARM_COORDINATOR_AGENT_DRAIN_WORK_KIND,
   FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID,
+  FRONTIER_SWARM_MODEL_ROUTE_KIND,
+  FRONTIER_SWARM_PANEL_EVALUATION_KIND,
   FRONTIER_SWARM_PRIORITY_POLICY_KIND,
   FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
   checkSwarmOwnership,
@@ -35,9 +37,11 @@ import {
   createSwarmManifest,
   createSwarmMergeBundle,
   createSwarmMergeIndex,
+  createSwarmModelRoute,
   createSwarmOracleCorpus,
   createSwarmPatchStackPlan,
   createSwarmParityOracle,
+  createSwarmPanelEvaluation,
   createSwarmProgressModel,
   createSwarmQueueOutcomeDecision,
   createSwarmQueueOutcomeModel,
@@ -373,6 +377,139 @@ assert.deepStrictEqual(priorityQueue.jobs.slice(0, 3).map((job) => job.taskId), 
 assert.strictEqual(priorityQueue.jobs[0].metadata.priorityPolicy.className, 'coordinator-drain');
 assert.strictEqual(priorityQueue.jobs[1].metadata.priorityPolicy.className, 'review');
 assert.strictEqual(priorityQueue.jobs.find((job) => job.taskId === 'speculative-0').metadata.priorityPolicy.className, 'speculative');
+
+const modelPriceCatalog = {
+  fast: {
+    compute: 'fast',
+    inputUsdPerUnit: 0.2,
+    cachedInputUsdPerUnit: 0.02,
+    outputUsdPerUnit: 1,
+    unitTokens: 1000000,
+    latencyMs: 45000
+  },
+  deep: {
+    compute: 'deep',
+    inputUsdPerUnit: 5,
+    cachedInputUsdPerUnit: 0.5,
+    outputUsdPerUnit: 30,
+    unitTokens: 1000000,
+    latencyMs: 150000
+  }
+};
+const routerTokenEstimate = { inputTokens: 10000, cachedInputTokens: 2000, outputTokens: 2000 };
+const routerHistory = [
+  { compute: 'fast', attempts: 12, successRate: 0.86, confidence: 0.72, averageDurationMs: 42000 },
+  { compute: 'deep', attempts: 8, successRate: 0.94, confidence: 0.9, averageDurationMs: 130000 }
+];
+const cheapRoute = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'simple-doc-fix',
+    lane: 'runtime',
+    targetRefs: ['inkwell/apps/web/src/runtime/docs.ts'],
+    metadata: { risk: 'low', uncertainty: 'low', impact: 'low' }
+  },
+  priceCatalog: modelPriceCatalog,
+  tokenEstimate: routerTokenEstimate,
+  outcomeHistory: routerHistory,
+  generatedAt: 13000
+});
+assert.strictEqual(cheapRoute.kind, FRONTIER_SWARM_MODEL_ROUTE_KIND);
+assert.strictEqual(cheapRoute.route, 'single-cheap');
+assert.deepStrictEqual(cheapRoute.recommendedComputeIds, ['fast']);
+assert.strictEqual(cheapRoute.summary.cheapestCapableComputeId, 'fast');
+assert.ok(cheapRoute.candidates.find((candidate) => candidate.compute.id === 'fast').estimatedCostUsd < cheapRoute.candidates.find((candidate) => candidate.compute.id === 'deep').estimatedCostUsd);
+
+const riskRoute = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'critical-release-router',
+    lane: 'runtime',
+    targetRefs: ['inkwell/apps/web/src/runtime/router.ts'],
+    tags: ['critical', 'release'],
+    metadata: { risk: 'high', uncertainty: 'unknown', impact: 'high' }
+  },
+  priceCatalog: modelPriceCatalog,
+  tokenEstimate: routerTokenEstimate,
+  outcomeHistory: [
+    { compute: 'fast', attempts: 6, successRate: 0.52, confidence: 0.45 },
+    { compute: 'deep', attempts: 5, successRate: 0.96, confidence: 0.92 }
+  ],
+  generatedAt: 13100
+});
+assert.strictEqual(riskRoute.route, 'single-deep');
+assert.deepStrictEqual(riskRoute.recommendedComputeIds, ['deep']);
+assert.ok(riskRoute.reasons.includes('risk-uncertainty-or-impact-escalation'));
+
+const budgetRoute = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'budgeted-risky-router',
+    lane: 'runtime',
+    targetRefs: ['inkwell/apps/web/src/runtime/budgeted.ts'],
+    budget: { maxCostUsd: 0.02 },
+    metadata: { risk: 'high', uncertainty: 'high', impact: 'high' }
+  },
+  priceCatalog: modelPriceCatalog,
+  tokenEstimate: routerTokenEstimate,
+  outcomeHistory: routerHistory,
+  generatedAt: 13200
+});
+assert.deepStrictEqual(budgetRoute.recommendedComputeIds, ['fast']);
+assert.strictEqual(budgetRoute.candidates.find((candidate) => candidate.compute.id === 'deep').budgetOk, false);
+assert.ok(budgetRoute.reasons.includes('budget-cap-filtered-candidates'));
+
+const missingTelemetryRoute = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'telemetryless-default',
+    lane: 'runtime',
+    targetRefs: ['inkwell/apps/web/src/runtime/telemetryless.ts'],
+    metadata: { risk: 'low', uncertainty: 'low', impact: 'low' }
+  },
+  tokenEstimate: { inputTokens: 5000, outputTokens: 1000 },
+  generatedAt: 13300
+});
+assert.strictEqual(missingTelemetryRoute.route, 'single-cheap');
+assert.deepStrictEqual(missingTelemetryRoute.recommendedComputeIds, ['fast']);
+assert.strictEqual(missingTelemetryRoute.summary.priceKnownCount, 0);
+assert.ok(missingTelemetryRoute.reasons.includes('missing-telemetry-fallback-used'));
+
+const panelRoute = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'panel-worthy-router',
+    lane: 'runtime',
+    targetRefs: ['inkwell/apps/web/src/runtime/panel.ts'],
+    tags: ['critical', 'public-api'],
+    metadata: { risk: 'high', uncertainty: 'high', impact: 'critical' }
+  },
+  priceCatalog: modelPriceCatalog,
+  tokenEstimate: routerTokenEstimate,
+  outcomeHistory: routerHistory,
+  panel: { enabled: true, strategy: 'panel', minRiskScore: 0.5, maxMembers: 2, fuserComputeId: 'deep' },
+  generatedAt: 13400
+});
+assert.strictEqual(panelRoute.route, 'panel');
+assert.strictEqual(panelRoute.panel.kind, FRONTIER_SWARM_PANEL_EVALUATION_KIND);
+assert.strictEqual(panelRoute.panel.recommended, true);
+assert.deepStrictEqual(panelRoute.recommendedComputeIds, ['fast', 'deep']);
+assert.strictEqual(panelRoute.fuserComputeId, 'deep');
+assert.ok(panelRoute.panel.expectedCostUsd > riskRoute.recommended.estimatedCostUsd);
+assert.ok(panelRoute.panel.confidenceLift > 0);
+assert.ok(panelRoute.panel.residualRiskScore < 1);
+
+const tournamentEvaluation = createSwarmPanelEvaluation({
+  candidates: panelRoute.candidates,
+  riskScore: 0.9,
+  uncertaintyScore: 0.8,
+  impactScore: 0.9,
+  panel: { enabled: true, strategy: 'tournament', minRiskScore: 0.5, maxMembers: 2, fuserComputeId: 'deep' },
+  generatedAt: 13500
+});
+assert.strictEqual(tournamentEvaluation.kind, FRONTIER_SWARM_PANEL_EVALUATION_KIND);
+assert.strictEqual(tournamentEvaluation.strategy, 'tournament');
+assert.strictEqual(tournamentEvaluation.recommended, true);
 
 const firstScaleJob = scalePlan.jobs[0];
 const budgetDecision = checkSwarmBudget(firstScaleJob, { inputTokens: 2500, outputTokens: 10, durationMs: 20, attempts: 1 });

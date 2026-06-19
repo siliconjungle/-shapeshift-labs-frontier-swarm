@@ -2,7 +2,7 @@
 
 Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and proofs for Frontier agent work.
 
-`frontier-swarm` turns parallel agent work into data: manifests, parent/child swarm layers, compute profiles, lane ownership, task queues, dry-run plans, event streams, changed-path checks, job results, and proof hashes. It does not spawn processes, create git worktrees, call Codex, or talk to queue brokers. Runners attach through structural adapters such as `@shapeshift-labs/frontier-swarm-codex`.
+`frontier-swarm` turns parallel agent work into data: manifests, parent/child swarm layers, compute profiles, model-route recommendations, lane ownership, task queues, dry-run plans, event streams, changed-path checks, job results, and proof hashes. It does not spawn processes, create git worktrees, call Codex, or talk to queue brokers. Runners attach through structural adapters such as `@shapeshift-labs/frontier-swarm-codex`.
 
 ## Priority Scheduling
 
@@ -321,6 +321,7 @@ The scale APIs are runtime-neutral and serializable:
 - `createSwarmInstrumentationBudget`, `checkSwarmInstrumentationBudget`, and `createSwarmBottleneckReport` keep traces/logs useful without making instrumentation the bottleneck,
 - `createSwarmEvidenceIndex` / `querySwarmEvidenceIndex` and `createSwarmBlackboard` / `querySwarmBlackboard` provide storage-neutral status surfaces for coordinator dashboards, accepted facts, known divergences, rejected theories, and active ownership,
 - `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`, `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`, and `createSwarmUsageGovernor` cover the merge/review/scheduling tools needed to scale from feature swarms to larger migration and porting swarms,
+- `createSwarmModelRoute` and `createSwarmPanelEvaluation` score runtime-neutral compute candidates from task metadata, model price catalogs, token mix, budget caps, time pressure, and outcome history, then explain single-cheap, single-deep, panel, or tournament routes,
 - `createSwarmLanePlaybook` turns successful prior bundles into persistent lane-specific guidance with commands, hot paths, evidence patterns, and avoid-investigating notes,
 - `decomposeSwarmFeature` creates an initial task queue for feature work across lanes.
 
@@ -335,6 +336,32 @@ Higher swarm layers can choose compute for lower layers without binding the core
 5. manifest policy `defaultCompute`
 
 That lets a parent swarm route implementation jobs to a deep model while evidence or inspection jobs use a faster profile.
+
+## Model Routing
+
+`createSwarmModelRoute` is advisory: it does not replace manifest compute resolution, but it lets runners choose the cheapest capable profile by default and escalate when task risk, uncertainty, impact, outcome history, budget, or latency pressure justify it.
+
+```ts
+import { createSwarmModelRoute } from '@shapeshift-labs/frontier-swarm';
+
+const route = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'routing-policy-change',
+    lane: 'runtime',
+    targetRefs: ['src/router.ts'],
+    metadata: { risk: 'high', uncertainty: 'unknown', impact: 'high' }
+  },
+  tokenEstimate: { inputTokens: 10000, cachedInputTokens: 2000, outputTokens: 2000 },
+  priceCatalog: {
+    fast: { compute: 'fast', inputUsdPerUnit: 0.2, cachedInputUsdPerUnit: 0.02, outputUsdPerUnit: 1, unitTokens: 1000000 },
+    deep: { compute: 'deep', inputUsdPerUnit: 5, cachedInputUsdPerUnit: 0.5, outputUsdPerUnit: 30, unitTokens: 1000000 }
+  },
+  panel: { enabled: true, minRiskScore: 0.7, maxMembers: 2, fuserComputeId: 'deep' }
+});
+```
+
+The returned record includes scored candidates, estimated cost and latency, price/outcome telemetry fallbacks, panel confidence lift, residual risk, and a human-readable explanation for `single-cheap`, `single-deep`, `panel`, or `tournament` recommendations.
 
 ## Surface
 
@@ -364,6 +391,7 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 - `createSwarmArtifactRoutingPlan`, `createSwarmSchedulerRecommendations`
 - `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`
 - `createSwarmUsageGovernor`, `checkSwarmUsageGovernor`
+- `createSwarmModelRoute`, `createSwarmPanelEvaluation`
 - `classifySwarmMergeReadiness`, `classifySwarmMergeDisposition`
 - `resolveSwarmChangedRegions`, `checkSwarmRegionOwnership`
 - `decomposeSwarmFeature`
