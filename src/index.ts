@@ -360,14 +360,6 @@ export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND = 'cl
 export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND = 'docs-section';
 export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND = 'fixture-family';
 export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND = 'test-case';
-export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS = Object.freeze({
-  export: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
-  type: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
-  cliCommand: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND,
-  docsSection: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND,
-  fixtureFamily: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND,
-  testCase: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND
-} as const);
 
 export interface FrontierSwarmLaneInput {
   id: string;
@@ -3247,6 +3239,9 @@ export type FrontierSwarmQueueTerminalOutcome =
   | 'superseded'
   | 'no-change'
   | 'rejected'
+  | 'rerun'
+  | 'conflict-blocked'
+  | 'human-question'
   | 'recorded'
   | 'closed'
   | string;
@@ -4354,16 +4349,6 @@ export function checkSwarmOwnership(job: FrontierSwarmJob, changedPaths: readonl
 }
 
 export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemanticOwnershipStableKeyInput): string {
-  const typeDeclarationKind = semanticOwnershipTypeDeclarationKind(input);
-  if (input.kind === 'type' || typeDeclarationKind !== undefined) {
-    const name = semanticOwnershipExportName(input);
-    return semanticOwnershipStableKey(
-      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
-      typeDeclarationKind ?? input.declarationKind ?? 'anonymous',
-      name,
-      name
-    );
-  }
   if (input.kind === 'named-export' || input.kind === 'default-export' || input.kind === 'exported-declaration' || input.kind === 'export') {
     const name = semanticOwnershipExportName(input);
     return semanticOwnershipStableKey(
@@ -4381,6 +4366,14 @@ export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemant
       FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
       input.source ?? 'unknown-source',
       semanticOwnershipExportName(input, '*')
+    );
+  }
+  if (input.kind === 'type') {
+    return semanticOwnershipStableKey(
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
+      input.declarationKind ?? 'anonymous',
+      input.name ?? input.exportName ?? 'default',
+      input.exportName ?? input.name ?? 'default'
     );
   }
   if (input.kind === 'cli-command') {
@@ -4577,31 +4570,25 @@ const SEMANTIC_IMPORT_CONFLICT_HINT_KEYS = new Set([
 ]);
 
 function semanticImportExportMetadata(value: Record<string, unknown>, key?: string, file?: string): string[] {
-  const explicitKind = semanticImportStringValue(value.kind);
-  const declarationKind = semanticImportStringValue(value.declarationKind);
-  const typeDeclarationKind = semanticOwnershipTypeDeclarationKind({
-    kind: explicitKind ?? '',
-    declarationKind
-  });
-  const kind = typeDeclarationKind !== undefined ? 'exported-declaration' : semanticImportExportKind(value, key);
+  const kind = semanticImportExportKind(value, key);
   const hasExportishMetadata = kind !== undefined
     || key !== undefined && SEMANTIC_IMPORT_EXPORT_CONTAINER_KEYS.has(key)
     || semanticImportStringValue(value.exportName) !== undefined
-    || declarationKind !== undefined
+    || semanticImportStringValue(value.declarationKind) !== undefined
     || semanticImportStringValue(value.source) !== undefined
     || semanticImportStringValue(value.sourcePath) !== undefined;
   if (!hasExportishMetadata) return [];
   const hints: string[] = [];
   const name = semanticImportStringValue(value.name);
   const exportName = semanticImportStringValue(value.exportName);
+  const declarationKind = semanticImportStringValue(value.declarationKind);
   const source = semanticImportStringValue(value.source) ?? semanticImportStringValue(value.sourcePath);
-  const semanticDeclarationKind = declarationKind ?? semanticImportDeclarationKind(explicitKind) ?? typeDeclarationKind;
   if (name) hints.push(name);
   if (exportName) hints.push(exportName);
-  if (semanticDeclarationKind) hints.push(semanticDeclarationKind);
+  if (declarationKind) hints.push(declarationKind);
   if (source) hints.push(source);
   if (file !== undefined && kind && SEMANTIC_IMPORT_EXPORT_KINDS.has(kind)) {
-    const regionId = semanticImportRegionIdFromMetadata(file, kind, name, exportName, semanticDeclarationKind, source);
+    const regionId = semanticImportRegionIdFromMetadata(file, kind, name, exportName, declarationKind, source);
     if (regionId) hints.push(regionId);
   }
   if (kind) hints.push(kind);
@@ -4610,12 +4597,6 @@ function semanticImportExportMetadata(value: Record<string, unknown>, key?: stri
 
 function semanticImportExportKind(value: Record<string, unknown>, key?: string): string | undefined {
   const explicitKind = semanticImportStringValue(value.kind);
-  if (explicitKind && semanticImportDeclarationKind(explicitKind) !== undefined) {
-    const name = semanticImportStringValue(value.name);
-    const exportName = semanticImportStringValue(value.exportName);
-    if (name === 'default' || exportName === 'default') return 'default-export';
-    return 'named-export';
-  }
   if (explicitKind) return explicitKind;
   if (key !== undefined && Object.prototype.hasOwnProperty.call(SEMANTIC_IMPORT_EXPORT_KIND_BY_CONTAINER_KEY, key)) {
     return SEMANTIC_IMPORT_EXPORT_KIND_BY_CONTAINER_KEY[key];
@@ -4660,11 +4641,6 @@ function semanticImportStringValue(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
-}
-
-function semanticImportDeclarationKind(kind: string | undefined): string | undefined {
-  if (kind === 'function' || kind === 'method' || kind === 'arrow-function') return kind;
-  return undefined;
 }
 
 function semanticMergeConflictKeys(semanticImport: FrontierSwarmSemanticImportSummary): string[] {
@@ -7578,10 +7554,10 @@ function queueOverlayStatusFromBundle(bundle: FrontierSwarmMergeBundle): Frontie
 
 function queueOverlayStatusFromResult(result: FrontierSwarmJobResult): FrontierSwarmQueueOverlayStatus {
   if (result.mergeDisposition === 'stale-against-head') return 'stale-against-head';
+  if (result.status === 'failed' || result.exitCode !== undefined && result.exitCode !== 0 || result.ownershipViolations.length > 0) return 'failed-evidence';
   if (result.mergeDisposition === 'auto-mergeable') return 'ready-to-apply';
   if (result.mergeDisposition === 'needs-port') return 'needs-human-port';
   if (result.mergeDisposition === 'discovery-only') return 'discovery-only';
-  if (result.status === 'failed' || result.exitCode !== undefined && result.exitCode !== 0 || result.ownershipViolations.length > 0) return 'failed-evidence';
   if (result.status === 'blocked') return 'blocked';
   return 'unknown';
 }
@@ -7699,16 +7675,6 @@ function semanticOwnershipExportName(input: Pick<FrontierSwarmSemanticOwnershipS
   return fallback;
 }
 
-function semanticOwnershipTypeDeclarationKindFromString(kind: string | undefined): string | undefined {
-  if (kind === 'generic') return 'generic-declaration';
-  if (kind === 'interface' || kind === 'type-alias' || kind === 'enum' || kind === 'generic-declaration') return kind;
-  return undefined;
-}
-
-function semanticOwnershipTypeDeclarationKind(input: Pick<FrontierSwarmSemanticOwnershipStableKeyInput, 'kind' | 'declarationKind'>): string | undefined {
-  return semanticOwnershipTypeDeclarationKindFromString(input.declarationKind) ?? semanticOwnershipTypeDeclarationKindFromString(input.kind);
-}
-
 function stableIdPart(value: string): string {
   const normalized = value.trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_.@/$*-]+/g, '_').replace(/^_+|_+$/g, '');
   if (normalized === '*') return 'star';
@@ -7759,7 +7725,7 @@ function ensureMergeQueueScope(
 }
 
 function mergeQueueRootLeaseKey(rootScopeId: string): string {
-  return rootScopeId === 'root' ? 'merge:root:*' : `merge:root:${rootScopeId}`;
+  return `merge:root:${rootScopeId}`;
 }
 
 function mergeQueueScopesForEntry(
@@ -8936,11 +8902,21 @@ function defaultQueueOutcomeForCategory(
 ): FrontierSwarmQueueOutcome {
   const action = input.assignedAction ?? input.action;
   if (category === 'terminal') {
-    if (queueOutcomeHas(search, 'committed')) return 'committed';
-    if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied')) return 'applied';
+    if (input.decision === 'committed' || queueOutcomeHas(search, 'committed', 'commit')) return 'committed';
+    if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied', 'apply-local', 'apply')) return 'applied';
     if (input.decision === 'superseded' || queueOutcomeHas(search, 'superseded')) return 'superseded';
+    if (input.decision === 'rerun' || queueOutcomeHas(search, 'rerun', 're-run', 'retry', 'needs-rerun', 'stale-rerun')) return 'rerun';
+    if (queueOutcomeHas(search, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict')) return 'conflict-blocked';
+    if (input.decision === 'human-question' || queueOutcomeHas(search, 'human-question', 'human-blocked', 'blocked')) return 'human-question';
     if (input.decision === 'no-change' || queueOutcomeHas(search, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')) return 'no-change';
-    if (action === 'reject' || input.decision === 'rejected' || input.disposition === 'rejected' || queueOutcomeHas(search, 'rejected')) return 'rejected';
+    if (
+      action === 'reject'
+      || input.decision === 'rejected'
+      || input.decision === 'failed'
+      || input.decision === 'failure'
+      || input.disposition === 'rejected'
+      || queueOutcomeHas(search, 'rejected', 'failed', 'failure')
+    ) return 'rejected';
     if (action === 'record-only' || input.decision === 'recorded' || input.mergeReadiness === 'discovery-only' || queueOutcomeHas(search, 'recorded')) return 'recorded';
     return 'no-change';
   }
@@ -11307,7 +11283,22 @@ export interface FrontierSwarmBacklogContinuationTaskPlanMetadata extends Fronti
   parentTaskId?: string;
 }
 
-export type FrontierSwarmBacklogTaskPlanMetadata = JsonObject;
+export type FrontierSwarmBacklogTaskPlanMetadata = JsonObject & {
+  sourceId?: string;
+  sourceKind?: string;
+  remainingDepth?: number;
+  childArtifactPath?: string;
+  parentTaskId?: string;
+  source?: {
+    kind?: string;
+    id?: string;
+    taskId?: string;
+  };
+  continuation?: {
+    remainingDepth?: number;
+    childArtifactPath?: string;
+  };
+};
 
 export interface FrontierSwarmBacklogTaskPlan {
   kind: 'frontier.swarm.backlog-task-plan';
@@ -11394,6 +11385,8 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
   const backlog = isBacklog(input.backlog) ? input.backlog : createSwarmBacklog(input.backlog);
   const extraEntries = (input.tasks ?? []).map((task) => normalizeTask(task)).map(taskToBacklogEntry);
   const runnable = [...backlog.entries, ...extraEntries].filter((entry) => entry.status === 'ready' || entry.status === 'open');
+  const maxDepth = Number.isFinite(input.maxDepth) ? Math.max(0, Math.floor(input.maxDepth ?? 0)) : 1;
+  const remainingDepth = Math.max(0, maxDepth - 1);
   const tasks = runnable.map((entry) => normalizeTask({
     id: entry.taskId ?? entry.id,
     title: entry.title,
@@ -11410,7 +11403,7 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
     tags: entry.tags,
     metadata: { backlogEntryId: entry.id, ...(entry.metadata ?? {}) }
   }));
-  const decompositionTasks = input.recursive ? backlog.entries
+  const decompositionTasks = input.recursive && maxDepth > 0 ? backlog.entries
     .filter((entry) => entry.entryKind === 'feature' || entry.childEntryIds.length > 0)
     .map((entry) => normalizeTask({
       id: `${entry.id}:decompose`,
@@ -11421,9 +11414,21 @@ export function createSwarmBacklogTaskPlan(input: FrontierSwarmBacklogTaskPlanIn
       layer: entry.layer,
       compute: input.decomposeCompute,
       kind: input.decomposeWorkKind ?? 'backlog-decompose',
+      ...(entry.taskId ? { parentTaskId: entry.taskId } : {}),
       targetRefs: input.childArtifactPath ? [input.childArtifactPath] : [],
       allowedWrites: input.childArtifactPath ? [input.childArtifactPath] : [],
-      metadata: { source: { kind: 'entry', id: entry.id, taskId: entry.taskId }, continuation: { remainingDepth: Math.max(0, input.maxDepth ?? 1), childArtifactPath: input.childArtifactPath } }
+      metadata: {
+        sourceId: entry.id,
+        sourceKind: 'entry',
+        remainingDepth,
+        ...(input.childArtifactPath ? { childArtifactPath: input.childArtifactPath } : {}),
+        ...(entry.taskId ? { parentTaskId: entry.taskId } : {}),
+        source: { kind: 'entry', id: entry.id, ...(entry.taskId ? { taskId: entry.taskId } : {}) },
+        continuation: {
+          remainingDepth,
+          ...(input.childArtifactPath ? { childArtifactPath: input.childArtifactPath } : {})
+        }
+      }
     }))
     : [];
   const allTasks = [...tasks, ...decompositionTasks];

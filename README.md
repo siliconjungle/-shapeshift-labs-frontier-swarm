@@ -6,6 +6,17 @@ Hierarchical swarm plans, lanes, compute profiles, ownership policy, events, and
 
 Verification gate metadata stays plain JSON. `mergeSwarmMetadata(...)` preserves `metadata.verificationGates` across task normalization, queue jobs, merge bundles, merge indexes, and coordinator drain assignments, and package-scoped gate descriptors can carry `metadata.packageId`, `metadata.packagePath`, and `metadata.packageName` without pulling in Codex-specific runtime code.
 
+## Semantic Ownership Keys
+
+Semantic ownership regions use stable, repo-agnostic key prefixes. The package exports the canonical prefixes as `FRONTIER_SWARM_SEMANTIC_OWNERSHIP_KEYS` and also exposes `createSwarmSemanticOwnershipKey(...)` for composing region selectors.
+
+- `export` for exported symbols,
+- `type` for type declarations,
+- `cli-command` for CLI command surfaces,
+- `docs-section` for documentation headings,
+- `fixture-family` for fixture groups,
+- `test-case` for test case ownership.
+
 Backlog-oriented adapters can use `createSwarmBacklog(...)`, `mergeSwarmBacklogs(...)`, `querySwarmBacklog(...)`, and `createSwarmBacklogTaskPlan(...)` to normalize backlog entries, fold multiple backlog snapshots together, and derive runnable plus recursive decomposition task plans for continuation workflows.
 
 ## Priority Scheduling
@@ -20,18 +31,20 @@ Refill recommendations fill idle capacity with coordinator drain and rerun work 
 
 ## Hierarchical Merge Queues
 
-`createSwarmHierarchicalMergeQueue()` turns a merge index plus optional admission budget into root, parent, child, lane, semantic-region, and path queues. Clean admitted work can be applied by the local queue, clean excess work stays queued locally, stale work is marked for rerun, failed evidence is rejected, discovery work is tracked as record-only but normalizes to no-change, true blockers stay blocked, and conflicted, public-contract, or cross-scope work is promoted upward. High-risk work stays local unless admission explicitly allows it.
+`createSwarmHierarchicalMergeQueue()` turns a merge index plus optional admission budget into root, parent, child, lane, semantic-region, and path queues. Clean admitted work can be applied by the local queue, clean excess work stays queued locally, stale work is marked for rerun, failed evidence is rejected, discovery work is tracked as record-only but normalizes to no-change, true blockers stay blocked, and cross-scope or public-contract work is promoted upward. Same-scope conflicts stay local unless they need a broader decision. High-risk work stays local unless admission explicitly allows it.
 
 Clean auto-mergeable work that spans multiple known semantic regions is returned as a `rerun` assignment with `retrySlices`, `semanticSliceScopeIds`, and `semanticSliceLeaseKeys`. Each retry slice carries its own required lease scope/key so runners can produce independently reviewable same-file slice bundles. If admission has already accepted a still-unsliced cross-scope patch, the `apply-local` assignment remains atomic and carries all `semanticSliceScopeIds` and `semanticSliceLeaseKeys` so runners can acquire every required semantic lease before applying it once. Same-region conflicts still serialize under one local lease, while unknown regions, public-contract regions, and parent-scope regions promote to the parent queue for a broader decision.
 
 Queue and coordinator-drain assignments also expose `requiredLeaseScopeIds` and `requiredLeaseKeys`. For independent same-file semantic regions these required leases stay at the semantic-region level, allowing multiple coordinators to acquire different locks for the same changed file. For promoted work, including shared parent-scope edits, the required lease is the promotion target such as the lane or root queue, so conflicting changes serialize under a parent decision without relying on package-specific names. Root lease keys are always derived from the caller-supplied `rootScopeId`, so the default root scope uses `merge:root:root` and custom roots get matching queue-local keys.
 
-Root lease keys are derived from the caller-supplied `rootScopeId`, so the queue model does not special-case a literal `root` identifier.
+Root lease keys are derived from the caller-supplied `rootScopeId`, so the queue model does not special-case any literal root identifier.
 
 The queue model is generic. Runners can map scopes to any repository, package, feature, service, file, symbol, or semantic ownership region without baking project-specific package names into the core package.
 
 `createSwarmSemanticOwnershipStableKey` and `createSwarmSemanticOwnershipRegionId` keep export, type, CLI command, docs section, fixture family, and test case ownership keys stable across discovery order and queue replay.
 The canonical stable-key prefixes are `exported-declaration`, `type-declaration`, `cli-command`, `docs-section`, `fixture-family`, and `test-case`.
+The generic `export` alias resolves to `exported-declaration`, so named, default, and explicit export ownership share one stable key family.
+The exported `FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS` table exposes those canonical labels under stable names for downstream adapters.
 
 Caller-provided `scopes` are serialized as opaque queue scopes. Their `id`, `kind`, `leaseKey`, `changedPaths`, `changedRegions`, and `metadata` stay runner-owned, with `kind` defaulting to `custom`; callers can model root, parent, child, lane, semantic-region, and path scopes without changing the core queue logic.
 

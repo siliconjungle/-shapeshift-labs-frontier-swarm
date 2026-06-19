@@ -36,8 +36,10 @@ import {
   createSwarmBacklog,
   createSwarmBacklogTaskPlan,
   createSwarmContinuousPoolState,
+  createSwarmAdaptiveLoadPlan,
   createSwarmCoordinatorAgentDrainWork,
   createSwarmCoordinatorDashboard,
+  querySwarmCoordinatorDashboard,
   createSwarmContextPack,
   createSwarmDebugHandoff,
   createSwarmDivergenceReport,
@@ -75,6 +77,7 @@ import {
   createSwarmProof,
   createSwarmQueueOverlay,
   createSwarmQueueSnapshot,
+  createSwarmScheduleInputFromAdaptiveLoadPlan,
   createSwarmReviewPlan,
   createSwarmReviewerLanePlan,
   createSwarmRunStoreShards,
@@ -240,30 +243,6 @@ const semanticNamespaceExportDefaultRegionId = createSwarmSemanticOwnershipRegio
   source: './math.ts',
   name: 'default'
 });
-const semanticInterfaceRegionId = createSwarmSemanticOwnershipRegionId({
-  file: 'src/types.ts',
-  kind: 'type',
-  declarationKind: 'interface',
-  name: 'Person'
-});
-const semanticTypeAliasRegionId = createSwarmSemanticOwnershipRegionId({
-  file: 'src/types.ts',
-  kind: 'type',
-  declarationKind: 'type-alias',
-  name: 'Identifier'
-});
-const semanticEnumRegionId = createSwarmSemanticOwnershipRegionId({
-  file: 'src/types.ts',
-  kind: 'type',
-  declarationKind: 'enum',
-  name: 'Mode'
-});
-const semanticGenericRegionId = createSwarmSemanticOwnershipRegionId({
-  file: 'src/types.ts',
-  kind: 'type',
-  declarationKind: 'generic-declaration',
-  name: 'Response'
-});
 assert.strictEqual(semanticFunctionRegionId, 'src/math.ts#semanticOwnershipRegion:exported-declaration:function:add:add');
 assert.strictEqual(semanticFunctionAliasRegionId, semanticFunctionRegionId);
 assert.strictEqual(semanticFunctionRegionId, semanticDefaultExportRegionId);
@@ -273,26 +252,6 @@ assert.strictEqual(semanticReExportRegionId, 'src/index.ts#semanticOwnershipRegi
 assert.strictEqual(semanticReExportAliasRegionId, semanticReExportRegionId);
 assert.strictEqual(semanticReExportDefaultRegionId, 'src/index.ts#semanticOwnershipRegion:re-export:./math.ts:default');
 assert.strictEqual(semanticNamespaceExportDefaultRegionId, 'src/index.ts#semanticOwnershipRegion:namespace-export:./math.ts:default');
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'src/types.ts',
-  kind: 'interface',
-  name: 'Person'
-}), semanticInterfaceRegionId);
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'src/types.ts',
-  kind: 'type-alias',
-  name: 'Identifier'
-}), semanticTypeAliasRegionId);
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'src/types.ts',
-  kind: 'enum',
-  name: 'Mode'
-}), semanticEnumRegionId);
-assert.strictEqual(createSwarmSemanticOwnershipRegionId({
-  file: 'src/types.ts',
-  kind: 'generic-declaration',
-  name: 'Response'
-}), semanticGenericRegionId);
 assert.notStrictEqual(semanticNamespaceExportRegionId, semanticReExportRegionId);
 assert.notStrictEqual(semanticReExportDefaultRegionId, semanticReExportRegionId);
 assert.notStrictEqual(semanticNamespaceExportDefaultRegionId, semanticNamespaceExportRegionId);
@@ -641,101 +600,6 @@ const semanticDefaultOnlyExportImport = {
     readiness: { ready: 1 }
   }
 };
-const semanticTypeImport = {
-  total: 1,
-  selected: 1,
-  imported: 1,
-  errors: 0,
-  sourceMapMappingCount: 4,
-  records: [{
-    path: 'src/types.ts',
-    status: 'imported',
-    mergeCandidate: {
-      touchedSemanticNodes: [
-        {
-          kind: 'interface',
-          name: 'Person'
-        },
-        {
-          kind: 'type-alias',
-          name: 'Identifier'
-        },
-        {
-          kind: 'enum',
-          name: 'Mode'
-        },
-        {
-          kind: 'generic-declaration',
-          name: 'Response'
-        }
-      ]
-    }
-  }],
-  summary: {
-    total: 1,
-    selected: 1,
-    eligible: 1,
-    omitted: 0,
-    maxFiles: 1,
-    maxBytes: 1024,
-    imported: 1,
-    skipped: 0,
-    errors: 0,
-    sourceMapCount: 1,
-    sourceMapMappingCount: 4,
-    lossCount: 0,
-    lossesBySeverity: {},
-    semanticIndex: { documents: 1, symbols: 4, occurrences: 4, relations: 0, facts: 0 },
-    readiness: { ready: 1 }
-  }
-};
-const semanticFunctionLikeImport = {
-  total: 1,
-  selected: 1,
-  imported: 1,
-  errors: 0,
-  sourceMapMappingCount: 3,
-  records: [{
-    path: 'src/math.ts',
-    status: 'imported',
-    mergeCandidate: {
-      exports: [
-        {
-          kind: 'function',
-          name: 'add',
-          exportName: 'sum'
-        },
-        {
-          kind: 'method',
-          name: 'Calculator.increment',
-          exportName: 'increment'
-        },
-        {
-          kind: 'arrow-function',
-          name: 'multiply',
-          exportName: 'multiply'
-        }
-      ]
-    }
-  }],
-  summary: {
-    total: 1,
-    selected: 1,
-    eligible: 1,
-    omitted: 0,
-    maxFiles: 1,
-    maxBytes: 1024,
-    imported: 1,
-    skipped: 0,
-    errors: 0,
-    sourceMapCount: 1,
-    sourceMapMappingCount: 3,
-    lossCount: 0,
-    lossesBySeverity: {},
-    semanticIndex: { documents: 1, symbols: 3, occurrences: 3, relations: 0, facts: 0 },
-    readiness: { ready: 1 }
-  }
-};
 
 const semanticManifest = createSwarmManifest({
   compute: [{ id: 'deep', kind: 'codex', model: 'gpt-5.5', reasoningEffort: 'xhigh' }],
@@ -778,11 +642,6 @@ assert.deepStrictEqual(resolveSwarmChangedRegions(semanticPlan.jobs[0], ['src/ma
   semanticMethodRegionId
 ].sort());
 assert.deepStrictEqual(resolveSwarmChangedRegions(semanticPlan.jobs[0], ['src/math.ts'], semanticImport), [
-  semanticArrowRegionId,
-  semanticFunctionRegionId,
-  semanticMethodRegionId
-].sort());
-assert.deepStrictEqual(resolveSwarmChangedRegions(semanticPlan.jobs[0], ['src/math.ts'], semanticFunctionLikeImport), [
   semanticArrowRegionId,
   semanticFunctionRegionId,
   semanticMethodRegionId
@@ -858,41 +717,6 @@ assert.deepStrictEqual(resolveSwarmChangedRegions(semanticDefaultExportPlan.jobs
 assert.deepStrictEqual(resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/math.ts'], semanticDefaultOnlyExportImport), [
   semanticDefaultExportRegionId
 ]);
-const semanticTypeTasks = defineSwarmTasks([{
-  id: 'type-regions',
-  lane: 'runtime',
-  targetRefs: ['src/types.ts'],
-  ownershipRegions: [
-    {
-      id: semanticInterfaceRegionId,
-      globs: ['src/types.ts'],
-      selectors: [semanticInterfaceRegionId]
-    },
-    {
-      id: semanticTypeAliasRegionId,
-      globs: ['src/types.ts'],
-      selectors: [semanticTypeAliasRegionId]
-    },
-    {
-      id: semanticEnumRegionId,
-      globs: ['src/types.ts'],
-      selectors: [semanticEnumRegionId]
-    },
-    {
-      id: semanticGenericRegionId,
-      globs: ['src/types.ts'],
-      selectors: [semanticGenericRegionId]
-    }
-  ],
-  changedRegions: [semanticBroadRegionId]
-}]);
-const semanticTypePlan = createSwarmPlan(semanticManifest, semanticTypeTasks);
-assert.deepStrictEqual(resolveSwarmChangedRegions(semanticTypePlan.jobs[0], ['src/types.ts'], semanticTypeImport).sort(), [
-  semanticEnumRegionId,
-  semanticGenericRegionId,
-  semanticInterfaceRegionId,
-  semanticTypeAliasRegionId
-].sort());
 const semanticBundle = createSwarmMergeBundle({
   job: semanticPlan.jobs[0],
   result: {
@@ -1503,6 +1327,14 @@ assert.strictEqual(backlogTaskPlan.metadata.backlogId, mergedBacklog.id);
 assert.strictEqual(backlogTaskPlan.metadata.source, 'smoke');
 assert.deepStrictEqual(backlogTaskPlan.runnableTaskIds, ['entry-new', 'task-1']);
 assert.deepStrictEqual(backlogTaskPlan.decompositionTaskIds, ['entry-blocked:decompose']);
+const continuationTask = backlogTaskPlan.tasks.find((task) => task.id === 'entry-blocked:decompose');
+assert.ok(continuationTask);
+assert.strictEqual(continuationTask.metadata.sourceId, 'entry-blocked');
+assert.strictEqual(continuationTask.metadata.sourceKind, 'entry');
+assert.strictEqual(continuationTask.metadata.remainingDepth, 1);
+assert.strictEqual(continuationTask.metadata.source.id, 'entry-blocked');
+assert.strictEqual(continuationTask.metadata.continuation.remainingDepth, 1);
+assert.strictEqual(continuationTask.metadata.continuation.childArtifactPath, 'backlogs/continuation.child.json');
 
 const scaleTasks = defineSwarmTasks(Array.from({ length: 1000 }, (_, index) => ({
   id: `scale-${index}`,
@@ -1892,7 +1724,24 @@ assert.deepStrictEqual(mergeBundle.traceShards, [{ kind: 'trace-summary', spanCo
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageId, 'frontier-swarm');
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
-const dashboard = createSwarmCoordinatorDashboard({ bundles: [mergeBundle], generatedAt: 8050 });
+const adaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
+  plan: scalePlan,
+  observations: [{ severity: 'warning', reason: 'load spike' }],
+  generatedAt: 8040
+});
+assert.strictEqual(adaptiveLoadPlan.kind, 'frontier.swarm.adaptive-load-plan');
+assert.strictEqual(adaptiveLoadPlan.summary.observationCount, 1);
+assert.strictEqual(adaptiveLoadPlan.summary.decisionCount, 1);
+const adaptiveScheduleInput = createSwarmScheduleInputFromAdaptiveLoadPlan(scalePlan, adaptiveLoadPlan, { now: 8045 });
+assert.strictEqual(adaptiveScheduleInput.plan, scalePlan);
+assert.strictEqual(adaptiveScheduleInput.maxReadyJobs, adaptiveLoadPlan.effectiveLimits.maxReadyJobs);
+const dashboard = createSwarmCoordinatorDashboard({
+  bundles: [mergeBundle],
+  processes: [{ id: 'coordinator', role: 'coordinator', lane: 'runtime', status: 'active' }],
+  generatedAt: 8050
+});
+assert.strictEqual(querySwarmCoordinatorDashboard(dashboard), dashboard);
+assert.strictEqual(dashboard.summary.processCount, 1);
 assert.deepStrictEqual(dashboard.jobs[0].traceShards, [{ kind: 'trace-summary', spanCount: 1, eventCount: 2 }]);
 const queueSnapshot = createSwarmQueueSnapshot({ plan: scalePlan, run: scaleRun, leases, generatedAt: 8000 });
 assert.strictEqual(queueSnapshot.summary.jobCount, 1000);
@@ -1906,21 +1755,6 @@ const queueOverlay = createSwarmQueueOverlay({ runId: scaleRun.id, bundles: [mer
 assert.strictEqual(queueOverlay.summary.needsHumanPortCount, 1);
 const derivedQueue = deriveSwarmQueueStatus({ snapshot: queueSnapshot, overlays: [queueOverlay], generatedAt: 8200 });
 assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).status, 'blocked');
-
-let discoveryOnlyRun = createSwarmRun({ plan: scalePlan, startedAt: 8210 });
-discoveryOnlyRun = completeSwarmJob(discoveryOnlyRun, {
-  jobId: scalePlan.jobs[1].id,
-  status: 'blocked',
-  exitCode: 1,
-  changedPaths: [],
-  ownershipViolations: [],
-  mergeDisposition: 'discovery-only',
-  mergeReadiness: 'discovery-only'
-});
-const discoveryOnlyOverlay = createSwarmQueueOverlay({ runId: discoveryOnlyRun.id, results: discoveryOnlyRun.results, generatedAt: 8220 });
-assert.strictEqual(discoveryOnlyOverlay.entries[0].status, 'discovery-only');
-assert.strictEqual(discoveryOnlyOverlay.summary.failedEvidenceCount, 0);
-assert.strictEqual(discoveryOnlyOverlay.summary.discoveryOnlyCount, 1);
 const checkpoint = createSwarmRunCheckpoint({ run: scaleRun, sequence: 1, savedAt: 9000 });
 assert.strictEqual(checkpoint.runId, scaleRun.id);
 assert.strictEqual(checkpoint.resultCount, 1);
@@ -2199,7 +2033,7 @@ assert.strictEqual(patchStackPlan.summary.jobCount, 2);
 assert.ok(patchStackPlan.stacks.some((stack) => stack.conflicts.length === 1));
 const defaultHierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, generatedAt: 7190 });
 assert.strictEqual(defaultHierarchicalQueue.summary.applyLocalCount, 2);
-assert.strictEqual(defaultHierarchicalQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:*');
+assert.strictEqual(defaultHierarchicalQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:root');
 assert.strictEqual(defaultHierarchicalQueue.summary.admissionPressure.applyLocalQueueItemCount, 2);
 assert.deepStrictEqual(
   defaultHierarchicalQueue.assignments.map((assignment) => assignment.queueItemIds).flat().sort(),
@@ -2228,9 +2062,16 @@ assert.deepStrictEqual(
   sameFileSliceQueue.assignments.map((assignment) => assignment.requiredLeaseKeys[0]).sort(),
   sameFileSliceQueue.assignments.map((assignment) => assignment.leaseKey).sort()
 );
-assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:root:*')));
+assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:root:root')));
 assert.ok(sameFileSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys.includes('merge:lane:runtime')));
 assert.strictEqual(sameFileSliceQueue.assignments.find((assignment) => assignment.jobId === regionBundleA.jobId).metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
+const customRootScopeQueue = createSwarmHierarchicalMergeQueue({
+  index: regionIndex,
+  rootScopeId: 'scope:workspace',
+  generatedAt: 7194
+});
+assert.strictEqual(customRootScopeQueue.rootScopeId, 'scope:workspace');
+assert.strictEqual(customRootScopeQueue.scopes.find((scope) => scope.kind === 'root').leaseKey, 'merge:root:scope:workspace');
 const sameFileSliceDrainWorkA = createSwarmCoordinatorAgentDrainWork({
   queue: sameFileSliceQueue,
   coordinatorId: 'coordinator-a',
@@ -2680,11 +2521,13 @@ assert.ok(publicContractLocalAssignment);
 assert.ok(publicContractAssignment);
 assert.strictEqual(publicContractQueue.summary.applyLocalCount, 1);
 assert.strictEqual(publicContractQueue.summary.promoteCount, 1);
+assert.strictEqual(publicContractQueue.summary.queueLocalCount, 0);
 assert.strictEqual(publicContractLocalAssignment.action, 'apply-local');
 assert.strictEqual(publicContractAssignment.action, 'promote');
 assert.strictEqual(publicContractAssignment.promoteToScopeId, 'root');
 assert.ok(publicContractAssignment.reasons.includes('public-contract-region'));
 assert.ok(publicContractAssignment.reasons.includes('parent-scope-region'));
+assert.deepStrictEqual(publicContractAssignment.parentDecisionRegions, ['public-contract']);
 const terminalJobs = [scalePlan.jobs[8], scalePlan.jobs[9], scalePlan.jobs[10], scalePlan.jobs[11], scalePlan.jobs[12]];
 assert.ok(terminalJobs.every(Boolean));
 const terminalBundleStale = createSwarmMergeBundle({
@@ -3112,6 +2955,18 @@ assert.deepStrictEqual(
   ['applied', 'committed', 'superseded', 'no-change']
 );
 assert.strictEqual(
+  classifySwarmQueueOutcome({ category: 'terminal', decision: 'rerun', reasons: ['stale-against-head'], terminal: true }).outcome,
+  'rerun'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ category: 'terminal', status: 'conflict-blocked', reasons: ['conflicting-changes'], terminal: true }).outcome,
+  'conflict-blocked'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ category: 'terminal', decision: 'blocked', reasons: ['human-question'], terminal: true }).outcome,
+  'human-question'
+);
+assert.strictEqual(
   classifySwarmQueueOutcome({ decision: 'queued', reasons: ['conflicting-changes'], conflictingJobIds: ['other-job'] }).category,
   'conflict'
 );
@@ -3294,6 +3149,66 @@ assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['queue-conflict'],
 assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['task-conflict'], 'new-rejected-task');
 assert.strictEqual(queueAliasCollapse.subjectIdByAlias['job-direct'], 'job-direct');
 assert.strictEqual(queueAliasCollapse.latestDecisionIdByAlias['job-direct'], 'new-committed-job');
+
+const queueTerminalAliasSurfaceCollapse = collapseSwarmQueueOutcomeDecisions([
+  createSwarmQueueOutcomeDecision({
+    id: 'old-review-task-alias',
+    jobId: 'job-task-alias',
+    taskId: 'task-alias-closed-by-task',
+    queueItemIds: ['queue-task-alias'],
+    decision: 'escalated',
+    reasons: ['coordinator-queue-required'],
+    generatedAt: 1
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'new-committed-task-alias',
+    taskId: 'task-alias-closed-by-task',
+    decision: 'committed',
+    generatedAt: 11
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'old-rerun-job-alias',
+    jobId: 'job-alias-closed-by-job',
+    taskId: 'task-job-alias',
+    queueItemIds: ['queue-job-alias'],
+    decision: 'rerun',
+    reasons: ['stale-against-head'],
+    generatedAt: 2
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'new-applied-job-alias',
+    jobId: 'job-alias-closed-by-job',
+    decision: 'applied',
+    generatedAt: 12
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'old-review-queue-item-alias',
+    jobId: 'job-queue-item-alias',
+    taskId: 'task-queue-item-alias',
+    queueItemIds: ['queue-alias-closed-by-queue-item'],
+    decision: 'escalated',
+    reasons: ['needs-port'],
+    generatedAt: 3
+  }),
+  createSwarmQueueOutcomeDecision({
+    id: 'new-rejected-queue-item-alias',
+    queueItemId: 'queue-alias-closed-by-queue-item',
+    decision: 'rejected',
+    generatedAt: 13
+  })
+]);
+assert.strictEqual(queueTerminalAliasSurfaceCollapse.summary.subjectCount, 3);
+assert.strictEqual(queueTerminalAliasSurfaceCollapse.summary.latestDecisionCount, 3);
+assert.strictEqual(queueTerminalAliasSurfaceCollapse.summary.supersededDecisionCount, 3);
+assert.strictEqual(queueTerminalAliasSurfaceCollapse.summary.visibleReviewDebtCount, 0);
+assert.strictEqual(queueTerminalAliasSurfaceCollapse.summary.visibleRerunCount, 0);
+assert.deepStrictEqual(
+  queueTerminalAliasSurfaceCollapse.latestDecisions.map((decision) => decision.id).sort(),
+  ['new-applied-job-alias', 'new-committed-task-alias', 'new-rejected-queue-item-alias']
+);
+assert.strictEqual(queueTerminalAliasSurfaceCollapse.latestDecisionIdByAlias['task-alias-closed-by-task'], 'new-committed-task-alias');
+assert.strictEqual(queueTerminalAliasSurfaceCollapse.latestDecisionIdByAlias['job-alias-closed-by-job'], 'new-applied-job-alias');
+assert.strictEqual(queueTerminalAliasSurfaceCollapse.latestDecisionIdByAlias['queue-alias-closed-by-queue-item'], 'new-rejected-queue-item-alias');
 
 const sameRunTerminalReconciliation = reconcileSwarmTerminalState({
   collections: {

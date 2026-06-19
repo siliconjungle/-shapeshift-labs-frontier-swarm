@@ -16,8 +16,10 @@ import {
   querySwarmEvidenceIndex,
   createSwarmBlackboard,
   querySwarmBlackboard,
+  createSwarmAdaptiveLoadPlan,
   createSwarmCoordinatorAgentDrainWork,
   createSwarmCoordinatorDashboard,
+  querySwarmCoordinatorDashboard,
   createSwarmReferenceOraclePlan,
   createSwarmReferenceOracleResponse,
   createSwarmArtifactRoutingPlan,
@@ -56,6 +58,7 @@ import {
   defineSwarmTasks,
   resolveSwarmChangedRegions,
   resolveSwarmCompute,
+  createSwarmScheduleInputFromAdaptiveLoadPlan,
   type FrontierSwarmArtifactIndex,
   type FrontierSwarmArtifactRoutingPlan,
   type FrontierSwarmAutoReviewReport,
@@ -78,6 +81,7 @@ import {
   type FrontierSwarmFixtureCatalog,
   type FrontierSwarmCoordinatorAgentDrainWork,
   type FrontierSwarmCoordinatorAgentRootQueueSelectionPressure,
+  type FrontierSwarmCoordinatorProcessInput,
   type FrontierSwarmInstrumentationBudgetDecision,
   type FrontierSwarmInstrumentationBudget,
   type FrontierSwarmManifest,
@@ -154,7 +158,21 @@ const checkpoint = createSwarmRunCheckpoint(run);
 const reviewPlan: FrontierSwarmReviewPlan = createSwarmReviewPlan({ plan, run, reviewers: ['reviewer'] });
 const mergePlan: FrontierSwarmMergePlan = createSwarmMergePlan({ plan, run, reviewPlan });
 const mergeBundle: FrontierSwarmMergeBundle = createSwarmMergeBundle({ job: plan.jobs[0], result: run.results[0] });
-const dashboard = createSwarmCoordinatorDashboard({ bundles: [mergeBundle] });
+const adaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
+  plan,
+  observations: [{ severity: 'warning', reason: 'load spike' }]
+});
+const adaptiveScheduleInput = createSwarmScheduleInputFromAdaptiveLoadPlan(plan, adaptiveLoadPlan);
+const dashboard = createSwarmCoordinatorDashboard({
+  bundles: [mergeBundle],
+  processes: [{
+    id: 'coordinator',
+    role: 'coordinator',
+    lane: 'runtime',
+    status: 'active'
+  }]
+});
+const queriedDashboard = querySwarmCoordinatorDashboard(dashboard);
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
@@ -291,6 +309,30 @@ const semanticNamespaceExportDefaultRegionId = createSwarmSemanticOwnershipRegio
   kind: 'namespace-export',
   source: './math.ts',
   name: 'default'
+});
+const semanticInterfaceRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'interface',
+  name: 'Person'
+});
+const semanticTypeAliasRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'type-alias',
+  name: 'Identifier'
+});
+const semanticEnumRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'enum',
+  name: 'Mode'
+});
+const semanticGenericRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'generic-declaration',
+  name: 'Response'
 });
 const sameFileIndependentExportFormatRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/math.ts',
@@ -635,6 +677,101 @@ const semanticDefaultOnlyExportImport: FrontierSwarmSemanticImportSummary = {
     readiness: { ready: 1 }
   }
 };
+const semanticTypeImport: FrontierSwarmSemanticImportSummary = {
+  total: 1,
+  selected: 1,
+  imported: 1,
+  errors: 0,
+  sourceMapMappingCount: 4,
+  records: [{
+    path: 'src/types.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSemanticNodes: [
+        {
+          kind: 'interface',
+          name: 'Person'
+        },
+        {
+          kind: 'type-alias',
+          name: 'Identifier'
+        },
+        {
+          kind: 'enum',
+          name: 'Mode'
+        },
+        {
+          kind: 'generic-declaration',
+          name: 'Response'
+        }
+      ]
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 4,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 4, occurrences: 4, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const semanticFunctionLikeImport: FrontierSwarmSemanticImportSummary = {
+  total: 1,
+  selected: 1,
+  imported: 1,
+  errors: 0,
+  sourceMapMappingCount: 3,
+  records: [{
+    path: 'src/math.ts',
+    status: 'imported',
+    mergeCandidate: {
+      exports: [
+        {
+          kind: 'function',
+          name: 'add',
+          exportName: 'sum'
+        },
+        {
+          kind: 'method',
+          name: 'Calculator.increment',
+          exportName: 'increment'
+        },
+        {
+          kind: 'arrow-function',
+          name: 'multiply',
+          exportName: 'multiply'
+        }
+      ]
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 3,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 3, occurrences: 3, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
 const semanticTask: FrontierSwarmTask = defineSwarmTasks([{
   id: 'math-exports',
   lane: 'runtime',
@@ -678,6 +815,54 @@ const semanticBundle = createSwarmMergeBundle({
   },
   semanticImport
 });
+const semanticFunctionLikeTask: FrontierSwarmTask = defineSwarmTasks([{
+  id: 'math-function-method-arrow-regions',
+  lane: 'runtime',
+  targetRefs: ['src/math.ts'],
+  ownershipRegions: [
+    {
+      id: semanticBroadRegionId,
+      globs: ['src/math.ts']
+    },
+    {
+      id: semanticFunctionRegionId,
+      globs: ['src/math.ts'],
+      selectors: [semanticFunctionRegionId]
+    },
+    {
+      id: semanticMethodRegionId,
+      globs: ['src/math.ts'],
+      selectors: [semanticMethodRegionId]
+    },
+    {
+      id: semanticArrowRegionId,
+      globs: ['src/math.ts'],
+      selectors: [semanticArrowRegionId]
+    }
+  ],
+  changedRegions: [semanticBroadRegionId]
+}])[0];
+const semanticFunctionLikePlan = createSwarmPlan(semanticManifest, [semanticFunctionLikeTask]);
+const semanticFunctionLikeChangedRegionIds = resolveSwarmChangedRegions(
+  semanticFunctionLikePlan.jobs[0],
+  ['src/math.ts'],
+  semanticFunctionLikeImport
+);
+semanticFunctionLikeChangedRegionIds satisfies string[];
+const semanticFunctionLikeBundle = createSwarmMergeBundle({
+  job: semanticFunctionLikePlan.jobs[0],
+  result: {
+    jobId: semanticFunctionLikePlan.jobs[0].id,
+    status: 'verified',
+    changedPaths: ['src/math.ts'],
+    changedRegions: [semanticBroadRegionId],
+    queueItemIds: ['math-function-method-arrow-regions'],
+    verification: [{ status: 0 }]
+  },
+  semanticImport: semanticFunctionLikeImport,
+  riskLevel: 'low'
+});
+semanticFunctionLikeBundle.changedRegions satisfies string[];
 const semanticExportTask: FrontierSwarmTask = defineSwarmTasks([{
   id: 'export-regions',
   lane: 'runtime',
@@ -759,6 +944,11 @@ mergeBundle.queueItemIds satisfies string[];
 run.results[0].traceShards satisfies JsonValue[] | undefined;
 mergeBundle.traceShards satisfies JsonValue[] | undefined;
 dashboard.jobs[0].traceShards satisfies JsonValue[] | undefined;
+adaptiveLoadPlan.kind satisfies 'frontier.swarm.adaptive-load-plan';
+adaptiveLoadPlan.summary.observationCount satisfies number;
+adaptiveScheduleInput.plan satisfies FrontierSwarmPlan;
+adaptiveScheduleInput.maxReadyJobs satisfies number | undefined;
+queriedDashboard.processes satisfies FrontierSwarmCoordinatorProcessInput[];
 semanticBundle.traceShards satisfies JsonValue[] | undefined;
 queueOverlay.entries satisfies readonly { queueItemId: string }[];
 mergeIndex.entries satisfies readonly { jobId: string }[];
@@ -827,6 +1017,13 @@ queriedBacklogForTypes satisfies FrontierSwarmBacklog;
 ({} as FrontierSwarmBacklogInput).entries satisfies readonly FrontierSwarmBacklogEntryInput[] | undefined;
 ({} as FrontierSwarmBacklogTaskPlanInput).backlog satisfies FrontierSwarmBacklog | FrontierSwarmBacklogInput;
 ({} as FrontierSwarmBacklogTaskPlanMetadata) satisfies JsonValue;
+({} as FrontierSwarmBacklogTaskPlanMetadata).sourceId satisfies string | undefined;
+({} as FrontierSwarmBacklogTaskPlanMetadata).sourceKind satisfies string | undefined;
+({} as FrontierSwarmBacklogTaskPlanMetadata).remainingDepth satisfies number | undefined;
+({} as FrontierSwarmBacklogTaskPlanMetadata).childArtifactPath satisfies string | undefined;
+({} as FrontierSwarmBacklogTaskPlanMetadata).parentTaskId satisfies string | undefined;
+({} as FrontierSwarmBacklogTaskPlanMetadata).source satisfies { kind?: string; id?: string; taskId?: string } | undefined;
+({} as FrontierSwarmBacklogTaskPlanMetadata).continuation satisfies { remainingDepth?: number; childArtifactPath?: string } | undefined;
 ({} as FrontierSwarmBacklogDecompositionMetadata).remainingDepth satisfies number;
 ({} as FrontierSwarmBacklogContinuationTaskPlanMetadata).parentTaskId satisfies string | undefined;
 referencePlan.targets satisfies readonly { id: string }[];
@@ -845,6 +1042,10 @@ semanticNamespaceExportRegionId satisfies string;
 semanticNamespaceExportAliasRegionId satisfies string;
 semanticReExportDefaultRegionId satisfies string;
 semanticNamespaceExportDefaultRegionId satisfies string;
+semanticInterfaceRegionId satisfies string;
+semanticTypeAliasRegionId satisfies string;
+semanticEnumRegionId satisfies string;
+semanticGenericRegionId satisfies string;
 createSwarmSemanticOwnershipStableKey({
   kind: 'namespace-export',
   source: './math.ts',
@@ -853,6 +1054,7 @@ createSwarmSemanticOwnershipStableKey({
 semanticReExportRegionId satisfies string;
 semanticReExportAliasRegionId satisfies string;
 semanticDefaultExportImport satisfies FrontierSwarmSemanticImportSummary;
+semanticTypeImport satisfies FrontierSwarmSemanticImportSummary;
 sameFileIndependentExportFormatRegionId satisfies string;
 sameFileIndependentExportParseRegionId satisfies string;
 sameSymbolConflict.kind satisfies FrontierSwarmMergeConflict['kind'];
