@@ -2720,12 +2720,101 @@ export interface FrontierSwarmMergeQueueRetrySlice {
   reasons: string[];
 }
 
+export type FrontierSwarmHierarchicalQueueLeaseScopeClass =
+  | 'root'
+  | 'lane'
+  | 'semantic'
+  | 'path'
+  | 'custom'
+  | string;
+
+export type FrontierSwarmHierarchicalQueueLeasePromotionState =
+  | 'local'
+  | 'terminal'
+  | 'promoted-to-parent'
+  | 'receiving-promoted'
+  | string;
+
+export interface FrontierSwarmHierarchicalQueueLocalLeaderInput {
+  id?: string;
+  coordinatorId?: string;
+  workerId?: string;
+  role?: string;
+  electedAt?: number;
+  leaseId?: string;
+  leaseKey?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmHierarchicalQueueLocalLeader {
+  id: string;
+  coordinatorId?: string;
+  workerId?: string;
+  role?: string;
+  electedAt?: number;
+  leaseId?: string;
+  leaseKey?: string;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmHierarchicalQueuePromotionState {
+  state: FrontierSwarmHierarchicalQueueLeasePromotionState;
+  parentQueueId?: string;
+  promotionIds: string[];
+  promotedFromQueueIds: string[];
+  promotedToQueueIds: string[];
+  promotedJobIds: string[];
+  promotedQueueItemIds: string[];
+}
+
+export interface FrontierSwarmHierarchicalQueueTerminalDecisionLink {
+  id: string;
+  jobId: string;
+  taskId?: string;
+  queueId: string;
+  queueItemIds: string[];
+  action: FrontierSwarmMergeQueueAssignmentAction;
+  decision: FrontierSwarmCoordinatorAgentDrainDecision;
+  reasons: string[];
+}
+
+export interface FrontierSwarmHierarchicalQueueLeaseRecord {
+  id: string;
+  queueId: string;
+  scopeId: string;
+  scopeKind: FrontierSwarmMergeQueueScopeKind;
+  scopeClass: FrontierSwarmHierarchicalQueueLeaseScopeClass;
+  rootQueueId: string;
+  parentQueueId?: string;
+  lane?: string;
+  title: string;
+  leaseKey: string;
+  localLeader?: FrontierSwarmHierarchicalQueueLocalLeader;
+  promotion: FrontierSwarmHierarchicalQueuePromotionState;
+  conflictReasons: string[];
+  retryReasons: string[];
+  reasons: string[];
+  jobIds: string[];
+  queueItemIds: string[];
+  activeJobIds: string[];
+  activeQueueItemIds: string[];
+  terminalJobIds: string[];
+  terminalQueueItemIds: string[];
+  terminalDecisionIds: string[];
+  terminalDecisionLinks: FrontierSwarmHierarchicalQueueTerminalDecisionLink[];
+  changedPaths: string[];
+  changedRegions: string[];
+  metadata?: JsonObject;
+}
+
 export interface FrontierSwarmHierarchicalMergeQueueInput {
   id?: string;
   index: FrontierSwarmMergeIndex;
   admission?: FrontierSwarmMergeAdmission;
   rootScopeId?: string;
   scopes?: readonly FrontierSwarmMergeQueueScopeInput[];
+  localLeader?: FrontierSwarmHierarchicalQueueLocalLeaderInput;
+  localLeaders?: Readonly<Record<string, FrontierSwarmHierarchicalQueueLocalLeaderInput | undefined>>;
   generatedAt?: number;
   metadata?: unknown;
 }
@@ -2739,9 +2828,11 @@ export interface FrontierSwarmHierarchicalMergeQueue {
   generatedAt: number;
   rootScopeId: string;
   scopes: FrontierSwarmMergeQueueScope[];
+  leaseRecords: FrontierSwarmHierarchicalQueueLeaseRecord[];
   assignments: FrontierSwarmMergeQueueAssignment[];
   promotions: FrontierSwarmMergeQueuePromotion[];
   byScope: Record<string, string[]>;
+  byLeaseKey: Record<string, string[]>;
   byAction: Record<string, string[]>;
   summary: {
     scopeCount: number;
@@ -2779,6 +2870,8 @@ export interface FrontierSwarmMergeQueueAssignment {
   requiredLeaseScopeIds?: string[];
   requiredLeaseKeys?: string[];
   promoteToScopeId?: string;
+  terminalDecisionId?: string;
+  terminalDecisionQueueItemIds?: string[];
   retrySlices?: FrontierSwarmMergeQueueRetrySlice[];
   semanticSliceScopeIds?: string[];
   semanticSliceLeaseKeys?: string[];
@@ -3085,6 +3178,8 @@ export interface FrontierSwarmCoordinatorAgentDrainAssignment {
   decision: FrontierSwarmCoordinatorAgentDrainDecision;
   classification: FrontierSwarmCoordinatorAgentDrainClassification;
   terminal: boolean;
+  terminalDecisionId?: string;
+  terminalDecisionQueueItemIds?: string[];
   reasons: string[];
   admitted: boolean;
   riskLevel: FrontierSwarmRiskLevel;
@@ -4794,22 +4889,44 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     mergeQueueScopeRank(left.kind) - mergeQueueScopeRank(right.kind)
     || left.id.localeCompare(right.id)
   ));
+  const queueId = input.id ?? 'swarm-hierarchical-merge-queue:' + stableHash([input.index.id, input.admission?.id, orderedScopes, assignments, promotions, generatedAt]);
+  const linkedAssignments = assignments.map((assignment) => {
+    if (!coordinatorAgentDrainActionIsTerminal(assignment.action)) return assignment;
+    return {
+      ...assignment,
+      terminalDecisionId: hierarchicalQueueTerminalDecisionId(queueId, assignment),
+      terminalDecisionQueueItemIds: [...assignment.queueItemIds]
+    };
+  });
+  const leaseRecords = createHierarchicalQueueLeaseRecords({
+    queueId,
+    rootScopeId,
+    generatedAt,
+    scopes: orderedScopes,
+    assignments: linkedAssignments,
+    promotions,
+    localLeader: input.localLeader,
+    localLeaders: input.localLeaders
+  });
+  const byLeaseKey = groupJobIdsByMany(linkedAssignments, (assignment) => assignment.requiredLeaseKeys ?? [assignment.leaseKey]);
   return {
     kind: FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_KIND,
     version: FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_VERSION,
-    id: input.id ?? 'swarm-hierarchical-merge-queue:' + stableHash([input.index.id, input.admission?.id, orderedScopes, assignments, promotions, generatedAt]),
+    id: queueId,
     mergeIndexId: input.index.id,
     ...(input.admission ? { admissionId: input.admission.id } : {}),
     generatedAt,
     rootScopeId,
     scopes: orderedScopes,
-    assignments,
+    leaseRecords,
+    assignments: linkedAssignments,
     promotions,
     byScope,
+    byLeaseKey,
     byAction,
     summary: {
       scopeCount: orderedScopes.length,
-      assignmentCount: assignments.length,
+      assignmentCount: linkedAssignments.length,
       applyLocalCount: byAction['apply-local']?.length ?? 0,
       queueLocalCount: byAction['queue-local']?.length ?? 0,
       promoteCount: byAction.promote?.length ?? 0,
@@ -4891,6 +5008,8 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       decision,
       classification: terminal ? 'terminal' : 'non-terminal',
       terminal,
+      ...(assignment.terminalDecisionId ? { terminalDecisionId: assignment.terminalDecisionId } : {}),
+      ...(assignment.terminalDecisionQueueItemIds?.length ? { terminalDecisionQueueItemIds: [...assignment.terminalDecisionQueueItemIds] } : {}),
       reasons: [...assignment.reasons],
       admitted: assignment.admitted,
       riskLevel: assignment.riskLevel,
@@ -4911,7 +5030,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
   const terminalDecisions: FrontierSwarmCoordinatorAgentDrainTerminalDecision[] = assignments
     .filter((assignment) => assignment.terminal)
     .map((assignment) => ({
-      id: 'swarm-coordinator-agent-terminal-decision:' + stableHash([input.queue.id, assignment.jobId, assignment.queueId, assignment.assignedAction]),
+      id: assignment.terminalDecisionId ?? 'swarm-coordinator-agent-terminal-decision:' + stableHash([input.queue.id, assignment.jobId, assignment.queueId, assignment.assignedAction]),
       jobId: assignment.jobId,
       queueItemIds: [...assignment.queueItemIds],
       queueId: assignment.queueId,
@@ -6166,6 +6285,175 @@ function cloneMergeQueueRetrySlices(slices: readonly FrontierSwarmMergeQueueRetr
   }));
 }
 
+function createHierarchicalQueueLeaseRecords(input: {
+  queueId: string;
+  rootScopeId: string;
+  generatedAt: number;
+  scopes: readonly FrontierSwarmMergeQueueScope[];
+  assignments: readonly FrontierSwarmMergeQueueAssignment[];
+  promotions: readonly FrontierSwarmMergeQueuePromotion[];
+  localLeader?: FrontierSwarmHierarchicalQueueLocalLeaderInput;
+  localLeaders?: Readonly<Record<string, FrontierSwarmHierarchicalQueueLocalLeaderInput | undefined>>;
+}): FrontierSwarmHierarchicalQueueLeaseRecord[] {
+  return input.scopes.map((scope) => {
+    const localAssignments = input.assignments.filter((assignment) => assignment.scopeId === scope.id);
+    const receivedAssignments = input.assignments.filter((assignment) => assignment.promoteToScopeId === scope.id);
+    const relevantAssignments = uniqueAssignmentsByJob([...localAssignments, ...receivedAssignments]);
+    const promotionsFromScope = input.promotions.filter((promotion) => promotion.fromScopeId === scope.id);
+    const promotionsToScope = input.promotions.filter((promotion) => promotion.toScopeId === scope.id);
+    const relevantPromotions = [...promotionsFromScope, ...promotionsToScope];
+    const terminalDecisionLinks = localAssignments
+      .filter((assignment) => coordinatorAgentDrainActionIsTerminal(assignment.action))
+      .map((assignment) => hierarchicalQueueTerminalDecisionLink(input.queueId, assignment));
+    const activeAssignments = relevantAssignments.filter((assignment) => !coordinatorAgentDrainActionIsTerminal(assignment.action));
+    const promotedAssignments = relevantAssignments.filter((assignment) => (
+      relevantPromotions.some((promotion) => promotion.jobId === assignment.jobId)
+    ));
+    const conflictReasons = uniqueStrings(relevantAssignments.flatMap((assignment) => {
+      const conflictReasonsForAssignment = assignment.reasons.filter(hierarchicalQueueReasonIsConflict);
+      return assignment.conflictingJobIds.length
+        ? ['conflicting-changes', ...conflictReasonsForAssignment]
+        : conflictReasonsForAssignment;
+    }));
+    const retryReasons = uniqueStrings(relevantAssignments.flatMap((assignment) => {
+      const retryReasonsForAssignment = assignment.reasons.filter(hierarchicalQueueReasonIsRetry);
+      return assignment.action === 'rerun'
+        ? ['rerun', ...retryReasonsForAssignment]
+        : retryReasonsForAssignment;
+    }));
+    const promotionState = hierarchicalQueuePromotionStateForScope({
+      scope,
+      promotionsFromScope,
+      promotionsToScope,
+      terminalDecisionLinks,
+      activeAssignments
+    });
+
+    return {
+      id: hierarchicalQueueLeaseRecordId(input.queueId, scope),
+      queueId: scope.id,
+      scopeId: scope.id,
+      scopeKind: scope.kind,
+      scopeClass: hierarchicalQueueLeaseScopeClass(scope.kind),
+      rootQueueId: input.rootScopeId,
+      ...(scope.parentId ? { parentQueueId: scope.parentId } : {}),
+      ...(scope.lane ? { lane: scope.lane } : {}),
+      title: scope.title,
+      leaseKey: scope.leaseKey,
+      ...(hierarchicalQueueLocalLeaderForScope(input, scope) ? { localLeader: hierarchicalQueueLocalLeaderForScope(input, scope) } : {}),
+      promotion: {
+        state: promotionState,
+        ...(promotionsFromScope[0]?.toScopeId ? { parentQueueId: promotionsFromScope[0].toScopeId } : scope.parentId ? { parentQueueId: scope.parentId } : {}),
+        promotionIds: uniqueStrings(relevantPromotions.map((promotion) => hierarchicalQueuePromotionId(input.queueId, promotion))),
+        promotedFromQueueIds: uniqueStrings(relevantPromotions.map((promotion) => promotion.fromScopeId)),
+        promotedToQueueIds: uniqueStrings(relevantPromotions.map((promotion) => promotion.toScopeId)),
+        promotedJobIds: uniqueStrings(promotedAssignments.map((assignment) => assignment.jobId)),
+        promotedQueueItemIds: uniqueStrings(promotedAssignments.flatMap((assignment) => assignment.queueItemIds))
+      },
+      conflictReasons,
+      retryReasons,
+      reasons: uniqueStrings(relevantAssignments.flatMap((assignment) => assignment.reasons)),
+      jobIds: uniqueStrings([...scope.jobIds, ...relevantAssignments.map((assignment) => assignment.jobId)]),
+      queueItemIds: uniqueStrings(relevantAssignments.flatMap((assignment) => assignment.queueItemIds)),
+      activeJobIds: uniqueStrings(activeAssignments.map((assignment) => assignment.jobId)),
+      activeQueueItemIds: uniqueStrings(activeAssignments.flatMap((assignment) => assignment.queueItemIds)),
+      terminalJobIds: uniqueStrings(terminalDecisionLinks.map((link) => link.jobId)),
+      terminalQueueItemIds: uniqueStrings(terminalDecisionLinks.flatMap((link) => link.queueItemIds)),
+      terminalDecisionIds: uniqueStrings(terminalDecisionLinks.map((link) => link.id)),
+      terminalDecisionLinks,
+      changedPaths: uniqueStrings([...scope.changedPaths, ...relevantAssignments.flatMap((assignment) => assignment.changedPaths)]),
+      changedRegions: uniqueStrings([...scope.changedRegions, ...relevantAssignments.flatMap((assignment) => assignment.changedRegions)]),
+      ...(scope.metadata ? { metadata: cloneJsonValue(scope.metadata) as JsonObject } : {})
+    };
+  });
+}
+
+function uniqueAssignmentsByJob(assignments: readonly FrontierSwarmMergeQueueAssignment[]): FrontierSwarmMergeQueueAssignment[] {
+  const out = new Map<string, FrontierSwarmMergeQueueAssignment>();
+  for (const assignment of assignments) out.set(assignment.jobId, assignment);
+  return Array.from(out.values());
+}
+
+function hierarchicalQueueLeaseRecordId(queueId: string, scope: FrontierSwarmMergeQueueScope): string {
+  return 'swarm-hierarchical-queue-lease-record:' + stableHash([queueId, scope.id, scope.kind, scope.leaseKey]);
+}
+
+function hierarchicalQueuePromotionId(queueId: string, promotion: FrontierSwarmMergeQueuePromotion): string {
+  return 'swarm-hierarchical-queue-promotion:' + stableHash([queueId, promotion.jobId, promotion.fromScopeId, promotion.toScopeId, promotion.reasons]);
+}
+
+function hierarchicalQueueTerminalDecisionId(queueId: string, assignment: Pick<FrontierSwarmMergeQueueAssignment, 'jobId' | 'scopeId' | 'action' | 'queueItemIds'>): string {
+  return 'swarm-hierarchical-queue-terminal-decision:' + stableHash([queueId, assignment.jobId, assignment.scopeId, assignment.action, assignment.queueItemIds]);
+}
+
+function hierarchicalQueueTerminalDecisionLink(
+  queueId: string,
+  assignment: FrontierSwarmMergeQueueAssignment
+): FrontierSwarmHierarchicalQueueTerminalDecisionLink {
+  return {
+    id: assignment.terminalDecisionId ?? hierarchicalQueueTerminalDecisionId(queueId, assignment),
+    jobId: assignment.jobId,
+    ...(assignment.taskId ? { taskId: assignment.taskId } : {}),
+    queueId: assignment.scopeId,
+    queueItemIds: [...assignment.queueItemIds],
+    action: assignment.action,
+    decision: coordinatorAgentDrainDecisionForAction(assignment.action),
+    reasons: [...assignment.reasons]
+  };
+}
+
+function hierarchicalQueueLeaseScopeClass(kind: FrontierSwarmMergeQueueScopeKind): FrontierSwarmHierarchicalQueueLeaseScopeClass {
+  if (kind === 'semantic-region' || kind === 'semantic') return 'semantic';
+  if (kind === 'root' || kind === 'lane' || kind === 'path') return kind;
+  return 'custom';
+}
+
+function hierarchicalQueueLocalLeaderForScope(
+  input: {
+    queueId: string;
+    generatedAt: number;
+    localLeader?: FrontierSwarmHierarchicalQueueLocalLeaderInput;
+    localLeaders?: Readonly<Record<string, FrontierSwarmHierarchicalQueueLocalLeaderInput | undefined>>;
+  },
+  scope: FrontierSwarmMergeQueueScope
+): FrontierSwarmHierarchicalQueueLocalLeader | undefined {
+  const leader = input.localLeaders?.[scope.id] ?? input.localLeaders?.[scope.leaseKey] ?? input.localLeader;
+  if (!leader) return undefined;
+  return {
+    id: leader.id ?? 'swarm-hierarchical-queue-local-leader:' + stableHash([input.queueId, scope.id, leader.coordinatorId, leader.workerId, leader.role, input.generatedAt]),
+    ...(leader.coordinatorId ? { coordinatorId: leader.coordinatorId } : {}),
+    ...(leader.workerId ? { workerId: leader.workerId } : {}),
+    ...(leader.role ? { role: leader.role } : {}),
+    ...(leader.electedAt !== undefined ? { electedAt: leader.electedAt } : {}),
+    ...(leader.leaseId ? { leaseId: leader.leaseId } : {}),
+    ...(leader.leaseKey ? { leaseKey: leader.leaseKey } : {}),
+    ...(toJsonObject(leader.metadata) ? { metadata: toJsonObject(leader.metadata) } : {})
+  };
+}
+
+function hierarchicalQueuePromotionStateForScope(input: {
+  scope: FrontierSwarmMergeQueueScope;
+  promotionsFromScope: readonly FrontierSwarmMergeQueuePromotion[];
+  promotionsToScope: readonly FrontierSwarmMergeQueuePromotion[];
+  terminalDecisionLinks: readonly FrontierSwarmHierarchicalQueueTerminalDecisionLink[];
+  activeAssignments: readonly FrontierSwarmMergeQueueAssignment[];
+}): FrontierSwarmHierarchicalQueueLeasePromotionState {
+  if (input.promotionsFromScope.length > 0) return 'promoted-to-parent';
+  if (input.promotionsToScope.length > 0) return 'receiving-promoted';
+  if (input.terminalDecisionLinks.length > 0 && input.activeAssignments.length === 0) return 'terminal';
+  return 'local';
+}
+
+function hierarchicalQueueReasonIsConflict(reason: string): boolean {
+  const normalized = reason.toLowerCase();
+  return normalized.includes('conflict') || normalized.includes('cross-scope');
+}
+
+function hierarchicalQueueReasonIsRetry(reason: string): boolean {
+  const normalized = reason.toLowerCase();
+  return normalized.includes('retry') || normalized.includes('rerun') || normalized.includes('stale-against-head');
+}
+
 function mergeQueueRequiredLeasesForAssignment(input: {
   action: FrontierSwarmMergeQueueAssignmentAction;
   scope: FrontierSwarmMergeQueueScope;
@@ -6563,7 +6851,8 @@ function queueOutcomeInputsFromMergeQueue(queue: FrontierSwarmHierarchicalMergeQ
     metadata: {
       source: 'hierarchical-merge-queue',
       queueId: queue.id,
-      mergeIndexId: queue.mergeIndexId
+      mergeIndexId: queue.mergeIndexId,
+      ...(assignment.terminalDecisionId ? { terminalDecisionId: assignment.terminalDecisionId } : {})
     }
   }));
 }
@@ -6589,7 +6878,8 @@ function queueOutcomeInputsFromDrainWork(work: FrontierSwarmCoordinatorAgentDrai
       source: 'coordinator-agent-drain-work',
       drainWorkId: work.id,
       queueId: work.queueId,
-      mergeIndexId: work.mergeIndexId
+      mergeIndexId: work.mergeIndexId,
+      ...(assignment.terminalDecisionId ? { terminalDecisionId: assignment.terminalDecisionId } : {})
     }
   }));
 }

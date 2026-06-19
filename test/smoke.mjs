@@ -780,6 +780,12 @@ assert.strictEqual(syntheticSliceAdmission.summary.changedRegionCount, 2);
 const syntheticSliceQueue = createSwarmHierarchicalMergeQueue({
   index: syntheticSliceIndex,
   admission: syntheticSliceAdmission,
+  localLeader: {
+    coordinatorId: 'semantic-coordinator',
+    role: 'local-semantic-leader',
+    electedAt: 7199.2,
+    metadata: { runner: 'generic-agent' }
+  },
   generatedAt: 7199.2
 });
 assert.strictEqual(syntheticSliceQueue.summary.applyLocalCount, 2);
@@ -790,6 +796,23 @@ assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.scope
 assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.changedPaths[0] === 'src/synthetic/same-file.ts'));
 assert.ok(syntheticSliceQueue.assignments.every((assignment) => assignment.requiredLeaseKeys[0] === assignment.leaseKey));
 assert.ok(syntheticSliceQueue.assignments.every((assignment) => !assignment.requiredLeaseKeys[0].startsWith('merge:path:')));
+const syntheticSemanticLeaseRecords = syntheticSliceQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic');
+assert.strictEqual(syntheticSemanticLeaseRecords.length, 2);
+assert.strictEqual(new Set(syntheticSemanticLeaseRecords.map((record) => record.leaseKey)).size, 2);
+assert.ok(syntheticSemanticLeaseRecords.every((record) => record.scopeKind === 'semantic-region'));
+assert.ok(syntheticSemanticLeaseRecords.every((record) => record.localLeader.coordinatorId === 'semantic-coordinator'));
+assert.ok(syntheticSemanticLeaseRecords.every((record) => record.localLeader.metadata.runner === 'generic-agent'));
+assert.ok(syntheticSemanticLeaseRecords.every((record) => record.promotion.state === 'terminal'));
+assert.ok(syntheticSemanticLeaseRecords.every((record) => record.terminalDecisionLinks.length === 1));
+assert.ok(syntheticSemanticLeaseRecords.every((record) => record.terminalDecisionLinks[0].queueItemIds[0] === record.queueItemIds[0]));
+assert.deepStrictEqual(
+  syntheticSemanticLeaseRecords.map((record) => record.terminalQueueItemIds[0]).sort(),
+  [syntheticSliceBundleA.jobId, syntheticSliceBundleB.jobId].sort()
+);
+assert.deepStrictEqual(
+  syntheticSemanticLeaseRecords.map((record) => syntheticSliceQueue.byLeaseKey[record.leaseKey][0]).sort(),
+  [syntheticSliceBundleA.jobId, syntheticSliceBundleB.jobId].sort()
+);
 const syntheticOverlapBundle = createSwarmMergeBundle({
   result: {
     jobId: 'synthetic-same-file-slice-alpha-overlap',
@@ -823,6 +846,14 @@ assert.strictEqual(syntheticOverlapQueue.summary.promoteCount, 0);
 assert.strictEqual(new Set(syntheticOverlapQueue.assignments.map((assignment) => assignment.scopeId)).size, 1);
 assert.strictEqual(new Set(syntheticOverlapQueue.assignments.map((assignment) => assignment.leaseKey)).size, 1);
 assert.ok(syntheticOverlapQueue.assignments.every((assignment) => assignment.reasons.includes('same-lease-scope-conflict')));
+const syntheticOverlapSemanticLeaseRecords = syntheticOverlapQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic');
+assert.strictEqual(syntheticOverlapSemanticLeaseRecords.length, 1);
+assert.deepStrictEqual(
+  syntheticOverlapSemanticLeaseRecords[0].activeQueueItemIds.sort(),
+  [syntheticSliceBundleA.jobId, syntheticOverlapBundle.jobId].sort()
+);
+assert.deepStrictEqual(syntheticOverlapSemanticLeaseRecords[0].terminalDecisionIds, []);
+assert.ok(syntheticOverlapSemanticLeaseRecords[0].conflictReasons.includes('same-lease-scope-conflict'));
 const hierarchicalQueue = createSwarmHierarchicalMergeQueue({ index: regionIndex, admission, generatedAt: 7200 });
 assert.strictEqual(hierarchicalQueue.summary.applyLocalCount, 1);
 assert.strictEqual(hierarchicalQueue.summary.queueLocalCount, 1);
@@ -990,6 +1021,23 @@ assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'lane'));
 assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'semantic-region'));
 assert.ok(conflictQueue.scopes.some((scope) => scope.kind === 'path'));
 assert.strictEqual(conflictQueue.scopes.some((scope) => scope.kind === 'custom'), false);
+const conflictLeaseScopeClasses = new Set(conflictQueue.leaseRecords.map((record) => record.scopeClass));
+assert.ok(conflictLeaseScopeClasses.has('root'));
+assert.ok(conflictLeaseScopeClasses.has('lane'));
+assert.ok(conflictLeaseScopeClasses.has('semantic'));
+assert.ok(conflictLeaseScopeClasses.has('path'));
+const rootConflictLeaseRecord = conflictQueue.leaseRecords.find((record) => record.scopeClass === 'root');
+assert.strictEqual(rootConflictLeaseRecord.promotion.state, 'receiving-promoted');
+assert.deepStrictEqual(
+  rootConflictLeaseRecord.promotion.promotedQueueItemIds.sort(),
+  [...regionBundleA.queueItemIds, ...unregionedBundle.queueItemIds].sort()
+);
+assert.strictEqual(rootConflictLeaseRecord.promotion.promotionIds.length, 2);
+assert.ok(
+  conflictQueue.leaseRecords
+    .filter((record) => record.promotion.state === 'promoted-to-parent')
+    .every((record) => record.promotion.promotedToQueueIds.includes('root'))
+);
 const customScopeQueue = createSwarmHierarchicalMergeQueue({
   index: regionIndex,
   scopes: [{
@@ -1130,6 +1178,16 @@ assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === te
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).reasons.includes('true-blocker'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId).reasons.includes('coordinator-queue-required'));
 assert.ok(terminalQueue.promotions.find((promotion) => promotion.jobId === terminalBundleCoordinatorReview.jobId).reasons.includes('coordinator-queue-required'));
+const terminalStaleLeaseRecord = terminalQueue.leaseRecords.find((record) => (
+  record.terminalDecisionLinks.some((link) => link.jobId === terminalBundleStale.jobId)
+));
+assert.ok(terminalStaleLeaseRecord);
+assert.deepStrictEqual(terminalStaleLeaseRecord.terminalQueueItemIds, terminalBundleStale.queueItemIds);
+assert.deepStrictEqual(terminalStaleLeaseRecord.terminalDecisionLinks[0].queueItemIds, terminalBundleStale.queueItemIds);
+assert.strictEqual(
+  terminalStaleLeaseRecord.terminalDecisionLinks[0].id,
+  terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).terminalDecisionId
+);
 
 const coordinatorDrainWork = createSwarmCoordinatorAgentDrainWork({
   queue: hierarchicalQueue,
