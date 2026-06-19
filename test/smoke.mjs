@@ -1878,6 +1878,60 @@ assert.strictEqual(modelRoutingPolicy.preferences[0].mode, 'override');
 assert.strictEqual(modelRoutingPolicy.summary.signalCount, 1);
 assert.strictEqual(modelRoutingPolicy.summary.feedbackCount, 1);
 
+const costAwareRoutingPolicy = createSwarmModelRoutingPolicy({
+  defaultMode: 'fill',
+  signals: [{
+    mode: 'avoid',
+    lane: 'runtime',
+    computeId: 'deep',
+    confidence: 'high',
+    reason: 'deep route is too expensive for low-risk runtime work'
+  }],
+  feedback: [{
+    scope: 'lane',
+    lane: 'runtime',
+    taskKind: 'implementation',
+    computeId: 'fast',
+    model: 'gpt-5.4-mini',
+    selected: true,
+    resultStatus: 'applied',
+    evidenceQuality: { band: 'strong', score: 0.96, confidence: 'high' },
+    metadata: { routingCost: { estimatedCostUsd: 0.003, durationMs: 44000 } }
+  }, {
+    scope: 'lane',
+    lane: 'runtime',
+    taskKind: 'implementation',
+    computeId: 'deep',
+    model: 'gpt-5.5',
+    resultStatus: 'failed',
+    evidenceQuality: { band: 'weak', score: 0.2, confidence: 'low' },
+    metadata: { routingCost: { estimatedCostUsd: 0.18, durationMs: 160000 } }
+  }],
+  generatedAt: 13650,
+  metadata: { source: 'routing-cost-smoke' }
+});
+const costAwareRoute = createSwarmModelRoute({
+  manifest,
+  task: {
+    id: 'policy-routed-implementation',
+    kind: 'implementation',
+    lane: 'runtime',
+    targetRefs: ['inkwell/apps/web/src/runtime/policy-routed.ts'],
+    metadata: { risk: 'low', uncertainty: 'low', impact: 'low' }
+  },
+  routingPolicy: costAwareRoutingPolicy,
+  routingMode: 'fill',
+  generatedAt: 13660
+});
+assert.deepStrictEqual(costAwareRoute.recommendedComputeIds, ['fast']);
+assert.strictEqual(costAwareRoute.summary.routingPolicyFeedbackCount, 2);
+assert.strictEqual(costAwareRoute.summary.routingPolicyOutcomeCount, 2);
+assert.strictEqual(costAwareRoute.summary.routingPolicyCostSignalCount, 2);
+assert.strictEqual(costAwareRoute.summary.routingPolicyPreferenceCount, 1);
+assert.ok(costAwareRoute.reasons.includes('routing-policy-feedback:2'));
+assert.ok(costAwareRoute.reasons.includes('routing-policy-outcomes:2'));
+assert.strictEqual(costAwareRoute.metadata.routingPolicy.feedbackMatched, 2);
+
 const emptyOptimizationSummary = createSwarmOptimizationSummary();
 assert.strictEqual(emptyOptimizationSummary.kind, FRONTIER_SWARM_OPTIMIZATION_SUMMARY_KIND);
 assert.strictEqual(emptyOptimizationSummary.telemetryAvailable, false);
@@ -1917,6 +1971,34 @@ assert.strictEqual(modelRoutingPlan.routingPolicy.kind, 'frontier.swarm.model-ro
 assert.strictEqual(modelRoutingPlan.routingPolicy.signals[0].mode, 'override');
 assert.strictEqual(modelRoutingPlan.routingPolicy.feedback[0].kind, 'frontier.swarm.model-routing-feedback');
 assert.deepStrictEqual(modelRoutingPlan.routingContext, { continuation: true, reason: 'codex-routing' });
+
+const layeredImplementationTasks = defineSwarmTasks([{
+  id: 'layered-implementation-default',
+  kind: 'implementation',
+  lane: 'runtime',
+  targetRefs: ['inkwell/apps/web/src/runtime/layered-default.ts'],
+  metadata: { risk: 'low', uncertainty: 'low', impact: 'low' }
+}]);
+const defaultLayeredPlan = createSwarmPlan(manifest, layeredImplementationTasks);
+assert.strictEqual(defaultLayeredPlan.jobs[0].compute.id, 'deep');
+const routedLayeredPlan = createSwarmPlan(manifest, layeredImplementationTasks, {
+  routingMode: 'fill',
+  routingPolicy: costAwareRoutingPolicy,
+  now: 13670
+});
+assert.strictEqual(routedLayeredPlan.jobs[0].compute.id, 'fast');
+assert.strictEqual(routedLayeredPlan.jobs[0].metadata.modelRoute.fallbackComputeId, 'deep');
+assert.strictEqual(routedLayeredPlan.jobs[0].metadata.modelRoute.selectedComputeId, 'fast');
+assert.deepStrictEqual(routedLayeredPlan.jobs[0].metadata.modelRoute.recommendedComputeIds, ['fast']);
+assert.strictEqual(routedLayeredPlan.jobs[0].metadata.modelRoute.summary.routingPolicyCostSignalCount, 2);
+const observedLayeredPlan = createSwarmPlan(manifest, layeredImplementationTasks, {
+  routingMode: 'observe',
+  routingPolicy: costAwareRoutingPolicy,
+  now: 13680
+});
+assert.strictEqual(observedLayeredPlan.jobs[0].compute.id, 'deep');
+assert.strictEqual(observedLayeredPlan.jobs[0].metadata.modelRoute.selectedComputeId, 'deep');
+assert.deepStrictEqual(observedLayeredPlan.jobs[0].metadata.modelRoute.recommendedComputeIds, ['fast']);
 
 const tournamentEvaluation = createSwarmPanelEvaluation({
   candidates: panelRoute.candidates,

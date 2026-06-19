@@ -393,7 +393,7 @@ That lets a parent swarm route implementation jobs to a deep model while evidenc
 
 ## Model Routing
 
-`createSwarmModelRoute` is advisory: it does not replace manifest compute resolution, but it lets runners choose the cheapest capable profile by default and escalate when task risk, uncertainty, impact, outcome history, budget, or latency pressure justify it.
+`createSwarmModelRoute` scores compute candidates directly, and `createSwarmPlan(..., { routingMode, routingPolicy })` can consume matching policy feedback when selecting job compute. Explicit `options.compute` still wins, `routingMode: 'observe'` records a route without changing compute, and `routingMode: 'fill'` only changes compute when matching feedback or policy preferences exist. That lets runners choose the cheapest capable profile by default and escalate or avoid models when task risk, uncertainty, impact, outcome history, budget, cost feedback, or latency pressure justify it.
 
 ```ts
 import { createSwarmModelRoute } from '@shapeshift-labs/frontier-swarm';
@@ -417,7 +417,7 @@ const route = createSwarmModelRoute({
 
 `FRONTIER_SWARM_TASK_MODEL_PROFILES` records the default task-kind profile catalog, and `resolveSwarmTaskModelProfile(task)` chooses the profile from `task.workKind`. Each profile captures the expected model tier, cost band, context shape, strengths, and known failure modes for that kind of task. The built-in catalog is model-agnostic: callers can supply their own profile models or compute catalog, and `createSwarmModelRoute` keeps the selected compute separate from the task-kind hint. The route scorer then combines task kind, risk, observed history, token price, and latency so implementation/review/oracle work stays on cheaper candidates unless the history says the cheap route is failing, while public API and other high-risk merge work can still escalate.
 
-`createSwarmModelRoutingFeedback` and `createSwarmModelRoutingPolicy` cover the serializable feedback/policy layer above the model router, and `createSwarmPlan(..., { routingMode, routingPolicy, routingContext })` now preserves that routing state on the returned plan for continuation code.
+`createSwarmModelRoutingFeedback` and `createSwarmModelRoutingPolicy` cover the serializable feedback/policy layer above the model router. Matching feedback is converted into model outcome history, cost/duration signals are folded into candidate scoring, prefer/avoid/override signals can select or suppress candidates, and each routed job gets compact `metadata.modelRoute` evidence with fallback, selected, recommended compute ids, policy match counts, cost-signal counts, and route reasons.
 
 `createSwarmOptimizationSummary` gives runners a generic evidence record for routing decisions, panel/fusion decisions, tournament observations, RSI-style routing feedback, model diversity, and whether any feedback was consumed. Telemetry can be omitted entirely when unavailable or emitted with real zero counts when the run observed nothing.
 

@@ -40,6 +40,7 @@ import {
   querySwarmBacklog,
   createSwarmModelRoutingFeedback,
   createSwarmModelRoutingPolicy,
+  createSwarmModelRoute,
   createSwarmSchedule,
   createSwarmLeases,
   createSwarmQueueSnapshot,
@@ -107,6 +108,8 @@ import {
   type FrontierSwarmModelRoutingFeedback,
   type FrontierSwarmModelRoutingFeedbackInput,
   type FrontierSwarmModelRoutingMode,
+  type FrontierSwarmModelRoute,
+  type FrontierSwarmModelRouterInput,
   type FrontierSwarmModelRoutingPolicy,
   type FrontierSwarmModelRoutingPolicyInput,
   type FrontierSwarmModelRoutingPolicySignal,
@@ -244,6 +247,15 @@ plan.routingPolicy?.feedback?.[0] satisfies FrontierSwarmModelRoutingFeedback | 
 plan.routingContext satisfies unknown;
 modelRoutingFeedback satisfies FrontierSwarmModelRoutingFeedback;
 modelRoutingPolicy satisfies FrontierSwarmModelRoutingPolicy;
+const typedModelRoute: FrontierSwarmModelRoute = createSwarmModelRoute({
+  manifest,
+  task: tasks[0],
+  routingPolicy: modelRoutingPolicy,
+  routingMode: 'observe'
+});
+typedModelRoute.summary.routingPolicyFeedbackCount satisfies number;
+typedModelRoute.summary.routingPolicyCostSignalCount satisfies number;
+typedModelRoute.metadata?.routingPolicy satisfies JsonValue | undefined;
 const emptyOptimizationSummary: FrontierSwarmOptimizationSummary = createSwarmOptimizationSummary();
 const zeroOptimizationSummary: FrontierSwarmOptimizationSummary = createSwarmOptimizationSummary({
   telemetryAvailable: true,
@@ -272,8 +284,11 @@ createSwarmOptimizationSummary({
   feedbackConsumed: false
 }) satisfies FrontierSwarmOptimizationSummary;
 ({} as FrontierSwarmModelRoutingFeedbackInput).scope satisfies FrontierSwarmModelRoutingFeedbackInput['scope'];
+({} as FrontierSwarmModelRouterInput).routingPolicy satisfies FrontierSwarmModelRouterInput['routingPolicy'];
+({} as FrontierSwarmModelRouterInput).routingMode satisfies FrontierSwarmModelRoutingMode | undefined;
 ({} as FrontierSwarmModelRoutingPolicyInput).defaultMode satisfies FrontierSwarmModelRoutingPolicyInput['defaultMode'];
 ({} as FrontierSwarmModelRoutingPolicySignalInput).mode satisfies FrontierSwarmModelRoutingPolicySignalInput['mode'];
+({} as FrontierSwarmModelRoutingPolicySignalInput).computeId satisfies string | undefined;
 const semanticBroadRegionId = 'src/math.ts';
 const semanticFunctionRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/math.ts',

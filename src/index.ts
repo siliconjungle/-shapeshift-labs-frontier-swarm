@@ -846,6 +846,8 @@ export interface FrontierSwarmModelRouterInput {
   manifest?: FrontierSwarmManifest | FrontierSwarmManifestInput;
   task: FrontierSwarmTask | FrontierSwarmTaskInput;
   candidates?: readonly (string | FrontierSwarmComputeInput | FrontierSwarmCompute)[];
+  routingPolicy?: FrontierSwarmModelRoutingPolicyInput | FrontierSwarmModelRoutingPolicy | unknown;
+  routingMode?: FrontierSwarmModelRoutingMode;
   priceCatalog?: Record<string, FrontierSwarmModelPriceInput> | readonly FrontierSwarmModelPriceInput[];
   tokenEstimate?: FrontierSwarmModelTokenEstimateInput;
   budget?: FrontierSwarmBudget | FrontierSwarmBudgetInput;
@@ -943,6 +945,10 @@ export interface FrontierSwarmModelRoute {
     cheapestCapableComputeId?: string;
     recommendedCostUsd: number;
     recommendedLatencyMs: number;
+    routingPolicyFeedbackCount: number;
+    routingPolicyOutcomeCount: number;
+    routingPolicyCostSignalCount: number;
+    routingPolicyPreferenceCount: number;
     panelCostUsd?: number;
     panelLatencyMs?: number;
   };
@@ -4052,10 +4058,13 @@ export function createSwarmPlan(
 ): FrontierSwarmPlan {
   const compiled = compileSwarm(manifestInput);
   const tasks = normalizeTaskList(taskInput);
-  const jobs = selectSwarmTasks(compiled.manifest, tasks, options).map((task) => createJob(compiled, task, options));
   const routingPolicy = options.routingPolicy && typeof options.routingPolicy === 'object' && !Array.isArray(options.routingPolicy)
     ? createSwarmModelRoutingPolicy(options.routingPolicy as FrontierSwarmModelRoutingPolicyInput)
     : undefined;
+  const jobs = selectSwarmTasks(compiled.manifest, tasks, options).map((task) => createJob(compiled, task, {
+    ...options,
+    ...(routingPolicy ? { routingPolicy } : {})
+  }));
   const id = options.id ?? 'swarm-plan:' + stableHash([compiled.manifest.id, jobs.map((job) => job.id), options]);
   const graph = createSwarmJobGraph(jobs);
   const validation = validateTasksForManifest(compiled, tasks, graph);
@@ -4228,7 +4237,14 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
   const tokenEstimate = normalizeModelTokenEstimate(input.tokenEstimate, task);
   const budget = input.budget ? normalizeBudget(input.budget) : task.budget;
   const priceCatalog = normalizeModelPriceCatalog(input.priceCatalog);
-  const outcomeHistory = input.outcomeHistory ?? readModelOutcomeHistory(task.metadata);
+  const routingPolicy = normalizeRouterPolicy(input.routingPolicy);
+  const policyFeedback = routingPolicy ? routingFeedbackForTask(routingPolicy.feedback, task) : [];
+  const policyOutcomeHistory = routingOutcomeHistoryFromFeedback(policyFeedback);
+  const outcomeHistory = [
+    ...(input.outcomeHistory ?? readModelOutcomeHistory(task.metadata)),
+    ...policyOutcomeHistory
+  ];
+  const policyPreferences = routingPolicy ? routingSignalsForTask(routingPolicy.preferences, task) : [];
   const requiredCapabilities = routerRequiredCapabilities(task, input.requiredCapabilities);
   const riskScore = inferRoutingDimension(task, 'risk');
   const uncertaintyScore = inferRoutingDimension(task, 'uncertainty', outcomeHistory.length === 0 ? 0.12 : 0);
@@ -4252,9 +4268,11 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
   const capable = candidates.filter((candidate) => candidate.capable);
   const budgetCapable = capable.filter((candidate) => candidate.budgetOk);
   const usable = budgetCapable.length ? budgetCapable : capable.length ? capable : candidates;
-  const cheapestCapable = [...usable].sort(compareCandidatesByCost)[0] ?? candidates[0];
+  const avoidSignals = policyPreferences.filter((signal) => signal.mode === 'avoid');
+  const routedUsable = filteredRoutingCandidates(usable, avoidSignals);
+  const cheapestCapable = [...routedUsable].sort(compareCandidatesByCost)[0] ?? [...usable].sort(compareCandidatesByCost)[0] ?? candidates[0];
   const riskDemand = clamp01(riskScore * 0.42 + uncertaintyScore * 0.33 + impactScore * 0.25 + taskBias.riskDemand);
-  const ranked = [...usable].sort(compareModelRouteCandidates);
+  const ranked = [...routedUsable].sort(compareModelRouteCandidates);
   const qualityThreshold = routingQualityThreshold(riskDemand);
   const cheapestHasPoorHistory = !!cheapestCapable && cheapestCapable.historyScore < 0.45 && cheapestCapable.outcomeKnown;
   const cheapestRouteThreshold = taskProfile.costBand === 'low'
@@ -4268,7 +4286,11 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
   const selected = riskDemand < cheapestRouteThreshold && !cheapestHasPoorHistory
     ? cheapestCapable
     : preferredCandidates.find((candidate) => candidate.qualityScore >= qualityThreshold) ?? preferredCandidates[0] ?? cheapestCapable;
-  if (!selected) throw new Error('No model route candidates available');
+  const signalSelection = selectRoutingPolicyCandidate(policyPreferences, candidates);
+  const selectedByPolicy = signalSelection && (signalSelection.signal.mode === 'override' || signalSelection.signal.mode === 'prefer')
+    ? signalSelection.candidate
+    : selected;
+  if (!selectedByPolicy) throw new Error('No model route candidates available');
   const panel = createSwarmPanelEvaluation({
     candidates,
     task,
@@ -4283,23 +4305,41 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
   const budgetCapped = capable.length > 0 && budgetCapable.length < capable.length;
   const route = panel.recommended
     ? panel.strategy === 'tournament' ? 'tournament' : 'panel'
-    : selected.compute.id === cheapestCapable?.compute.id && (riskDemand < 0.62 || budgetCapped)
+    : selectedByPolicy.compute.id === cheapestCapable?.compute.id && (riskDemand < 0.62 || budgetCapped)
       ? 'single-cheap'
       : 'single-deep';
   const recommendedComputeIds = route === 'panel' || route === 'tournament'
     ? panel.memberComputeIds
-    : [selected.compute.id];
+    : [selectedByPolicy.compute.id];
   const reasons = uniqueStrings([
     ...taskBias.reasons,
-    ...modelRouteReasons(route, selected, cheapestCapable, panel, {
+    ...(routingPolicy ? [`routing-policy-feedback:${policyFeedback.length}`] : []),
+    ...(policyOutcomeHistory.length ? [`routing-policy-outcomes:${policyOutcomeHistory.length}`] : []),
+    ...(signalSelection ? [`routing-policy-${signalSelection.signal.mode}:${signalSelection.candidate.compute.id}`] : []),
+    ...modelRouteReasons(route, selectedByPolicy, cheapestCapable, panel, {
       riskDemand,
       qualityThreshold,
       budgetCapped,
-      missingTelemetry: candidates.some((candidate) => !candidate.priceKnown || !candidate.outcomeKnown),
+      missingTelemetry: candidates.some((candidate) => !candidate.priceKnown || !candidate.outcomeKnown) && policyOutcomeHistory.length === 0,
       taskProfile,
       cheapestHistoryPoor: cheapestHasPoorHistory
     })
   ]);
+  const routeMetadataInput = {
+    ...(toJsonObject(input.metadata) ?? {}),
+    ...(routingPolicy ? {
+      routingPolicy: {
+        id: routingPolicy.id,
+        mode: input.routingMode ?? routingPolicy.defaultMode,
+        feedbackMatched: policyFeedback.length,
+        outcomesDerived: policyOutcomeHistory.length,
+        preferencesMatched: policyPreferences.length,
+        costSignalCount: policyFeedback.filter(hasRoutingFeedbackCostSignal).length,
+        ...(signalSelection ? { selectedSignalId: signalSelection.signal.id } : {})
+      }
+    } : {})
+  };
+  const routeMetadata = Object.keys(routeMetadataInput).length > 0 ? toJsonObject(routeMetadataInput) : undefined;
   return {
     kind: FRONTIER_SWARM_MODEL_ROUTE_KIND,
     version: FRONTIER_SWARM_MODEL_ROUTE_VERSION,
@@ -4310,7 +4350,7 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
     route,
     recommendedComputeIds,
     ...(panel.fuserComputeId && (route === 'panel' || route === 'tournament') ? { fuserComputeId: panel.fuserComputeId } : {}),
-    recommended: selected,
+    recommended: selectedByPolicy,
     candidates,
     ...(input.panel || panel.recommended ? { panel } : {}),
     tokenEstimate,
@@ -4319,18 +4359,22 @@ export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): Fro
     impactScore,
     timePressureScore,
     reasons,
-    explanation: explainModelRoute(route, selected, cheapestCapable, panel, riskDemand),
+    explanation: explainModelRoute(route, selectedByPolicy, cheapestCapable, panel, riskDemand),
     summary: {
       candidateCount: candidates.length,
       capableCount: capable.length,
       priceKnownCount: candidates.filter((candidate) => candidate.priceKnown).length,
       outcomeKnownCount: candidates.filter((candidate) => candidate.outcomeKnown).length,
       ...(cheapestCapable ? { cheapestCapableComputeId: cheapestCapable.compute.id } : {}),
-      recommendedCostUsd: route === 'panel' || route === 'tournament' ? panel.expectedCostUsd : selected.estimatedCostUsd,
-      recommendedLatencyMs: route === 'panel' || route === 'tournament' ? panel.expectedLatencyMs : selected.estimatedLatencyMs,
+      recommendedCostUsd: route === 'panel' || route === 'tournament' ? panel.expectedCostUsd : selectedByPolicy.estimatedCostUsd,
+      recommendedLatencyMs: route === 'panel' || route === 'tournament' ? panel.expectedLatencyMs : selectedByPolicy.estimatedLatencyMs,
+      routingPolicyFeedbackCount: policyFeedback.length,
+      routingPolicyOutcomeCount: policyOutcomeHistory.length,
+      routingPolicyCostSignalCount: policyFeedback.filter(hasRoutingFeedbackCostSignal).length,
+      routingPolicyPreferenceCount: policyPreferences.length,
       ...(input.panel || panel.recommended ? { panelCostUsd: panel.expectedCostUsd, panelLatencyMs: panel.expectedLatencyMs } : {})
     },
-    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+    ...(routeMetadata ? { metadata: routeMetadata } : {})
   };
 }
 
@@ -10481,6 +10525,188 @@ function modelOutcomeForCompute(compute: FrontierSwarmCompute, history: readonly
   };
 }
 
+function normalizeRouterPolicy(input: FrontierSwarmModelRouterInput['routingPolicy']): FrontierSwarmModelRoutingPolicy | undefined {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined;
+  const record = input as Partial<FrontierSwarmModelRoutingPolicy>;
+  if (record.kind === 'frontier.swarm.model-routing-policy' && Array.isArray(record.feedback) && Array.isArray(record.signals)) {
+    return cloneJsonValue(record) as FrontierSwarmModelRoutingPolicy;
+  }
+  return createSwarmModelRoutingPolicy(input as FrontierSwarmModelRoutingPolicyInput);
+}
+
+function routingFeedbackForTask(
+  feedback: readonly FrontierSwarmModelRoutingFeedback[],
+  task: FrontierSwarmTask
+): FrontierSwarmModelRoutingFeedback[] {
+  return feedback.filter((entry) => routingFeedbackMatchesTask(entry, task));
+}
+
+function routingFeedbackMatchesTask(feedback: FrontierSwarmModelRoutingFeedback, task: FrontierSwarmTask): boolean {
+  if (feedback.taskId && feedback.taskId !== task.id) return false;
+  if (feedback.lane && feedback.lane !== 'global' && feedback.lane !== task.lane) return false;
+  if (feedback.layer && feedback.layer !== task.layer) return false;
+  const workKind = feedback.workKind ?? feedback.taskKind;
+  if (workKind && workKind !== 'task' && workKind !== 'agent-task' && workKind !== task.workKind) return false;
+  return true;
+}
+
+function routingOutcomeHistoryFromFeedback(feedback: readonly FrontierSwarmModelRoutingFeedback[]): FrontierSwarmModelOutcomeInput[] {
+  return feedback
+    .map((entry) => routingOutcomeFromFeedback(entry))
+    .filter((entry): entry is FrontierSwarmModelOutcomeInput => !!entry);
+}
+
+function routingOutcomeFromFeedback(feedback: FrontierSwarmModelRoutingFeedback): FrontierSwarmModelOutcomeInput | undefined {
+  const compute = feedback.computeId;
+  const model = feedback.model && feedback.model !== 'unknown' ? feedback.model : undefined;
+  if (!compute && !model) return undefined;
+  const evidenceScore = readNonNegativeNumber(feedback.evidenceQuality?.score);
+  const statusScore = routingFeedbackStatusScore(feedback);
+  const successRate = statusScore ?? evidenceScore;
+  const confidence = readRoutingConfidenceScore(feedback.evidenceQuality?.confidence) ?? evidenceScore;
+  const averageCostUsd = readRoutingCostUsdFromMetadata(feedback.metadata);
+  const averageDurationMs = readRoutingDurationMsFromMetadata(feedback.metadata);
+  return {
+    ...(compute ? { compute } : {}),
+    ...(model ? { model } : {}),
+    attempts: 1,
+    ...(successRate !== undefined ? { successRate: clamp01(successRate) } : {}),
+    ...(statusScore !== undefined ? { failureRate: clamp01(1 - statusScore) } : {}),
+    ...(confidence !== undefined ? { confidence: clamp01(confidence) } : {}),
+    ...(averageCostUsd !== undefined ? { averageCostUsd } : {}),
+    ...(averageDurationMs !== undefined ? { averageDurationMs } : {})
+  };
+}
+
+function routingFeedbackStatusScore(feedback: FrontierSwarmModelRoutingFeedback): number | undefined {
+  const terms = uniqueStrings([
+    feedback.resultStatus,
+    feedback.mergeReadiness,
+    feedback.mergeDisposition,
+    ...(feedback.tags ?? [])
+  ]).map((term) => slug(term));
+  if (terms.some((term) => ['applied', 'landed', 'accepted', 'completed', 'complete', 'passed', 'success', 'ready'].includes(term))) return 1;
+  if (terms.some((term) => ['failed', 'failure', 'rejected', 'blocked', 'stale', 'conflict', 'conflicted'].includes(term))) return 0;
+  return undefined;
+}
+
+function readRoutingConfidenceScore(value: unknown): number | undefined {
+  const numeric = readNonNegativeNumber(value);
+  if (numeric !== undefined) return numeric;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.toLowerCase();
+  if (normalized === 'high' || normalized === 'strong') return 0.9;
+  if (normalized === 'medium' || normalized === 'moderate') return 0.65;
+  if (normalized === 'low' || normalized === 'weak') return 0.35;
+  return undefined;
+}
+
+function routingSignalsForTask(
+  signals: readonly FrontierSwarmModelRoutingPolicySignal[],
+  task: FrontierSwarmTask
+): FrontierSwarmModelRoutingPolicySignal[] {
+  return signals.filter((signal) => routingSignalMatchesTask(signal, task));
+}
+
+function routingSignalMatchesTask(signal: FrontierSwarmModelRoutingPolicySignal, task: FrontierSwarmTask): boolean {
+  if (signal.lane && signal.lane !== 'global' && signal.lane !== task.lane) return false;
+  if (signal.layer && signal.layer !== task.layer) return false;
+  const workKind = signal.workKind ?? signal.taskKind;
+  if (workKind && workKind !== task.workKind) return false;
+  return true;
+}
+
+function filteredRoutingCandidates(
+  candidates: readonly FrontierSwarmModelRouteCandidate[],
+  avoidSignals: readonly FrontierSwarmModelRoutingPolicySignal[]
+): FrontierSwarmModelRouteCandidate[] {
+  const filtered = candidates.filter((candidate) => !avoidSignals.some((signal) => routingSignalMatchesCandidate(signal, candidate)));
+  return filtered.length ? filtered : [...candidates];
+}
+
+function selectRoutingPolicyCandidate(
+  signals: readonly FrontierSwarmModelRoutingPolicySignal[],
+  candidates: readonly FrontierSwarmModelRouteCandidate[]
+): { signal: FrontierSwarmModelRoutingPolicySignal; candidate: FrontierSwarmModelRouteCandidate } | undefined {
+  const rankedSignals = [...signals]
+    .filter((signal) => signal.mode === 'override' || signal.mode === 'prefer')
+    .sort(compareRoutingPolicySignals);
+  for (const signal of rankedSignals) {
+    const matches = candidates.filter((candidate) => routingSignalMatchesCandidate(signal, candidate));
+    const selected = [...matches].sort(compareRoutingPolicyCandidates)[0];
+    if (selected) return { signal, candidate: selected };
+  }
+  return undefined;
+}
+
+function compareRoutingPolicySignals(left: FrontierSwarmModelRoutingPolicySignal, right: FrontierSwarmModelRoutingPolicySignal): number {
+  const modeRank = (signal: FrontierSwarmModelRoutingPolicySignal) => signal.mode === 'override' ? 0 : 1;
+  return modeRank(left) - modeRank(right)
+    || routingConfidenceRank(right.confidence) - routingConfidenceRank(left.confidence)
+    || left.id.localeCompare(right.id);
+}
+
+function compareRoutingPolicyCandidates(left: FrontierSwarmModelRouteCandidate, right: FrontierSwarmModelRouteCandidate): number {
+  const leftUsable = left.capable && left.budgetOk ? 0 : left.capable ? 1 : 2;
+  const rightUsable = right.capable && right.budgetOk ? 0 : right.capable ? 1 : 2;
+  return leftUsable - rightUsable || compareModelRouteCandidates(left, right);
+}
+
+function routingSignalMatchesCandidate(
+  signal: FrontierSwarmModelRoutingPolicySignal,
+  candidate: FrontierSwarmModelRouteCandidate
+): boolean {
+  if (!signal.computeId && !signal.model && !signal.modelTier) return false;
+  if (signal.computeId && signal.computeId !== candidate.compute.id) return false;
+  if (signal.model && signal.model !== candidate.compute.model && signal.model !== candidate.compute.id && signal.model !== candidate.compute.profile) return false;
+  if (signal.modelTier) {
+    const tier = String(candidate.compute.metadata?.modelTier ?? candidate.compute.profile ?? candidate.compute.reasoningEffort ?? '').toLowerCase();
+    if (!tier.includes(signal.modelTier.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function routingConfidenceRank(value: unknown): number {
+  const numeric = readRoutingConfidenceScore(value);
+  if (numeric !== undefined) return numeric;
+  return 0;
+}
+
+function hasRoutingFeedbackCostSignal(feedback: FrontierSwarmModelRoutingFeedback): boolean {
+  return readRoutingCostUsdFromMetadata(feedback.metadata) !== undefined
+    || readNestedNonNegativeNumber(feedback.metadata, ['billableInputTokens', 'inputTokens', 'outputTokens', 'totalTokens']) !== undefined;
+}
+
+function readRoutingCostUsdFromMetadata(metadata: JsonObject | undefined): number | undefined {
+  return readNestedNonNegativeNumber(metadata, [
+    'estimatedCostUsd',
+    'costUsd',
+    'totalCostUsd',
+    'inputCostUsd',
+    'outputCostUsd',
+    'estimatedInputCostUsd',
+    'estimatedOutputCostUsd'
+  ]);
+}
+
+function readRoutingDurationMsFromMetadata(metadata: JsonObject | undefined): number | undefined {
+  return readNestedNonNegativeNumber(metadata, ['durationMs', 'runtimeMs', 'elapsedMs', 'averageDurationMs']);
+}
+
+function readNestedNonNegativeNumber(value: unknown, keys: readonly string[], depth = 0): number | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || depth > 4) return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const direct = readNonNegativeNumber(record[key]);
+    if (direct !== undefined) return direct;
+  }
+  for (const nested of Object.values(record)) {
+    const match = readNestedNonNegativeNumber(nested, keys, depth + 1);
+    if (match !== undefined) return match;
+  }
+  return undefined;
+}
+
 function estimateCandidateCostUsd(
   compute: FrontierSwarmCompute,
   price: FrontierSwarmModelPrice | undefined,
@@ -11093,12 +11319,14 @@ function summarizeTaskSelection(entries: readonly FrontierSwarmTaskSelectionEntr
   }, { total: 0, byLane: {}, byWorkKind: {}, ownershipWarningCount: 0 });
 }
 
-function createJob(compiled: FrontierSwarmCompiled, task: FrontierSwarmTask, options: FrontierSwarmPlanFilter): FrontierSwarmJob {
+function createJob(compiled: FrontierSwarmCompiled, task: FrontierSwarmTask, options: FrontierSwarmPlanInput): FrontierSwarmJob {
   const lane = task.lane ? compiled.lanesById.get(task.lane) : undefined;
   const layer = task.layer ?? lane?.layer ?? compiled.manifest.policy.defaultLayer;
+  const fallbackCompute = resolveTaskCompute(compiled, task);
+  const modelRoute = createPlannedTaskModelRoute(compiled, task, options, fallbackCompute);
   const compute = options.compute
     ? readCompute(compiled, options.compute)
-    : resolveTaskCompute(compiled, task);
+    : resolveTaskComputeForPlan(compiled, task, options, fallbackCompute, modelRoute);
   const evidencePrefix = lane?.evidencePrefix ? lane.evidencePrefix.replace(/\/?$/, '/') + slug(task.id) + '/' : undefined;
   const allowedWrites = uniqueStrings([
     ...(lane?.allowedWrites ?? []),
@@ -11112,7 +11340,10 @@ function createJob(compiled: FrontierSwarmCompiled, task: FrontierSwarmTask, opt
   const resourceRequirements = mergeResourceRequirements(lane?.resourceRequirements, task.resourceRequirements, capabilities);
   const ownershipRegions = mergeOwnershipRegions(lane?.ownershipRegions ?? [], task.ownershipRegions);
   const ownedRegions = uniqueStrings([...task.ownedRegions, ...ownershipRegions.map((region) => region.id)]);
-  const metadata = mergeSwarmMetadata([priorityDecisionMetadata(task.metadata, priorityDecisionForTask(task, lane?.id ?? 'unassigned', layer))], task.verification);
+  const metadata = mergeSwarmMetadata([
+    priorityDecisionMetadata(task.metadata, priorityDecisionForTask(task, lane?.id ?? 'unassigned', layer)),
+    modelRoute ? plannedModelRouteMetadata(modelRoute, fallbackCompute, compute, options) : undefined
+  ], task.verification);
   return {
     id: `${lane?.id ?? 'unassigned'}-${slug(task.id)}`,
     taskId: task.id,
@@ -11159,6 +11390,78 @@ function resolveTaskCompute(compiled: FrontierSwarmCompiled, task: FrontierSwarm
   const layerId = task.layer ?? lane?.layer ?? compiled.manifest.policy.defaultLayer;
   const layered = layerId ? resolveLayerCompute(compiled, layerId) : undefined;
   return layered ?? readCompute(compiled, compiled.manifest.policy.defaultCompute);
+}
+
+function createPlannedTaskModelRoute(
+  compiled: FrontierSwarmCompiled,
+  task: FrontierSwarmTask,
+  options: FrontierSwarmPlanInput,
+  fallbackCompute: FrontierSwarmCompute
+): FrontierSwarmModelRoute | undefined {
+  const routingPolicy = normalizeRouterPolicy(options.routingPolicy);
+  if (!routingPolicy) return undefined;
+  return createSwarmModelRoute({
+    manifest: compiled.manifest,
+    task,
+    candidates: compiled.manifest.compute,
+    routingPolicy,
+    routingMode: options.routingMode ?? routingPolicy.defaultMode,
+    generatedAt: options.now,
+    metadata: {
+      source: 'createSwarmPlan',
+      fallbackComputeId: fallbackCompute.id
+    }
+  });
+}
+
+function resolveTaskComputeForPlan(
+  compiled: FrontierSwarmCompiled,
+  task: FrontierSwarmTask,
+  options: FrontierSwarmPlanInput,
+  fallbackCompute: FrontierSwarmCompute,
+  route: FrontierSwarmModelRoute | undefined
+): FrontierSwarmCompute {
+  if (!route) return fallbackCompute;
+  const routingPolicy = normalizeRouterPolicy(options.routingPolicy);
+  const mode = options.routingMode ?? routingPolicy?.defaultMode ?? 'observe';
+  if (mode === 'observe') return fallbackCompute;
+  if (mode !== 'override' && task.compute) return fallbackCompute;
+  const hasMatchedPolicy = route.summary.routingPolicyFeedbackCount > 0 || route.summary.routingPolicyPreferenceCount > 0;
+  if (mode === 'fill' && !hasMatchedPolicy) return fallbackCompute;
+  const routedComputeId = route.recommendedComputeIds[0];
+  if (!routedComputeId) return fallbackCompute;
+  return readCompute(compiled, routedComputeId);
+}
+
+function plannedModelRouteMetadata(
+  route: FrontierSwarmModelRoute,
+  fallbackCompute: FrontierSwarmCompute,
+  selectedCompute: FrontierSwarmCompute,
+  options: FrontierSwarmPlanInput
+): JsonObject {
+  const routePolicy = route.metadata?.routingPolicy;
+  const routePolicyMode = routePolicy && typeof routePolicy === 'object' && !Array.isArray(routePolicy)
+    ? String((routePolicy as Record<string, unknown>).mode ?? 'observe')
+    : 'observe';
+  return {
+    modelRoute: {
+      id: route.id,
+      route: route.route,
+      mode: options.routingMode ?? routePolicyMode,
+      fallbackComputeId: fallbackCompute.id,
+      selectedComputeId: selectedCompute.id,
+      recommendedComputeIds: [...route.recommendedComputeIds],
+      summary: {
+        recommendedCostUsd: route.summary.recommendedCostUsd,
+        recommendedLatencyMs: route.summary.recommendedLatencyMs,
+        routingPolicyFeedbackCount: route.summary.routingPolicyFeedbackCount,
+        routingPolicyOutcomeCount: route.summary.routingPolicyOutcomeCount,
+        routingPolicyCostSignalCount: route.summary.routingPolicyCostSignalCount,
+        routingPolicyPreferenceCount: route.summary.routingPolicyPreferenceCount
+      },
+      reasons: [...route.reasons]
+    }
+  };
 }
 
 function resolveLayerCompute(compiled: FrontierSwarmCompiled, layerId: string): FrontierSwarmCompute | undefined {
@@ -11841,8 +12144,12 @@ export interface FrontierSwarmModelRoutingFeedback extends FrontierSwarmModelRou
 export interface FrontierSwarmModelRoutingPolicySignalInput {
   mode?: FrontierSwarmModelRoutingMode;
   lane?: string;
+  layer?: string;
   workKind?: string;
+  taskKind?: string;
+  computeId?: string;
   model?: string;
+  modelTier?: string;
   confidence?: FrontierSwarmConfidence;
   reason?: string;
   metadata?: unknown;
