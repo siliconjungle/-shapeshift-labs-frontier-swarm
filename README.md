@@ -26,6 +26,8 @@ Queue and coordinator-drain assignments also expose `requiredLeaseScopeIds` and 
 
 The queue model is generic. Runners can map scopes to any repository, package, feature, service, file, symbol, or semantic ownership region without baking project-specific package names into the core package.
 
+`createSwarmSemanticOwnershipStableKey` and `createSwarmSemanticOwnershipRegionId` keep export, type, CLI command, docs section, fixture family, and test case ownership keys stable across discovery order and queue replay.
+
 Caller-provided `scopes` are serialized as opaque queue scopes. Their `id`, `kind`, `leaseKey`, `changedPaths`, `changedRegions`, and `metadata` stay runner-owned, with `kind` defaulting to `custom`; callers can model root, parent, child, lane, semantic-region, and path scopes without changing the core queue logic.
 
 Hierarchical queues also emit `leaseRecords` for root, parent, child, lane, semantic, path, and custom scopes. These records are generic agent merge-queue infrastructure: they carry the lease key, optional local leader metadata, active and terminal queue item IDs, conflict and retry reasons, parent-promotion state, and terminal decision links back to the queue items they close. Adapters can use those records to let independent semantic scopes make progress concurrently while same-scope work serializes under one lease.
@@ -407,6 +409,7 @@ The returned record includes scored candidates, estimated cost and latency, pric
 - `createSwarmFixtureCatalog`, `createSwarmProgressModel`, `createSwarmAutoReviewReport`, `createSwarmRebaseReport`
 - `createSwarmUsageGovernor`, `checkSwarmUsageGovernor`
 - `createSwarmModelRoute`, `createSwarmPanelEvaluation`
+- `createSwarmSemanticOwnershipStableKey`, `createSwarmSemanticOwnershipRegionId`
 - `classifySwarmMergeReadiness`, `classifySwarmMergeDisposition`
 - `resolveSwarmChangedRegions`, `checkSwarmRegionOwnership`
 - `decomposeSwarmFeature`

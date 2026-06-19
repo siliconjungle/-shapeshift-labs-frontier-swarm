@@ -50,6 +50,8 @@ import {
   createSwarmParityOracle,
   createSwarmPanelEvaluation,
   createSwarmProgressModel,
+  createSwarmSemanticOwnershipStableKey,
+  createSwarmSemanticOwnershipRegionId,
   createSwarmQueueOutcomeDecision,
   createSwarmQueueOutcomeModel,
   createSwarmRebaseReport,
@@ -194,6 +196,59 @@ assert.strictEqual(plan.jobs[0].verification[0].command, 'node');
 assert.ok(plan.jobs[0].allowedWrites.includes('inkwell/.frontier/evidence/runtime/runtime-action-parity/**'));
 assert.ok(plan.jobs[0].ownedRegions.includes('runtime.actions'));
 assert.deepStrictEqual(resolveSwarmChangedRegions(plan.jobs[0], ['inkwell/apps/web/src/runtime/runtime.ts']), ['runtime.actions']);
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'named-export',
+  declarationKind: 'function',
+  name: 'add',
+  exportName: 'add'
+}), 'exported-declaration:function:add:add');
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'type',
+  declarationKind: 'type-alias',
+  name: 'MathNumber'
+}), 'type-declaration:type-alias:MathNumber:MathNumber');
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'cli-command',
+  command: 'npm test'
+}), 'cli-command:npm_test');
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'docs-section',
+  section: 'hierarchical-merge-queues'
+}), 'docs-section:hierarchical-merge-queues');
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'fixture-family',
+  family: 'browser-smoke-fixtures'
+}), 'fixture-family:browser-smoke-fixtures');
+assert.strictEqual(createSwarmSemanticOwnershipStableKey({
+  kind: 'test-case',
+  testCase: 'semantic-ownership-keys'
+}), 'test-case:semantic-ownership-keys');
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'type-alias',
+  name: 'MathNumber'
+}), 'src/types.ts#semanticOwnershipRegion:type-declaration:type-alias:MathNumber:MathNumber');
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/cli.ts',
+  kind: 'cli-command',
+  command: 'npm test'
+}), 'src/cli.ts#semanticOwnershipRegion:cli-command:npm_test');
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'README.md',
+  kind: 'docs-section',
+  section: 'hierarchical-merge-queues'
+}), 'README.md#semanticOwnershipRegion:docs-section:hierarchical-merge-queues');
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'fixtures/browser-smoke.json',
+  kind: 'fixture-family',
+  family: 'browser-smoke-fixtures'
+}), 'fixtures/browser-smoke.json#semanticOwnershipRegion:fixture-family:browser-smoke-fixtures');
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'test/smoke.mjs',
+  kind: 'test-case',
+  testCase: 'semantic-ownership-keys'
+}), 'test/smoke.mjs#semanticOwnershipRegion:test-case:semantic-ownership-keys');
 assert.strictEqual(plan.summary.jobCount, 1);
 
 const selection = createSwarmTaskSelection(manifest, tasks, {

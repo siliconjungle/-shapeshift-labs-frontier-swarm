@@ -317,6 +317,44 @@ export interface FrontierSwarmOwnershipRegion {
   metadata?: JsonObject;
 }
 
+export type FrontierSwarmSemanticOwnershipRegionKind =
+  | 'named-export'
+  | 'default-export'
+  | 're-export'
+  | 'namespace-export'
+  | 'exported-declaration'
+  | 'type'
+  | 'cli-command'
+  | 'docs-section'
+  | 'fixture-family'
+  | 'test-case'
+  | string;
+
+export interface FrontierSwarmSemanticOwnershipStableKeyInput {
+  kind: FrontierSwarmSemanticOwnershipRegionKind;
+  name?: string;
+  declarationKind?: string;
+  source?: string;
+  exportName?: string;
+  command?: string;
+  section?: string;
+  family?: string;
+  testCase?: string;
+}
+
+export interface FrontierSwarmSemanticOwnershipRegionIdInput {
+  file: string;
+  kind: FrontierSwarmSemanticOwnershipStableKeyInput['kind'];
+  name?: string;
+  declarationKind?: string;
+  source?: string;
+  exportName?: string;
+  command?: string;
+  section?: string;
+  family?: string;
+  testCase?: string;
+}
+
 export interface FrontierSwarmLaneInput {
   id: string;
   title?: string;
@@ -4276,6 +4314,47 @@ export function checkSwarmOwnership(job: FrontierSwarmJob, changedPaths: readonl
     allowedWrites: [...job.allowedWrites],
     violations
   };
+}
+
+export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemanticOwnershipStableKeyInput): string {
+  if (input.kind === 'named-export' || input.kind === 'default-export' || input.kind === 'exported-declaration' || input.kind === 'export') {
+    return semanticOwnershipStableKey(
+      'exported-declaration',
+      input.declarationKind ?? 'anonymous',
+      input.name ?? input.exportName ?? 'default',
+      input.exportName ?? input.name ?? 'default'
+    );
+  }
+  if (input.kind === 're-export' || input.kind === 'namespace-export') {
+    return semanticOwnershipStableKey('re-export', input.source ?? 'unknown-source', input.name ?? input.exportName ?? '*');
+  }
+  if (input.kind === 'type') {
+    return semanticOwnershipStableKey(
+      'type-declaration',
+      input.declarationKind ?? 'anonymous',
+      input.name ?? input.exportName ?? 'default',
+      input.exportName ?? input.name ?? 'default'
+    );
+  }
+  if (input.kind === 'cli-command') {
+    return semanticOwnershipStableKey('cli-command', input.command ?? input.name ?? 'unknown-command');
+  }
+  if (input.kind === 'docs-section') {
+    return semanticOwnershipStableKey('docs-section', input.section ?? input.name ?? 'unknown-section');
+  }
+  if (input.kind === 'fixture-family') {
+    return semanticOwnershipStableKey('fixture-family', input.family ?? input.name ?? 'unknown-family');
+  }
+  if (input.kind === 'test-case') {
+    return semanticOwnershipStableKey('test-case', input.testCase ?? input.name ?? 'unknown-test-case');
+  }
+  return semanticOwnershipStableKey(input.kind, input.declarationKind ?? input.source ?? input.command ?? input.section ?? input.family ?? input.testCase ?? input.name ?? input.exportName ?? 'default');
+}
+
+export function createSwarmSemanticOwnershipRegionId(input: FrontierSwarmSemanticOwnershipRegionIdInput): string {
+  const file = String(input.file ?? '').trim();
+  if (!file) throw new Error('Missing semantic ownership region file');
+  return semanticOwnershipRegionId(file, createSwarmSemanticOwnershipStableKey(input));
 }
 
 export function resolveSwarmChangedRegions(job: FrontierSwarmJob, changedPaths: readonly string[]): string[] {
@@ -12042,6 +12121,20 @@ function titleFromId(id: string): string {
 
 function slug(value: string): string {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item';
+}
+
+function semanticOwnershipStableKey(kind: string, ...parts: string[]): string {
+  return [kind, ...parts].map(stableIdPart).join(':');
+}
+
+function semanticOwnershipRegionId(file: string, stableKey: string): string {
+  return file + '#semanticOwnershipRegion:' + stableKey;
+}
+
+function stableIdPart(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_.@/$*-]+/g, '_').replace(/^_+|_+$/g, '');
+  if (normalized === '*') return 'star';
+  return normalized.length > 0 ? normalized : 'anonymous';
 }
 
 function uniqueStrings(values: readonly (string | undefined | null)[]): string[] {
