@@ -1495,8 +1495,10 @@ const terminalBundleRejected = createSwarmMergeBundle({
   result: {
     jobId: terminalJobs[1].id,
     status: 'failed',
+    exitCode: 1,
     changedPaths: ['src/terminal/rejected.ts'],
-    verification: [{ status: 1 }]
+    verification: [{ status: 1 }],
+    metadata: { generatedFailedEvidence: { paths: ['src/terminal/rejected.ts.rej'] } }
   },
   patchPath: 'agent-runs/terminal/rejected.patch',
   riskLevel: 'high'
@@ -1584,6 +1586,11 @@ assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.job
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId).action, 'record-only');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).action, 'block');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId).action, 'promote');
+assert.ok(terminalBundleRejected.reasons.includes('worker-exit-nonzero:1'));
+assert.ok(terminalBundleRejected.reasons.includes('generated-failed-evidence'));
+assert.ok(terminalBundleRejected.reasons.includes('generated-failed-evidence:src/terminal/rejected.ts.rej'));
+assert.ok(terminalBundleRejected.reasons.includes('verification-failed:verification'));
+assert.ok(terminalBundleOwnershipViolation.reasons.includes('ownership-violation:src/terminal/ownership.ts'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).reasons.includes('stale-against-head'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId).reasons.includes('failed-or-invalid-evidence'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleOwnershipViolation.jobId).reasons.includes('ownership-rescope-rerun'));

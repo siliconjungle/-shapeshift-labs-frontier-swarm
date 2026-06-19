@@ -10633,12 +10633,46 @@ function mergeBundleReasons(
   const reasons: string[] = [];
   if (staleAgainstHead) reasons.push('stale-against-head');
   if (result.status === 'blocked') reasons.push('blocked');
-  if (result.status === 'failed') reasons.push('failed');
-  if (result.ownershipViolations.length) reasons.push('ownership-violations');
-  if (result.verification.some((entry) => entry.required !== false && entry.status !== 0)) reasons.push('failed-verification');
+  if (result.status === 'failed') {
+    reasons.push('failed');
+    if (result.exitCode !== undefined && result.exitCode !== 0) reasons.push(`worker-exit-nonzero:${result.exitCode}`);
+    if (result.signal) reasons.push(`worker-signal:${result.signal}`);
+    if (result.error) reasons.push('worker-error');
+    if (result.changedPaths.length === 0) reasons.push('no-source-changes');
+  }
+  if (result.ownershipViolations.length) {
+    reasons.push('ownership-violations');
+    for (const file of result.ownershipViolations) reasons.push(`ownership-violation:${file}`);
+  }
+  const generatedFailedEvidencePaths = generatedFailedEvidencePathsFromMetadata(result.metadata);
+  if (generatedFailedEvidencePaths.length) {
+    reasons.push('generated-failed-evidence');
+    for (const file of generatedFailedEvidencePaths) reasons.push(`generated-failed-evidence:${file}`);
+  }
+  for (const entry of result.verification) {
+    if (entry.required !== false && entry.status !== 0) {
+      reasons.push('failed-verification');
+      reasons.push(`verification-failed:${entry.name}`);
+    }
+  }
   if (disposition === 'needs-port') reasons.push('needs-human-port');
   if (disposition === 'rejected') reasons.push('rejected');
   return uniqueStrings(reasons);
+}
+
+function generatedFailedEvidencePathsFromMetadata(metadata: JsonObject | undefined): string[] {
+  if (!metadata) return [];
+  const direct = toJsonObject(metadata.generatedFailedEvidence);
+  const frontierSwarmCodex = toJsonObject(metadata.frontierSwarmCodex);
+  const nested = toJsonObject(frontierSwarmCodex?.generatedFailedEvidence);
+  return uniqueStrings([
+    ...jsonStringArray(direct?.paths),
+    ...jsonStringArray(nested?.paths)
+  ]);
+}
+
+function jsonStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 }
 
 function inferMergeRisk(result: FrontierSwarmJobResult, disposition: FrontierSwarmMergeDisposition): FrontierSwarmRiskLevel {
