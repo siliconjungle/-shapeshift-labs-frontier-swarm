@@ -6092,7 +6092,7 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
     closesSubject: terminal,
     coordinatorReview: category === 'coordinator-review',
     humanBlocked: category === 'human-blocked',
-    staleOrRerun: category === 'stale-rerun',
+    staleOrRerun: category === 'stale-rerun' || outcome === 'rerun',
     conflict: category === 'conflict',
     reviewDebt: category === 'coordinator-review' || category === 'conflict'
   };
@@ -7607,10 +7607,12 @@ function classifyMergeQueueAssignment(
   if (entry.staleAgainstHead || entry.disposition === 'stale-against-head') {
     return { action: 'rerun', reasons: uniqueStrings(['stale-against-head', ...reasons]) };
   }
+  if (entry.ownershipViolations.length > 0 && entry.changedPaths.length > 0 && entry.patchStatus !== 'failed-check') {
+    return { action: 'rerun', reasons: uniqueStrings(['ownership-rescope-rerun', 'ownership-violations', ...reasons]) };
+  }
   if (
     entry.disposition === 'rejected'
     || entry.status === 'failed'
-    || entry.ownershipViolations.length > 0
     || entry.patchStatus === 'failed-check'
   ) {
     return { action: 'reject', reasons: uniqueStrings(['failed-or-invalid-evidence', ...reasons]) };
@@ -8405,6 +8407,7 @@ function defaultQueueOutcomeForCategory(
   const action = input.assignedAction ?? input.action;
   if (category === 'terminal') {
     if (queueOutcomeHas(search, 'committed')) return 'committed';
+    if (action === 'rerun' || input.decision === 'rerun') return 'rerun';
     if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied')) return 'applied';
     if (input.decision === 'superseded' || queueOutcomeHas(search, 'superseded')) return 'superseded';
     if (action === 'reject' || input.decision === 'rejected' || input.disposition === 'rejected' || queueOutcomeHas(search, 'rejected')) return 'rejected';

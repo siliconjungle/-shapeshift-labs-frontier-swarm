@@ -1421,7 +1421,7 @@ assert.strictEqual(publicContractAssignment.action, 'promote');
 assert.strictEqual(publicContractAssignment.promoteToScopeId, 'root');
 assert.ok(publicContractAssignment.reasons.includes('public-contract-region'));
 assert.ok(publicContractAssignment.reasons.includes('parent-scope-region'));
-const terminalJobs = [scalePlan.jobs[8], scalePlan.jobs[9], scalePlan.jobs[10], scalePlan.jobs[11], scalePlan.jobs[12]];
+const terminalJobs = [scalePlan.jobs[8], scalePlan.jobs[9], scalePlan.jobs[10], scalePlan.jobs[11], scalePlan.jobs[12], scalePlan.jobs[13]];
 assert.ok(terminalJobs.every(Boolean));
 const terminalBundleStale = createSwarmMergeBundle({
   job: terminalJobs[0],
@@ -1444,6 +1444,18 @@ const terminalBundleRejected = createSwarmMergeBundle({
     verification: [{ status: 1 }]
   },
   patchPath: 'agent-runs/terminal/rejected.patch',
+  riskLevel: 'high'
+});
+const terminalBundleOwnershipViolation = createSwarmMergeBundle({
+  job: terminalJobs[5],
+  result: {
+    jobId: terminalJobs[5].id,
+    status: 'failed',
+    changedPaths: ['src/terminal/ownership.ts'],
+    ownershipViolations: ['src/terminal/ownership.ts'],
+    verification: [{ status: 0 }]
+  },
+  patchPath: 'agent-runs/terminal/ownership.patch',
   riskLevel: 'high'
 });
 const terminalBundleDiscovery = createSwarmMergeBundle({
@@ -1479,6 +1491,7 @@ const terminalQueue = createSwarmHierarchicalMergeQueue({
     bundles: [
       terminalBundleStale,
       terminalBundleRejected,
+      terminalBundleOwnershipViolation,
       terminalBundleDiscovery,
       terminalBundleBlocked,
       terminalBundleCoordinatorReview
@@ -1487,7 +1500,7 @@ const terminalQueue = createSwarmHierarchicalMergeQueue({
   }),
   generatedAt: 7560
 });
-assert.strictEqual(terminalQueue.summary.rerunCount, 1);
+assert.strictEqual(terminalQueue.summary.rerunCount, 2);
 assert.strictEqual(terminalQueue.summary.rejectCount, 1);
 assert.strictEqual(terminalQueue.summary.recordOnlyCount, 1);
 assert.strictEqual(terminalQueue.summary.blockCount, 1);
@@ -1499,8 +1512,8 @@ assert.deepStrictEqual(terminalQueue.summary.admissionPressure, {
   queueLocalQueueItemCount: 0,
   promoteUpwardCount: 1,
   promoteUpwardQueueItemCount: 1,
-  rerunCount: 1,
-  rerunQueueItemCount: 1,
+  rerunCount: 2,
+  rerunQueueItemCount: 2,
   rejectedCount: 1,
   rejectedQueueItemCount: 1,
   recordOnlyCount: 1,
@@ -1512,11 +1525,14 @@ assert.deepStrictEqual(terminalQueue.byAction.block, [terminalBundleBlocked.jobI
 assert.deepStrictEqual(terminalQueue.byAction.promote, [terminalBundleCoordinatorReview.jobId]);
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).action, 'rerun');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId).action, 'reject');
+assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleOwnershipViolation.jobId).action, 'rerun');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId).action, 'record-only');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).action, 'block');
 assert.strictEqual(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId).action, 'promote');
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId).reasons.includes('stale-against-head'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId).reasons.includes('failed-or-invalid-evidence'));
+assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleOwnershipViolation.jobId).reasons.includes('ownership-rescope-rerun'));
+assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleOwnershipViolation.jobId).reasons.includes('ownership-violations'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId).reasons.includes('discovery-only'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId).reasons.includes('true-blocker'));
 assert.ok(terminalQueue.assignments.find((assignment) => assignment.jobId === terminalBundleCoordinatorReview.jobId).reasons.includes('coordinator-queue-required'));
@@ -1707,9 +1723,9 @@ assert.ok(promoteDrainWork.promotedWork.some((entry) => (
 )));
 
 const terminalDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: terminalQueue, generatedAt: 7590 });
-assert.strictEqual(terminalDrainWork.summary.terminalCount, 4);
+assert.strictEqual(terminalDrainWork.summary.terminalCount, 5);
 assert.strictEqual(terminalDrainWork.summary.escalatedCount, 1);
-assert.strictEqual(terminalDrainWork.summary.rerunCount, 1);
+assert.strictEqual(terminalDrainWork.summary.rerunCount, 2);
 assert.strictEqual(terminalDrainWork.summary.rejectedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.recordedCount, 1);
 assert.strictEqual(terminalDrainWork.summary.blockedCount, 1);
@@ -1723,14 +1739,14 @@ assert.ok(terminalDrainPromotedWork);
 assert.notStrictEqual(terminalDrainPromotedWork.parentQueueId, terminalDrainRootLease.queueId);
 assert.deepStrictEqual(terminalDrainSummary, {
   leaseCount: terminalDrainWork.leases.length,
-  assignmentCount: 5,
+  assignmentCount: 6,
   activeAssignmentCount: 1,
-  terminalCount: 4,
+  terminalCount: 5,
   promotedWorkCount: 1,
   blockerCount: 1,
-  queueItemCount: 5,
+  queueItemCount: 6,
   activeQueueItemCount: 1,
-  terminalQueueItemCount: 4,
+  terminalQueueItemCount: 5,
   promotedQueueItemCount: 1,
   blockerQueueItemCount: 1,
   admissionPressure: {
@@ -1740,8 +1756,8 @@ assert.deepStrictEqual(terminalDrainSummary, {
     queueLocalQueueItemCount: 0,
     promoteUpwardCount: 1,
     promoteUpwardQueueItemCount: 1,
-    rerunCount: 1,
-    rerunQueueItemCount: 1,
+    rerunCount: 2,
+    rerunQueueItemCount: 2,
     rejectedCount: 1,
     rejectedQueueItemCount: 1,
     recordOnlyCount: 1,
@@ -1787,6 +1803,7 @@ assert.deepStrictEqual(
   terminalDrainSummary
 );
 const drainRerun = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleStale.jobId);
+const drainOwnershipRerun = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleOwnershipViolation.jobId);
 const drainReject = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleRejected.jobId);
 const drainRecordOnly = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleDiscovery.jobId);
 const drainBlock = terminalDrainWork.assignments.find((assignment) => assignment.jobId === terminalBundleBlocked.jobId);
@@ -1794,7 +1811,9 @@ assert.deepStrictEqual(
   [drainRerun.decision, drainReject.decision, drainRecordOnly.decision, drainBlock.decision],
   ['rerun', 'rejected', 'recorded', 'blocked']
 );
-assert.ok([drainRerun, drainReject, drainRecordOnly, drainBlock].every((assignment) => assignment.classification === 'terminal' && assignment.terminal === true));
+assert.strictEqual(drainOwnershipRerun.decision, 'rerun');
+assert.ok(drainOwnershipRerun.reasons.includes('ownership-rescope-rerun'));
+assert.ok([drainRerun, drainOwnershipRerun, drainReject, drainRecordOnly, drainBlock].every((assignment) => assignment.classification === 'terminal' && assignment.terminal === true));
 assert.strictEqual(drainBlock.assignedAction, 'block');
 assert.ok(drainBlock.reasons.includes('true-blocker'));
 assert.deepStrictEqual(terminalDrainWork.blockers.map((decision) => decision.jobId), [terminalBundleBlocked.jobId]);
@@ -1872,13 +1891,14 @@ assert.strictEqual(normalizeSwarmTerminalOutcome({ outcome: 'bundle missing' }).
 
 const terminalOutcomeModel = createSwarmQueueOutcomeModel({ drainWork: terminalDrainWork, generatedAt: 7600 });
 assert.strictEqual(terminalOutcomeModel.kind, FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND);
-assert.strictEqual(terminalOutcomeModel.summary.terminalCount, 2);
+assert.strictEqual(terminalOutcomeModel.summary.terminalCount, 3);
 assert.strictEqual(terminalOutcomeModel.summary.coordinatorReviewCount, 1);
 assert.strictEqual(terminalOutcomeModel.summary.humanBlockedCount, 1);
 assert.strictEqual(terminalOutcomeModel.summary.staleRerunCount, 1);
 assert.strictEqual(terminalOutcomeModel.summary.visibleReviewDebtCount, 1);
 assert.strictEqual(terminalOutcomeModel.visibleHumanBlockers[0].jobId, terminalBundleBlocked.jobId);
 assert.strictEqual(terminalOutcomeModel.visibleReruns[0].jobId, terminalBundleStale.jobId);
+assert.strictEqual(terminalOutcomeModel.visibleReruns[1].jobId, terminalBundleOwnershipViolation.jobId);
 assert.strictEqual(terminalOutcomeModel.visibleReviewDebt[0].jobId, terminalBundleCoordinatorReview.jobId);
 
 const queueAliasCollapse = collapseSwarmQueueOutcomeDecisions([
