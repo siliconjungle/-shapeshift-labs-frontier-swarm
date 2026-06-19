@@ -1888,8 +1888,10 @@ const costAwareRoutingPolicy = createSwarmModelRoutingPolicy({
     reason: 'deep route is too expensive for low-risk runtime work'
   }],
   feedback: [{
-    scope: 'lane',
+    scope: 'package',
     lane: 'runtime',
+    layer: 'implementation',
+    taskId: 'previous-implementation',
     taskKind: 'implementation',
     computeId: 'fast',
     model: 'gpt-5.4-mini',
@@ -1898,8 +1900,10 @@ const costAwareRoutingPolicy = createSwarmModelRoutingPolicy({
     evidenceQuality: { band: 'strong', score: 0.96, confidence: 'high' },
     metadata: { routingCost: { estimatedCostUsd: 0.003, durationMs: 44000 } }
   }, {
-    scope: 'lane',
+    scope: 'package',
     lane: 'runtime',
+    layer: 'implementation',
+    taskId: 'previous-implementation',
     taskKind: 'implementation',
     computeId: 'deep',
     model: 'gpt-5.5',

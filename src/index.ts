@@ -4231,7 +4231,8 @@ export function resolveSwarmTaskModelProfile(
 
 export function createSwarmModelRoute(input: FrontierSwarmModelRouterInput): FrontierSwarmModelRoute {
   const generatedAt = input.generatedAt ?? Date.now();
-  const task = isSwarmTask(input.task) ? cloneJsonValue(input.task) as FrontierSwarmTask : normalizeTask(input.task);
+  const rawTask = isSwarmTask(input.task) ? cloneJsonValue(input.task) as FrontierSwarmTask : normalizeTask(input.task);
+  const task = resolveModelRouteTaskContext(input, rawTask);
   const taskProfile = resolveSwarmTaskModelProfile(task);
   const computes = routerComputes(input);
   const tokenEstimate = normalizeModelTokenEstimate(input.tokenEstimate, task);
@@ -10338,6 +10339,15 @@ function routerComputes(input: FrontierSwarmModelRouterInput): FrontierSwarmComp
   return Array.from(unique.values());
 }
 
+function resolveModelRouteTaskContext(input: FrontierSwarmModelRouterInput, task: FrontierSwarmTask): FrontierSwarmTask {
+  if (!input.manifest) return task;
+  const manifest = compileSwarm(input.manifest).manifest;
+  const lane = task.lane ? manifest.lanes.find((entry) => entry.id === task.lane) : undefined;
+  const layer = task.layer ?? lane?.layer ?? manifest.policy.defaultLayer;
+  if (!layer || layer === task.layer) return task;
+  return { ...task, layer };
+}
+
 function normalizeModelTokenEstimate(
   input: FrontierSwarmModelTokenEstimateInput | undefined,
   task?: FrontierSwarmTask
@@ -10542,7 +10552,8 @@ function routingFeedbackForTask(
 }
 
 function routingFeedbackMatchesTask(feedback: FrontierSwarmModelRoutingFeedback, task: FrontierSwarmTask): boolean {
-  if (feedback.taskId && feedback.taskId !== task.id) return false;
+  const taskScoped = feedback.scope === 'task' || (!feedback.scope && feedback.taskId !== undefined);
+  if (taskScoped && feedback.taskId && feedback.taskId !== task.id) return false;
   if (feedback.lane && feedback.lane !== 'global' && feedback.lane !== task.lane) return false;
   if (feedback.layer && feedback.layer !== task.layer) return false;
   const workKind = feedback.workKind ?? feedback.taskKind;
