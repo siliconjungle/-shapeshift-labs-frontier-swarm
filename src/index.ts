@@ -4354,6 +4354,16 @@ export function checkSwarmOwnership(job: FrontierSwarmJob, changedPaths: readonl
 }
 
 export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemanticOwnershipStableKeyInput): string {
+  const typeDeclarationKind = semanticOwnershipTypeDeclarationKind(input);
+  if (input.kind === 'type' || typeDeclarationKind !== undefined) {
+    const name = semanticOwnershipExportName(input);
+    return semanticOwnershipStableKey(
+      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
+      typeDeclarationKind ?? input.declarationKind ?? 'anonymous',
+      name,
+      name
+    );
+  }
   if (input.kind === 'named-export' || input.kind === 'default-export' || input.kind === 'exported-declaration' || input.kind === 'export') {
     const name = semanticOwnershipExportName(input);
     return semanticOwnershipStableKey(
@@ -4371,14 +4381,6 @@ export function createSwarmSemanticOwnershipStableKey(input: FrontierSwarmSemant
       FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
       input.source ?? 'unknown-source',
       semanticOwnershipExportName(input, '*')
-    );
-  }
-  if (input.kind === 'type') {
-    return semanticOwnershipStableKey(
-      FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
-      input.declarationKind ?? 'anonymous',
-      input.name ?? input.exportName ?? 'default',
-      input.exportName ?? input.name ?? 'default'
     );
   }
   if (input.kind === 'cli-command') {
@@ -4575,25 +4577,31 @@ const SEMANTIC_IMPORT_CONFLICT_HINT_KEYS = new Set([
 ]);
 
 function semanticImportExportMetadata(value: Record<string, unknown>, key?: string, file?: string): string[] {
-  const kind = semanticImportExportKind(value, key);
+  const explicitKind = semanticImportStringValue(value.kind);
+  const declarationKind = semanticImportStringValue(value.declarationKind);
+  const typeDeclarationKind = semanticOwnershipTypeDeclarationKind({
+    kind: explicitKind ?? '',
+    declarationKind
+  });
+  const kind = typeDeclarationKind !== undefined ? 'exported-declaration' : semanticImportExportKind(value, key);
   const hasExportishMetadata = kind !== undefined
     || key !== undefined && SEMANTIC_IMPORT_EXPORT_CONTAINER_KEYS.has(key)
     || semanticImportStringValue(value.exportName) !== undefined
-    || semanticImportStringValue(value.declarationKind) !== undefined
+    || declarationKind !== undefined
     || semanticImportStringValue(value.source) !== undefined
     || semanticImportStringValue(value.sourcePath) !== undefined;
   if (!hasExportishMetadata) return [];
   const hints: string[] = [];
   const name = semanticImportStringValue(value.name);
   const exportName = semanticImportStringValue(value.exportName);
-  const declarationKind = semanticImportStringValue(value.declarationKind);
   const source = semanticImportStringValue(value.source) ?? semanticImportStringValue(value.sourcePath);
+  const semanticDeclarationKind = declarationKind ?? semanticImportDeclarationKind(explicitKind) ?? typeDeclarationKind;
   if (name) hints.push(name);
   if (exportName) hints.push(exportName);
-  if (declarationKind) hints.push(declarationKind);
+  if (semanticDeclarationKind) hints.push(semanticDeclarationKind);
   if (source) hints.push(source);
   if (file !== undefined && kind && SEMANTIC_IMPORT_EXPORT_KINDS.has(kind)) {
-    const regionId = semanticImportRegionIdFromMetadata(file, kind, name, exportName, declarationKind, source);
+    const regionId = semanticImportRegionIdFromMetadata(file, kind, name, exportName, semanticDeclarationKind, source);
     if (regionId) hints.push(regionId);
   }
   if (kind) hints.push(kind);
@@ -4602,6 +4610,12 @@ function semanticImportExportMetadata(value: Record<string, unknown>, key?: stri
 
 function semanticImportExportKind(value: Record<string, unknown>, key?: string): string | undefined {
   const explicitKind = semanticImportStringValue(value.kind);
+  if (explicitKind && semanticImportDeclarationKind(explicitKind) !== undefined) {
+    const name = semanticImportStringValue(value.name);
+    const exportName = semanticImportStringValue(value.exportName);
+    if (name === 'default' || exportName === 'default') return 'default-export';
+    return 'named-export';
+  }
   if (explicitKind) return explicitKind;
   if (key !== undefined && Object.prototype.hasOwnProperty.call(SEMANTIC_IMPORT_EXPORT_KIND_BY_CONTAINER_KEY, key)) {
     return SEMANTIC_IMPORT_EXPORT_KIND_BY_CONTAINER_KEY[key];
@@ -4646,6 +4660,11 @@ function semanticImportStringValue(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function semanticImportDeclarationKind(kind: string | undefined): string | undefined {
+  if (kind === 'function' || kind === 'method' || kind === 'arrow-function') return kind;
+  return undefined;
 }
 
 function semanticMergeConflictKeys(semanticImport: FrontierSwarmSemanticImportSummary): string[] {
@@ -7678,6 +7697,16 @@ function semanticOwnershipExportName(input: Pick<FrontierSwarmSemanticOwnershipS
   if (exportName) return exportName;
   if (name === 'default') return 'default';
   return fallback;
+}
+
+function semanticOwnershipTypeDeclarationKindFromString(kind: string | undefined): string | undefined {
+  if (kind === 'generic') return 'generic-declaration';
+  if (kind === 'interface' || kind === 'type-alias' || kind === 'enum' || kind === 'generic-declaration') return kind;
+  return undefined;
+}
+
+function semanticOwnershipTypeDeclarationKind(input: Pick<FrontierSwarmSemanticOwnershipStableKeyInput, 'kind' | 'declarationKind'>): string | undefined {
+  return semanticOwnershipTypeDeclarationKindFromString(input.declarationKind) ?? semanticOwnershipTypeDeclarationKindFromString(input.kind);
 }
 
 function stableIdPart(value: string): string {

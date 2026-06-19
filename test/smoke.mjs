@@ -240,6 +240,30 @@ const semanticNamespaceExportDefaultRegionId = createSwarmSemanticOwnershipRegio
   source: './math.ts',
   name: 'default'
 });
+const semanticInterfaceRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'interface',
+  name: 'Person'
+});
+const semanticTypeAliasRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'type-alias',
+  name: 'Identifier'
+});
+const semanticEnumRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'enum',
+  name: 'Mode'
+});
+const semanticGenericRegionId = createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type',
+  declarationKind: 'generic-declaration',
+  name: 'Response'
+});
 assert.strictEqual(semanticFunctionRegionId, 'src/math.ts#semanticOwnershipRegion:exported-declaration:function:add:add');
 assert.strictEqual(semanticFunctionAliasRegionId, semanticFunctionRegionId);
 assert.strictEqual(semanticFunctionRegionId, semanticDefaultExportRegionId);
@@ -249,6 +273,26 @@ assert.strictEqual(semanticReExportRegionId, 'src/index.ts#semanticOwnershipRegi
 assert.strictEqual(semanticReExportAliasRegionId, semanticReExportRegionId);
 assert.strictEqual(semanticReExportDefaultRegionId, 'src/index.ts#semanticOwnershipRegion:re-export:./math.ts:default');
 assert.strictEqual(semanticNamespaceExportDefaultRegionId, 'src/index.ts#semanticOwnershipRegion:namespace-export:./math.ts:default');
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'interface',
+  name: 'Person'
+}), semanticInterfaceRegionId);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'type-alias',
+  name: 'Identifier'
+}), semanticTypeAliasRegionId);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'enum',
+  name: 'Mode'
+}), semanticEnumRegionId);
+assert.strictEqual(createSwarmSemanticOwnershipRegionId({
+  file: 'src/types.ts',
+  kind: 'generic-declaration',
+  name: 'Response'
+}), semanticGenericRegionId);
 assert.notStrictEqual(semanticNamespaceExportRegionId, semanticReExportRegionId);
 assert.notStrictEqual(semanticReExportDefaultRegionId, semanticReExportRegionId);
 assert.notStrictEqual(semanticNamespaceExportDefaultRegionId, semanticNamespaceExportRegionId);
@@ -597,6 +641,101 @@ const semanticDefaultOnlyExportImport = {
     readiness: { ready: 1 }
   }
 };
+const semanticTypeImport = {
+  total: 1,
+  selected: 1,
+  imported: 1,
+  errors: 0,
+  sourceMapMappingCount: 4,
+  records: [{
+    path: 'src/types.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSemanticNodes: [
+        {
+          kind: 'interface',
+          name: 'Person'
+        },
+        {
+          kind: 'type-alias',
+          name: 'Identifier'
+        },
+        {
+          kind: 'enum',
+          name: 'Mode'
+        },
+        {
+          kind: 'generic-declaration',
+          name: 'Response'
+        }
+      ]
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 4,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 4, occurrences: 4, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
+const semanticFunctionLikeImport = {
+  total: 1,
+  selected: 1,
+  imported: 1,
+  errors: 0,
+  sourceMapMappingCount: 3,
+  records: [{
+    path: 'src/math.ts',
+    status: 'imported',
+    mergeCandidate: {
+      exports: [
+        {
+          kind: 'function',
+          name: 'add',
+          exportName: 'sum'
+        },
+        {
+          kind: 'method',
+          name: 'Calculator.increment',
+          exportName: 'increment'
+        },
+        {
+          kind: 'arrow-function',
+          name: 'multiply',
+          exportName: 'multiply'
+        }
+      ]
+    }
+  }],
+  summary: {
+    total: 1,
+    selected: 1,
+    eligible: 1,
+    omitted: 0,
+    maxFiles: 1,
+    maxBytes: 1024,
+    imported: 1,
+    skipped: 0,
+    errors: 0,
+    sourceMapCount: 1,
+    sourceMapMappingCount: 3,
+    lossCount: 0,
+    lossesBySeverity: {},
+    semanticIndex: { documents: 1, symbols: 3, occurrences: 3, relations: 0, facts: 0 },
+    readiness: { ready: 1 }
+  }
+};
 
 const semanticManifest = createSwarmManifest({
   compute: [{ id: 'deep', kind: 'codex', model: 'gpt-5.5', reasoningEffort: 'xhigh' }],
@@ -639,6 +778,11 @@ assert.deepStrictEqual(resolveSwarmChangedRegions(semanticPlan.jobs[0], ['src/ma
   semanticMethodRegionId
 ].sort());
 assert.deepStrictEqual(resolveSwarmChangedRegions(semanticPlan.jobs[0], ['src/math.ts'], semanticImport), [
+  semanticArrowRegionId,
+  semanticFunctionRegionId,
+  semanticMethodRegionId
+].sort());
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticPlan.jobs[0], ['src/math.ts'], semanticFunctionLikeImport), [
   semanticArrowRegionId,
   semanticFunctionRegionId,
   semanticMethodRegionId
@@ -714,6 +858,41 @@ assert.deepStrictEqual(resolveSwarmChangedRegions(semanticDefaultExportPlan.jobs
 assert.deepStrictEqual(resolveSwarmChangedRegions(semanticExportPlan.jobs[0], ['src/math.ts'], semanticDefaultOnlyExportImport), [
   semanticDefaultExportRegionId
 ]);
+const semanticTypeTasks = defineSwarmTasks([{
+  id: 'type-regions',
+  lane: 'runtime',
+  targetRefs: ['src/types.ts'],
+  ownershipRegions: [
+    {
+      id: semanticInterfaceRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticInterfaceRegionId]
+    },
+    {
+      id: semanticTypeAliasRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticTypeAliasRegionId]
+    },
+    {
+      id: semanticEnumRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticEnumRegionId]
+    },
+    {
+      id: semanticGenericRegionId,
+      globs: ['src/types.ts'],
+      selectors: [semanticGenericRegionId]
+    }
+  ],
+  changedRegions: [semanticBroadRegionId]
+}]);
+const semanticTypePlan = createSwarmPlan(semanticManifest, semanticTypeTasks);
+assert.deepStrictEqual(resolveSwarmChangedRegions(semanticTypePlan.jobs[0], ['src/types.ts'], semanticTypeImport).sort(), [
+  semanticEnumRegionId,
+  semanticGenericRegionId,
+  semanticInterfaceRegionId,
+  semanticTypeAliasRegionId
+].sort());
 const semanticBundle = createSwarmMergeBundle({
   job: semanticPlan.jobs[0],
   result: {
