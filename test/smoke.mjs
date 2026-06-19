@@ -1802,6 +1802,48 @@ const failedActionableOverlay = createSwarmQueueOverlay({
 });
 assert.strictEqual(failedActionableOverlay.summary.failedEvidenceCount, 1);
 assert.strictEqual(failedActionableOverlay.entries[0].status, 'failed-evidence');
+const optionalUnavailableBundle = {
+  ...createSwarmMergeBundle({
+    runId: scaleRun.id,
+    result: {
+      jobId: 'optional-unavailable-evidence',
+      status: 'completed',
+      changedPaths: ['src/runtime.ts'],
+      evidencePaths: ['agent-runs/scale/optional-unavailable/evidence.json'],
+      queueItemIds: ['optional-unavailable-evidence'],
+      verification: [{
+        name: 'optional unavailable package-boundary search',
+        command: 'npm run docs:perf:search',
+        args: [],
+        required: false,
+        status: 1
+      }]
+    },
+    disposition: 'needs-port',
+    reasons: ['coordinator-review-required']
+  }),
+  commandsFailed: [{
+    name: 'optional unavailable package-boundary search',
+    command: 'npm run docs:perf:search',
+    args: [],
+    required: false,
+    status: 1
+  }]
+};
+const optionalUnavailableOverlay = createSwarmQueueOverlay({
+  runId: scaleRun.id,
+  bundles: [optionalUnavailableBundle],
+  generatedAt: 8104
+});
+assert.strictEqual(optionalUnavailableOverlay.summary.failedEvidenceCount, 0);
+assert.strictEqual(optionalUnavailableOverlay.entries[0].status, 'needs-human-port');
+const optionalUnavailableDashboard = createSwarmCoordinatorDashboard({
+  bundles: [optionalUnavailableBundle],
+  generatedAt: 8105
+});
+assert.strictEqual(optionalUnavailableDashboard.summary.failedEvidenceCount, 0);
+assert.strictEqual(optionalUnavailableDashboard.jobs[0].tests.failed, 1);
+assert.strictEqual(optionalUnavailableDashboard.jobs[0].tests.requiredFailed, 0);
 const derivedQueue = deriveSwarmQueueStatus({ snapshot: queueSnapshot, overlays: [queueOverlay], generatedAt: 8200 });
 assert.strictEqual(derivedQueue.jobs.find((job) => job.jobId === firstScaleJob.id).status, 'blocked');
 const checkpoint = createSwarmRunCheckpoint({ run: scaleRun, sequence: 1, savedAt: 9000 });

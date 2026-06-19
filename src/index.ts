@@ -7542,7 +7542,8 @@ function conflictMap(results: readonly FrontierSwarmJobResult[]): Map<string, Se
 function queueOverlayStatusFromBundle(bundle: FrontierSwarmMergeBundle): FrontierSwarmQueueOverlayStatus {
   if (bundle.staleAgainstHead || bundle.disposition === 'stale-against-head') return 'stale-against-head';
   if (bundleHasNoActionableFailureEvidence(bundle)) return 'discovery-only';
-  if (bundle.disposition === 'rejected' || bundle.disposition === 'blocked' || bundle.status === 'failed' || bundle.commandsFailed.length > 0) {
+  const failedRequiredCommand = bundle.commandsFailed.some((entry) => entry.required !== false);
+  if (bundle.disposition === 'rejected' || bundle.disposition === 'blocked' || bundle.status === 'failed' || failedRequiredCommand) {
     return 'failed-evidence';
   }
   if (bundle.disposition === 'auto-mergeable' && bundle.autoMergeable) return 'ready-to-apply';
