@@ -371,6 +371,15 @@ export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KINDS = Object.freeze(
   fixtureFamily: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND,
   testCase: FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND
 } as const);
+export const FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KIND_ORDER = Object.freeze([
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_NAMESPACE_EXPORT_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND
+] as const);
 
 export interface FrontierSwarmLaneInput {
   id: string;
@@ -10891,6 +10900,8 @@ export interface FrontierSwarmBacklogContinuationTaskPlanMetadata extends Fronti
   parentTaskId?: string;
 }
 
+export type FrontierSwarmBacklogTaskPlanMetadata = JsonObject;
+
 export interface FrontierSwarmBacklogTaskPlan {
   kind: 'frontier.swarm.backlog-task-plan';
   version: 1;
@@ -10903,7 +10914,7 @@ export interface FrontierSwarmBacklogTaskPlan {
   runnableTaskIds: string[];
   decompositionTaskIds: string[];
   summary: { taskCount: number; runnableCount: number; decompositionCount: number };
-  metadata?: JsonObject;
+  metadata?: FrontierSwarmBacklogTaskPlanMetadata;
 }
 
 export function createSwarmBacklog(input: FrontierSwarmBacklogInput = {}): FrontierSwarmBacklog {

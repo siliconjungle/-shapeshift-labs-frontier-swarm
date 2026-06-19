@@ -47,9 +47,11 @@ import {
   createSwarmRun,
   defineSwarmTasks,
   resolveSwarmCompute,
+  FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KIND_ORDER,
   type FrontierSwarmArtifactIndex,
   type FrontierSwarmArtifactRoutingPlan,
   type FrontierSwarmAutoReviewReport,
+  type FrontierSwarmBacklogTaskPlanMetadata,
   type FrontierSwarmBlackboard,
   type FrontierSwarmBottleneckReport,
   type FrontierSwarmBudgetDecision,
@@ -223,6 +225,7 @@ fixtureCatalog.fixtures satisfies readonly { id: string }[];
 progressModel.byStatus satisfies Record<string, string[]>;
 namespaceExportStableKey satisfies string;
 defaultReExportRegionId satisfies string;
+FRONTIER_SWARM_SEMANTIC_OWNERSHIP_STABLE_KEY_KIND_ORDER satisfies readonly string[];
 autoReviewReport.findings satisfies readonly { kind: string }[];
 rebaseReport.entries satisfies readonly { status: string }[];
 usageDecision.ok satisfies boolean;
@@ -230,3 +233,4 @@ lanePlaybook.successfulJobIds satisfies string[];
 patchStackPlan.stacks satisfies readonly { jobIds: string[] }[];
 ({} as FrontierSwarmMergeAdmissionPressure).recordOnlyQueueItemCount satisfies number;
 ({} as FrontierSwarmArtifactIndex).summary satisfies { artifactCount: number };
+({} as FrontierSwarmBacklogTaskPlanMetadata) satisfies Record<string, unknown>;
