@@ -10,6 +10,7 @@ import {
   FRONTIER_SWARM_PANEL_EVALUATION_KIND,
   FRONTIER_SWARM_PRIORITY_POLICY_KIND,
   FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
+  FRONTIER_SWARM_RUN_GRAPH_KIND,
   FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS,
   FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND,
   FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS,
@@ -62,6 +63,9 @@ import {
   createSwarmModelRoutingPolicy,
   createSwarmModelRoute,
   FRONTIER_SWARM_TASK_MODEL_PROFILES,
+  createSwarmEvidenceRecord,
+  createSwarmGateEvidenceGraph,
+  createSwarmGateRecord,
   createSwarmOracleCorpus,
   createSwarmPatchStackPlan,
   createSwarmParityOracle,
@@ -84,6 +88,13 @@ import {
   createSwarmScheduleInputFromAdaptiveLoadPlan,
   createSwarmReviewPlan,
   createSwarmReviewerLanePlan,
+  createSwarmRunGraph,
+  createSwarmRunGraphChain,
+  createSwarmRunGraphFork,
+  createSwarmRunGraphJoin,
+  createSwarmRunGraphRetryLoop,
+  createSwarmRunGraphRsiLoop,
+  createSwarmRunGraphTournament,
   createSwarmRunStoreShards,
   createSwarmRunCheckpoint,
   createSwarmRun,
@@ -173,6 +184,90 @@ const manifest = defineSwarmManifest({
 assert.strictEqual(createSwarmManifest().compute[0].id, FRONTIER_SWARM_DEFAULT_CODEX_COMPUTE_ID);
 assert.strictEqual(validateSwarmManifest(manifest).valid, true);
 assert.strictEqual(compileSwarm(manifest).lanesById.get('runtime').layer, 'implementation');
+
+const graph = createSwarmRunGraph({
+  runId: 'run-1',
+  nodes: [
+    { id: 'intent:goal', kind: 'intent', title: 'Goal' },
+    { id: 'task:one', kind: 'task', title: 'Task one' },
+    { id: 'gate:smoke', kind: 'gate', title: 'Smoke', status: 'passed' }
+  ],
+  edges: [
+    { kind: 'dependsOn', from: 'intent:goal', to: 'task:one' },
+    { kind: 'verifies', from: 'gate:smoke', to: 'task:one' },
+    { kind: 'verifies', from: 'missing', to: 'task:one' }
+  ],
+  events: [
+    { type: 'graph.created', nodeId: 'intent:goal' }
+  ]
+});
+assert.strictEqual(graph.kind, FRONTIER_SWARM_RUN_GRAPH_KIND);
+assert.strictEqual(graph.summary.nodeCount, 3);
+assert.strictEqual(graph.summary.edgeCount, 2);
+assert.strictEqual(graph.summary.nodeKinds.task, 1);
+assert.strictEqual(graph.summary.edgeKinds.verifies, 1);
+
+const gateRecord = createSwarmGateRecord({
+  id: 'gate:smoke',
+  type: 'smoke',
+  status: 'passed',
+  required: true,
+  command: 'npm test',
+  jobId: 'job-1'
+});
+const evidenceRecord = createSwarmEvidenceRecord({
+  id: 'evidence:smoke',
+  type: 'command-output',
+  path: 'agent-runs/run/evidence/smoke.log',
+  gateId: gateRecord.id,
+  jobId: 'job-1'
+});
+const gateEvidenceGraph = createSwarmGateEvidenceGraph({
+  runId: 'run-1',
+  gates: [gateRecord],
+  evidence: [evidenceRecord]
+});
+assert.strictEqual(gateEvidenceGraph.summary.nodeKinds.gate, 1);
+assert.strictEqual(gateEvidenceGraph.summary.nodeKinds.evidence, 1);
+assert.strictEqual(gateEvidenceGraph.summary.edgeKinds.produces, 1);
+
+assert.strictEqual(createSwarmRunGraphChain({
+  nodes: [
+    { id: 'chain:start', kind: 'intent' },
+    { id: 'chain:task', kind: 'task' }
+  ]
+}).summary.edgeCount, 1);
+assert.strictEqual(createSwarmRunGraphFork({
+  source: { id: 'fork:source', kind: 'task' },
+  branches: [
+    { id: 'fork:a', kind: 'worker' },
+    { id: 'fork:b', kind: 'worker' }
+  ]
+}).summary.exitCount, 2);
+assert.strictEqual(createSwarmRunGraphJoin({
+  branches: [
+    { id: 'join:a', kind: 'worker' },
+    { id: 'join:b', kind: 'worker' }
+  ],
+  join: { id: 'join:done', kind: 'decision' }
+}).summary.entryCount, 2);
+assert.strictEqual(createSwarmRunGraphTournament({
+  candidates: [
+    { id: 'candidate:a', kind: 'candidate' },
+    { id: 'candidate:b', kind: 'candidate' }
+  ],
+  winner: 'candidate:a',
+  rejectedCandidates: ['candidate:b']
+}).summary.nodeCount, 3);
+assert.strictEqual(createSwarmRunGraphRetryLoop({
+  action: { id: 'retry:action', kind: 'task' },
+  gate: { id: 'retry:gate', kind: 'gate', status: 'failed' },
+  retry: { id: 'retry:next', kind: 'task' }
+}).summary.edgeCount, 3);
+assert.strictEqual(createSwarmRunGraphRsiLoop({
+  observe: { id: 'rsi:observe', kind: 'rsi' },
+  improve: { id: 'rsi:improve', kind: 'rsi' }
+}).summary.edgeCount, 1);
 
 const semanticBroadRegionId = 'src/math.ts';
 const semanticFunctionRegionId = createSwarmSemanticOwnershipRegionId({

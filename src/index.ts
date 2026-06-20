@@ -12,6 +12,16 @@ export const FRONTIER_SWARM_EVENT_KIND = 'frontier.swarm.event';
 export const FRONTIER_SWARM_EVENT_VERSION = 1;
 export const FRONTIER_SWARM_EVENT_STREAM_KIND = 'frontier.swarm.event-stream';
 export const FRONTIER_SWARM_EVENT_STREAM_VERSION = 1;
+export const FRONTIER_SWARM_RUN_GRAPH_KIND = 'frontier.swarm.run-graph';
+export const FRONTIER_SWARM_RUN_GRAPH_VERSION = 1;
+export const FRONTIER_SWARM_GRAPH_SNAPSHOT_KIND = 'frontier.swarm.graph-snapshot';
+export const FRONTIER_SWARM_GRAPH_SNAPSHOT_VERSION = 1;
+export const FRONTIER_SWARM_RUN_GRAPH_CHUNK_KIND = 'frontier.swarm.run-graph-chunk';
+export const FRONTIER_SWARM_RUN_GRAPH_CHUNK_VERSION = 1;
+export const FRONTIER_SWARM_GATE_RECORD_KIND = 'frontier.swarm.gate-record';
+export const FRONTIER_SWARM_GATE_RECORD_VERSION = 1;
+export const FRONTIER_SWARM_EVIDENCE_RECORD_KIND = 'frontier.swarm.evidence-record';
+export const FRONTIER_SWARM_EVIDENCE_RECORD_VERSION = 1;
 export const FRONTIER_SWARM_MAILBOX_KIND = 'frontier.swarm.mailbox';
 export const FRONTIER_SWARM_MAILBOX_VERSION = 1;
 export const FRONTIER_SWARM_PROOF_KIND = 'frontier.swarm.proof';
@@ -120,6 +130,27 @@ export const FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS = [
   'fuzz',
   'browser',
   'oracle'
+] as const;
+export const FRONTIER_SWARM_GRAPH_NODE_KINDS = [
+  'intent',
+  'task',
+  'worker',
+  'candidate',
+  'evidence',
+  'gate',
+  'decision',
+  'merge',
+  'replay',
+  'rsi'
+] as const;
+export const FRONTIER_SWARM_GRAPH_EDGE_KINDS = [
+  'dependsOn',
+  'blocks',
+  'produces',
+  'verifies',
+  'conflictsWith',
+  'supersedes',
+  'mergesInto'
 ] as const;
 
 export type FrontierSwarmComputeKind = 'codex' | 'shell' | 'human' | 'external' | string;
@@ -1136,6 +1167,249 @@ export interface FrontierSwarmJobGraphEdge {
   from: string;
   to: string;
   type: 'depends-on' | 'parent-task';
+}
+
+export type FrontierSwarmGraphNodeKind = (typeof FRONTIER_SWARM_GRAPH_NODE_KINDS)[number] | string;
+export type FrontierSwarmGraphEdgeKind = (typeof FRONTIER_SWARM_GRAPH_EDGE_KINDS)[number] | string;
+export type FrontierSwarmGraphStatus =
+  | 'pending'
+  | 'running'
+  | 'passed'
+  | 'failed'
+  | 'accepted'
+  | 'rejected'
+  | 'blocked'
+  | 'superseded'
+  | 'unknown'
+  | string;
+
+export interface FrontierSwarmGraphNodeInput {
+  id?: string;
+  kind: FrontierSwarmGraphNodeKind;
+  title?: string;
+  status?: FrontierSwarmGraphStatus;
+  jobId?: string;
+  taskId?: string;
+  path?: string;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmGraphNode {
+  id: string;
+  kind: FrontierSwarmGraphNodeKind;
+  title?: string;
+  status?: FrontierSwarmGraphStatus;
+  jobId?: string;
+  taskId?: string;
+  path?: string;
+  generatedAt?: number;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmGraphEdgeInput {
+  id?: string;
+  from: string;
+  to: string;
+  kind: FrontierSwarmGraphEdgeKind;
+  label?: string;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmGraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  kind: FrontierSwarmGraphEdgeKind;
+  label?: string;
+  generatedAt?: number;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmGraphEventInput {
+  id?: string;
+  type: string;
+  nodeId?: string;
+  edgeId?: string;
+  timestamp?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmGraphEvent {
+  id: string;
+  type: string;
+  nodeId?: string;
+  edgeId?: string;
+  timestamp: number;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmRunGraphSummary {
+  nodeCount: number;
+  edgeCount: number;
+  eventCount: number;
+  nodeKinds: Record<string, number>;
+  edgeKinds: Record<string, number>;
+  openBlockerCount: number;
+  humanQuestionCount: number;
+}
+
+export interface FrontierSwarmRunGraphInput {
+  id?: string;
+  runId?: string;
+  title?: string;
+  generatedAt?: number;
+  nodes?: readonly FrontierSwarmGraphNodeInput[];
+  edges?: readonly FrontierSwarmGraphEdgeInput[];
+  events?: readonly FrontierSwarmGraphEventInput[];
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRunGraph {
+  kind: typeof FRONTIER_SWARM_RUN_GRAPH_KIND;
+  version: typeof FRONTIER_SWARM_RUN_GRAPH_VERSION;
+  id: string;
+  runId?: string;
+  title?: string;
+  generatedAt: number;
+  nodes: FrontierSwarmGraphNode[];
+  edges: FrontierSwarmGraphEdge[];
+  events: FrontierSwarmGraphEvent[];
+  summary: FrontierSwarmRunGraphSummary;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmGraphSnapshotInput {
+  id?: string;
+  graph: FrontierSwarmRunGraphInput | FrontierSwarmRunGraph;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmGraphSnapshot {
+  kind: typeof FRONTIER_SWARM_GRAPH_SNAPSHOT_KIND;
+  version: typeof FRONTIER_SWARM_GRAPH_SNAPSHOT_VERSION;
+  id: string;
+  graphId: string;
+  generatedAt: number;
+  summary: FrontierSwarmRunGraphSummary;
+  graph: FrontierSwarmRunGraph;
+  metadata?: JsonObject;
+}
+
+export type FrontierSwarmGateRecordType =
+  | FrontierSwarmVerificationCategory
+  | 'command'
+  | 'browser'
+  | 'fuzz'
+  | 'oracle'
+  | 'benchmark'
+  | 'semantic-sidecar'
+  | 'replay'
+  | string;
+export type FrontierSwarmGateRecordStatus = 'passed' | 'failed' | 'unknown' | 'skipped' | 'blocked' | string;
+export type FrontierSwarmEvidenceRecordType =
+  | 'command-output'
+  | 'browser'
+  | 'fuzz'
+  | 'oracle'
+  | 'benchmark'
+  | 'semantic-sidecar'
+  | 'replay'
+  | 'artifact'
+  | string;
+
+export interface FrontierSwarmGateRecordInput {
+  id?: string;
+  type: FrontierSwarmGateRecordType;
+  status?: FrontierSwarmGateRecordStatus;
+  required?: boolean;
+  command?: string;
+  path?: string;
+  jobId?: string;
+  taskId?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  failureReason?: string;
+  confidence?: FrontierSwarmConfidence;
+  metrics?: unknown;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmGateRecord {
+  kind: typeof FRONTIER_SWARM_GATE_RECORD_KIND;
+  version: typeof FRONTIER_SWARM_GATE_RECORD_VERSION;
+  id: string;
+  type: FrontierSwarmGateRecordType;
+  status: FrontierSwarmGateRecordStatus;
+  required: boolean;
+  command?: string;
+  path?: string;
+  jobId?: string;
+  taskId?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  failureReason?: string;
+  confidence?: FrontierSwarmConfidence;
+  metrics?: JsonObject;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmEvidenceRecordInput {
+  id?: string;
+  type: FrontierSwarmEvidenceRecordType;
+  path?: string;
+  ref?: string;
+  jobId?: string;
+  taskId?: string;
+  gateId?: string;
+  producedAt?: number;
+  confidence?: FrontierSwarmConfidence;
+  metrics?: unknown;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmEvidenceRecord {
+  kind: typeof FRONTIER_SWARM_EVIDENCE_RECORD_KIND;
+  version: typeof FRONTIER_SWARM_EVIDENCE_RECORD_VERSION;
+  id: string;
+  type: FrontierSwarmEvidenceRecordType;
+  path?: string;
+  ref?: string;
+  jobId?: string;
+  taskId?: string;
+  gateId?: string;
+  producedAt: number;
+  confidence?: FrontierSwarmConfidence;
+  metrics?: JsonObject;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmRunGraphChunkInput {
+  id?: string;
+  nodes?: readonly FrontierSwarmGraphNodeInput[];
+  edges?: readonly FrontierSwarmGraphEdgeInput[];
+  entryNodeIds?: readonly string[];
+  exitNodeIds?: readonly string[];
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRunGraphChunk {
+  kind: typeof FRONTIER_SWARM_RUN_GRAPH_CHUNK_KIND;
+  version: typeof FRONTIER_SWARM_RUN_GRAPH_CHUNK_VERSION;
+  id: string;
+  nodes: FrontierSwarmGraphNode[];
+  edges: FrontierSwarmGraphEdge[];
+  entryNodeIds: string[];
+  exitNodeIds: string[];
+  summary: {
+    nodeCount: number;
+    edgeCount: number;
+    entryCount: number;
+    exitCount: number;
+  };
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmScheduleInput {
@@ -4137,6 +4411,300 @@ export function createSwarmTaskSelection(
     entries,
     summary: summarizeTaskSelection(entries)
   };
+}
+
+export function createSwarmRunGraph(input: FrontierSwarmRunGraphInput = {}): FrontierSwarmRunGraph {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const nodes = dedupeGraphNodes((input.nodes ?? []).map((node) => normalizeGraphNode(node, generatedAt)));
+  const knownNodeIds = new Set(nodes.map((node) => node.id));
+  const edges = dedupeGraphEdges((input.edges ?? [])
+    .map((edge) => normalizeGraphEdge(edge, generatedAt))
+    .filter((edge) => knownNodeIds.has(edge.from) && knownNodeIds.has(edge.to)));
+  const knownEdgeIds = new Set(edges.map((edge) => edge.id));
+  const events = (input.events ?? [])
+    .map((event) => normalizeGraphEvent(event, generatedAt))
+    .filter((event) => event.nodeId === undefined || knownNodeIds.has(event.nodeId))
+    .filter((event) => event.edgeId === undefined || knownEdgeIds.has(event.edgeId))
+    .sort((left, right) => left.timestamp - right.timestamp || left.id.localeCompare(right.id));
+  const graph: FrontierSwarmRunGraph = {
+    kind: FRONTIER_SWARM_RUN_GRAPH_KIND,
+    version: FRONTIER_SWARM_RUN_GRAPH_VERSION,
+    id: input.id ?? 'swarm-run-graph:' + stableHash([input.runId, nodes.map((node) => node.id), edges.map((edge) => edge.id)]),
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.title ? { title: input.title } : {}),
+    generatedAt,
+    nodes,
+    edges,
+    events,
+    summary: summarizeSwarmRunGraph(nodes, edges, events),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+  return graph;
+}
+
+export function normalizeSwarmRunGraph(input: FrontierSwarmRunGraphInput | FrontierSwarmRunGraph): FrontierSwarmRunGraph {
+  if ((input as FrontierSwarmRunGraph).kind === FRONTIER_SWARM_RUN_GRAPH_KIND) {
+    const graph = input as FrontierSwarmRunGraph;
+    return createSwarmRunGraph({
+      id: graph.id,
+      runId: graph.runId,
+      title: graph.title,
+      generatedAt: graph.generatedAt,
+      nodes: graph.nodes,
+      edges: graph.edges,
+      events: graph.events,
+      metadata: graph.metadata
+    });
+  }
+  return createSwarmRunGraph(input as FrontierSwarmRunGraphInput);
+}
+
+export function createSwarmGraphSnapshot(input: FrontierSwarmGraphSnapshotInput): FrontierSwarmGraphSnapshot {
+  const graph = normalizeSwarmRunGraph(input.graph);
+  const generatedAt = input.generatedAt ?? Date.now();
+  return {
+    kind: FRONTIER_SWARM_GRAPH_SNAPSHOT_KIND,
+    version: FRONTIER_SWARM_GRAPH_SNAPSHOT_VERSION,
+    id: input.id ?? 'swarm-graph-snapshot:' + stableHash([graph.id, generatedAt, graph.summary]),
+    graphId: graph.id,
+    generatedAt,
+    summary: graph.summary,
+    graph,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmGateRecord(input: FrontierSwarmGateRecordInput): FrontierSwarmGateRecord {
+  const metrics = toJsonObject(input.metrics);
+  const metadata = toJsonObject(input.metadata);
+  return {
+    kind: FRONTIER_SWARM_GATE_RECORD_KIND,
+    version: FRONTIER_SWARM_GATE_RECORD_VERSION,
+    id: input.id ?? 'swarm-gate:' + stableHash([input.type, input.command, input.path, input.jobId, input.taskId, input.startedAt, input.finishedAt]),
+    type: input.type,
+    status: input.status ?? 'unknown',
+    required: input.required ?? false,
+    ...(input.command ? { command: input.command } : {}),
+    ...(input.path ? { path: input.path } : {}),
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
+    ...(input.finishedAt !== undefined ? { finishedAt: input.finishedAt } : {}),
+    ...(input.failureReason ? { failureReason: input.failureReason } : {}),
+    ...(input.confidence ? { confidence: input.confidence } : {}),
+    ...(metrics ? { metrics } : {}),
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+export function createSwarmEvidenceRecord(input: FrontierSwarmEvidenceRecordInput): FrontierSwarmEvidenceRecord {
+  const metrics = toJsonObject(input.metrics);
+  const metadata = toJsonObject(input.metadata);
+  const producedAt = input.producedAt ?? Date.now();
+  return {
+    kind: FRONTIER_SWARM_EVIDENCE_RECORD_KIND,
+    version: FRONTIER_SWARM_EVIDENCE_RECORD_VERSION,
+    id: input.id ?? 'swarm-evidence:' + stableHash([input.type, input.path, input.ref, input.jobId, input.taskId, input.gateId]),
+    type: input.type,
+    ...(input.path ? { path: input.path } : {}),
+    ...(input.ref ? { ref: input.ref } : {}),
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.gateId ? { gateId: input.gateId } : {}),
+    producedAt,
+    ...(input.confidence ? { confidence: input.confidence } : {}),
+    ...(metrics ? { metrics } : {}),
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+export function mapSwarmGateEvidenceToGraph(input: {
+  runId?: string;
+  gates?: readonly (FrontierSwarmGateRecordInput | FrontierSwarmGateRecord)[];
+  evidence?: readonly (FrontierSwarmEvidenceRecordInput | FrontierSwarmEvidenceRecord)[];
+  generatedAt?: number;
+}): FrontierSwarmRunGraph {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const gateRecords = (input.gates ?? []).map((gate) => isSwarmGateRecord(gate) ? gate : createSwarmGateRecord(gate));
+  const evidenceRecords = (input.evidence ?? []).map((evidence) => isSwarmEvidenceRecord(evidence) ? evidence : createSwarmEvidenceRecord(evidence));
+  const nodes: FrontierSwarmGraphNodeInput[] = [
+    ...gateRecords.map((gate) => ({
+      id: graphNodeId('gate', gate.id),
+      kind: 'gate',
+      title: gate.command ?? gate.path ?? gate.type,
+      status: gate.status,
+      jobId: gate.jobId,
+      taskId: gate.taskId,
+      path: gate.path,
+      generatedAt,
+      metadata: gate
+    })),
+    ...evidenceRecords.map((evidence) => ({
+      id: graphNodeId('evidence', evidence.id),
+      kind: 'evidence',
+      title: evidence.path ?? evidence.ref ?? evidence.type,
+      status: evidence.confidence,
+      jobId: evidence.jobId,
+      taskId: evidence.taskId,
+      path: evidence.path,
+      generatedAt,
+      metadata: evidence
+    }))
+  ];
+  const edges: FrontierSwarmGraphEdgeInput[] = [];
+  for (const evidence of evidenceRecords) {
+    if (evidence.gateId) {
+      edges.push({
+        kind: 'produces',
+        from: graphNodeId('gate', evidence.gateId),
+        to: graphNodeId('evidence', evidence.id),
+        generatedAt
+      });
+      edges.push({
+        kind: 'verifies',
+        from: graphNodeId('evidence', evidence.id),
+        to: graphNodeId('gate', evidence.gateId),
+        generatedAt
+      });
+    }
+  }
+  return createSwarmRunGraph({
+    runId: input.runId,
+    title: 'Gate and evidence graph',
+    generatedAt,
+    nodes,
+    edges
+  });
+}
+
+export function createSwarmGateEvidenceGraph(input: Parameters<typeof mapSwarmGateEvidenceToGraph>[0]): FrontierSwarmRunGraph {
+  return mapSwarmGateEvidenceToGraph(input);
+}
+
+export function createSwarmRunGraphChunk(input: FrontierSwarmRunGraphChunkInput = {}): FrontierSwarmRunGraphChunk {
+  const generatedAt = Date.now();
+  const nodes = dedupeGraphNodes((input.nodes ?? []).map((node) => normalizeGraphNode(node, generatedAt)));
+  const known = new Set(nodes.map((node) => node.id));
+  const edges = dedupeGraphEdges((input.edges ?? [])
+    .map((edge) => normalizeGraphEdge(edge, generatedAt))
+    .filter((edge) => known.has(edge.from) && known.has(edge.to)));
+  const entryNodeIds = uniqueStrings((input.entryNodeIds ?? []).filter((id) => known.has(id)));
+  const exitNodeIds = uniqueStrings((input.exitNodeIds ?? []).filter((id) => known.has(id)));
+  return {
+    kind: FRONTIER_SWARM_RUN_GRAPH_CHUNK_KIND,
+    version: FRONTIER_SWARM_RUN_GRAPH_CHUNK_VERSION,
+    id: input.id ?? 'swarm-run-graph-chunk:' + stableHash([nodes.map((node) => node.id), edges.map((edge) => edge.id), entryNodeIds, exitNodeIds]),
+    nodes,
+    edges,
+    entryNodeIds,
+    exitNodeIds,
+    summary: {
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      entryCount: entryNodeIds.length,
+      exitCount: exitNodeIds.length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmRunGraphChain(input: { id?: string; nodes: readonly FrontierSwarmGraphNodeInput[]; edgeKind?: FrontierSwarmGraphEdgeKind; metadata?: unknown }): FrontierSwarmRunGraphChunk {
+  const nodes = input.nodes.map((node) => normalizeGraphNode(node));
+  const edges: FrontierSwarmGraphEdgeInput[] = [];
+  for (let index = 1; index < nodes.length; index += 1) {
+    edges.push({ kind: input.edgeKind ?? 'dependsOn', from: nodes[index - 1].id, to: nodes[index].id });
+  }
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes,
+    edges,
+    entryNodeIds: nodes[0] ? [nodes[0].id] : [],
+    exitNodeIds: nodes.at(-1) ? [nodes.at(-1)!.id] : [],
+    metadata: input.metadata
+  });
+}
+
+export function createSwarmRunGraphFork(input: { id?: string; source: FrontierSwarmGraphNodeInput; branches: readonly FrontierSwarmGraphNodeInput[]; metadata?: unknown }): FrontierSwarmRunGraphChunk {
+  const source = normalizeGraphNode(input.source);
+  const branches = input.branches.map((node) => normalizeGraphNode(node));
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes: [source, ...branches],
+    edges: branches.map((branch) => ({ kind: 'dependsOn', from: source.id, to: branch.id, label: 'fork' })),
+    entryNodeIds: [source.id],
+    exitNodeIds: branches.map((branch) => branch.id),
+    metadata: input.metadata
+  });
+}
+
+export function createSwarmRunGraphJoin(input: { id?: string; branches: readonly FrontierSwarmGraphNodeInput[]; join: FrontierSwarmGraphNodeInput; metadata?: unknown }): FrontierSwarmRunGraphChunk {
+  const branches = input.branches.map((node) => normalizeGraphNode(node));
+  const join = normalizeGraphNode(input.join);
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes: [...branches, join],
+    edges: branches.map((branch) => ({ kind: 'dependsOn', from: branch.id, to: join.id, label: 'join' })),
+    entryNodeIds: branches.map((branch) => branch.id),
+    exitNodeIds: [join.id],
+    metadata: input.metadata
+  });
+}
+
+export function createSwarmRunGraphTournament(input: { id?: string; candidates: readonly FrontierSwarmGraphNodeInput[]; winner?: string; rejectedCandidates?: readonly string[]; metadata?: unknown }): FrontierSwarmRunGraphChunk {
+  const tournament = normalizeGraphNode({ id: input.id ? `${input.id}:tournament` : undefined, kind: 'decision', title: 'Tournament', metadata: input.metadata });
+  const candidates = input.candidates.map((node) => normalizeGraphNode({ ...node, kind: node.kind ?? 'candidate' }));
+  const rejected = new Set(input.rejectedCandidates ?? []);
+  const edges: FrontierSwarmGraphEdgeInput[] = candidates.map((candidate) => ({
+    kind: candidate.id === input.winner ? 'mergesInto' : rejected.has(candidate.id) ? 'supersedes' : 'dependsOn',
+    from: candidate.id,
+    to: tournament.id,
+    label: candidate.id === input.winner ? 'winner' : rejected.has(candidate.id) ? 'rejected' : 'candidate'
+  }));
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes: [tournament, ...candidates],
+    edges,
+    entryNodeIds: candidates.map((candidate) => candidate.id),
+    exitNodeIds: [tournament.id],
+    metadata: input.metadata
+  });
+}
+
+export function createSwarmRunGraphRetryLoop(input: { id?: string; action: FrontierSwarmGraphNodeInput; gate: FrontierSwarmGraphNodeInput; retry: FrontierSwarmGraphNodeInput; success?: FrontierSwarmGraphNodeInput; failure?: FrontierSwarmGraphNodeInput; metadata?: unknown }): FrontierSwarmRunGraphChunk {
+  const action = normalizeGraphNode(input.action);
+  const gate = normalizeGraphNode({ ...input.gate, kind: input.gate.kind ?? 'gate' });
+  const retry = normalizeGraphNode(input.retry);
+  const optional = [input.success, input.failure].filter((node): node is FrontierSwarmGraphNodeInput => Boolean(node)).map((node) => normalizeGraphNode(node));
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes: [action, gate, retry, ...optional],
+    edges: [
+      { kind: 'verifies', from: action.id, to: gate.id },
+      { kind: 'blocks', from: gate.id, to: retry.id, label: 'retry' },
+      { kind: 'dependsOn', from: retry.id, to: action.id, label: 'loop' },
+      ...optional.map((node) => ({ kind: node.status === 'failed' ? 'blocks' : 'mergesInto', from: gate.id, to: node.id } satisfies FrontierSwarmGraphEdgeInput))
+    ],
+    entryNodeIds: [action.id],
+    exitNodeIds: optional.length > 0 ? optional.map((node) => node.id) : [gate.id],
+    metadata: input.metadata
+  });
+}
+
+export function createSwarmRunGraphRsiLoop(input: { id?: string; observe: FrontierSwarmGraphNodeInput; improve: FrontierSwarmGraphNodeInput; apply?: FrontierSwarmGraphNodeInput; metadata?: unknown }): FrontierSwarmRunGraphChunk {
+  const observe = normalizeGraphNode({ ...input.observe, kind: input.observe.kind ?? 'rsi' });
+  const improve = normalizeGraphNode({ ...input.improve, kind: input.improve.kind ?? 'rsi' });
+  const apply = input.apply ? normalizeGraphNode(input.apply) : undefined;
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes: apply ? [observe, improve, apply] : [observe, improve],
+    edges: [
+      { kind: 'produces', from: observe.id, to: improve.id, label: 'feedback' },
+      ...(apply ? [{ kind: 'mergesInto' as FrontierSwarmGraphEdgeKind, from: improve.id, to: apply.id, label: 'applies' }] : [])
+    ],
+    entryNodeIds: [observe.id],
+    exitNodeIds: [apply?.id ?? improve.id],
+    metadata: input.metadata
+  });
 }
 
 export const FRONTIER_SWARM_TASK_MODEL_PROFILES: readonly FrontierSwarmTaskModelProfile[] = [
@@ -9938,6 +10506,107 @@ function countBy(values: readonly string[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const value of values) out[value] = (out[value] ?? 0) + 1;
   return out;
+}
+
+function normalizeGraphNode(input: FrontierSwarmGraphNodeInput | FrontierSwarmGraphNode, generatedAt = Date.now()): FrontierSwarmGraphNode {
+  const metadata = toJsonObject(input.metadata);
+  const id = input.id ?? graphNodeId(input.kind, input.title ?? input.jobId ?? input.taskId ?? String(generatedAt));
+  return {
+    id,
+    kind: input.kind,
+    ...(input.title ? { title: input.title } : {}),
+    ...(input.status ? { status: input.status } : {}),
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.path ? { path: input.path } : {}),
+    generatedAt: input.generatedAt ?? generatedAt,
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function normalizeGraphEdge(input: FrontierSwarmGraphEdgeInput | FrontierSwarmGraphEdge, generatedAt = Date.now()): FrontierSwarmGraphEdge {
+  const metadata = toJsonObject(input.metadata);
+  return {
+    id: input.id ?? `${input.kind}:${input.from}->${input.to}`,
+    from: input.from,
+    to: input.to,
+    kind: input.kind,
+    ...(input.label ? { label: input.label } : {}),
+    generatedAt: input.generatedAt ?? generatedAt,
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function normalizeGraphEvent(input: FrontierSwarmGraphEventInput | FrontierSwarmGraphEvent, generatedAt = Date.now()): FrontierSwarmGraphEvent {
+  const timestamp = input.timestamp ?? generatedAt;
+  const metadata = toJsonObject(input.metadata);
+  return {
+    id: input.id ?? 'swarm-graph-event:' + stableHash([input.type, input.nodeId, input.edgeId, timestamp]),
+    type: input.type,
+    ...(input.nodeId ? { nodeId: input.nodeId } : {}),
+    ...(input.edgeId ? { edgeId: input.edgeId } : {}),
+    timestamp,
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function dedupeGraphNodes(nodes: readonly FrontierSwarmGraphNode[]): FrontierSwarmGraphNode[] {
+  const byId = new Map<string, FrontierSwarmGraphNode>();
+  for (const node of nodes) byId.set(node.id, mergeGraphNode(byId.get(node.id), node));
+  return Array.from(byId.values()).sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function mergeGraphNode(existing: FrontierSwarmGraphNode | undefined, node: FrontierSwarmGraphNode): FrontierSwarmGraphNode {
+  if (!existing) return node;
+  return {
+    ...existing,
+    ...node,
+    metadata: mergeGraphMetadata(existing.metadata, node.metadata)
+  };
+}
+
+function dedupeGraphEdges(edges: readonly FrontierSwarmGraphEdge[]): FrontierSwarmGraphEdge[] {
+  const byId = new Map<string, FrontierSwarmGraphEdge>();
+  for (const edge of edges) byId.set(edge.id, edge);
+  return Array.from(byId.values()).sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function summarizeSwarmRunGraph(
+  nodes: readonly FrontierSwarmGraphNode[],
+  edges: readonly FrontierSwarmGraphEdge[],
+  events: readonly FrontierSwarmGraphEvent[]
+): FrontierSwarmRunGraphSummary {
+  return {
+    nodeCount: nodes.length,
+    edgeCount: edges.length,
+    eventCount: events.length,
+    nodeKinds: countBy(nodes.map((node) => node.kind)),
+    edgeKinds: countBy(edges.map((edge) => edge.kind)),
+    openBlockerCount: nodes.filter((node) => node.status === 'blocked').length + edges.filter((edge) => edge.kind === 'blocks').length,
+    humanQuestionCount: nodes.filter((node) => node.kind === 'decision' && /human|question/i.test(node.title ?? '')).length
+  };
+}
+
+function graphNodeId(kind: string, value: string): string {
+  return `${kind}:${normalizeGraphIdPart(value)}`;
+}
+
+function normalizeGraphIdPart(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9_.:-]+/g, '-').replace(/^-+|-+$/g, '') || stableHash(value);
+}
+
+function isSwarmGateRecord(input: FrontierSwarmGateRecordInput | FrontierSwarmGateRecord): input is FrontierSwarmGateRecord {
+  return (input as FrontierSwarmGateRecord).kind === FRONTIER_SWARM_GATE_RECORD_KIND;
+}
+
+function isSwarmEvidenceRecord(input: FrontierSwarmEvidenceRecordInput | FrontierSwarmEvidenceRecord): input is FrontierSwarmEvidenceRecord {
+  return (input as FrontierSwarmEvidenceRecord).kind === FRONTIER_SWARM_EVIDENCE_RECORD_KIND;
+}
+
+function mergeGraphMetadata(left: JsonObject | undefined, right: JsonObject | undefined): JsonObject | undefined {
+  if (!left) return right;
+  if (!right) return left;
+  return { ...left, ...right };
 }
 
 function hasJobDependencyCycle(start: string, dependenciesByJobId: Record<string, string[]>): boolean {

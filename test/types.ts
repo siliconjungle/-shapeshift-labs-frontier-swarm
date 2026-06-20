@@ -61,6 +61,11 @@ import {
   collapseSwarmQueueOutcomeDecisions,
   createSwarmQueueOutcomeDecision,
   createSwarmQueueOutcomeModel,
+  createSwarmEvidenceRecord,
+  createSwarmGateEvidenceGraph,
+  createSwarmGateRecord,
+  createSwarmRunGraph,
+  createSwarmRunGraphChain,
   defineSwarmTasks,
   normalizeSwarmTerminalOutcome,
   reconcileSwarmTerminalState,
@@ -69,6 +74,7 @@ import {
   createSwarmScheduleInputFromAdaptiveLoadPlan,
   FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS,
   FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS,
+  FRONTIER_SWARM_RUN_GRAPH_KIND,
   type FrontierSwarmArtifactIndex,
   type FrontierSwarmArtifactRoutingPlan,
   type FrontierSwarmAutoReviewReport,
@@ -87,8 +93,12 @@ import {
   type FrontierSwarmContextPack,
   type FrontierSwarmDebugHandoff,
   type FrontierSwarmDivergenceReport,
+  type FrontierSwarmEvidenceRecord,
   type FrontierSwarmEvidenceIndex,
   type FrontierSwarmFixtureCatalog,
+  type FrontierSwarmGateRecord,
+  type FrontierSwarmRunGraph,
+  type FrontierSwarmRunGraphChunk,
   type FrontierSwarmCoordinatorAgentDrainWork,
   type FrontierSwarmCoordinatorAgentRootQueueSelectionPressure,
   type FrontierSwarmCoordinatorProcessInput,
@@ -165,6 +175,34 @@ const compute: FrontierSwarmCompute = resolveSwarmCompute(manifest, tasks[0]);
 const schedule: FrontierSwarmSchedule = createSwarmSchedule(plan);
 const leases = createSwarmLeases({ schedule, workerId: 'worker' });
 const stream: FrontierSwarmEventStream = createSwarmEventStream({ lanes: manifest.lanes });
+const gateRecord: FrontierSwarmGateRecord = createSwarmGateRecord({
+  type: 'smoke',
+  status: 'passed',
+  command: 'npm test',
+  jobId: plan.jobs[0].id
+});
+const evidenceRecord: FrontierSwarmEvidenceRecord = createSwarmEvidenceRecord({
+  type: 'command-output',
+  path: 'agent-runs/run/evidence/smoke.log',
+  gateId: gateRecord.id,
+  jobId: plan.jobs[0].id
+});
+const runGraph: FrontierSwarmRunGraph = createSwarmRunGraph({
+  runId: 'run',
+  nodes: [
+    { id: 'task:runtime-port', kind: 'task', taskId: tasks[0].id },
+    { id: 'gate:smoke', kind: 'gate', status: gateRecord.status, metadata: gateRecord }
+  ],
+  edges: [{ kind: 'verifies', from: 'gate:smoke', to: 'task:runtime-port' }]
+});
+const gateGraph: FrontierSwarmRunGraph = createSwarmGateEvidenceGraph({ gates: [gateRecord], evidence: [evidenceRecord] });
+const graphChunk: FrontierSwarmRunGraphChunk = createSwarmRunGraphChain({
+  nodes: [
+    { id: 'intent:goal', kind: 'intent' },
+    { id: 'task:runtime-port', kind: 'task' }
+  ]
+});
+const runGraphKind: typeof FRONTIER_SWARM_RUN_GRAPH_KIND = runGraph.kind;
 const queueSnapshot: FrontierSwarmQueueSnapshot = createSwarmQueueSnapshot({ plan, leases });
 const budget: FrontierSwarmBudgetDecision = checkSwarmBudget(plan.jobs[0], { inputTokens: 1 });
 const run = createSwarmRun({
