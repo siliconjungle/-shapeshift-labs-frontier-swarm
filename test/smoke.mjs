@@ -3441,6 +3441,18 @@ assert.strictEqual(
   'no-change'
 );
 assert.strictEqual(
+  classifySwarmQueueOutcome({ outcome: 'research-complete', reasons: ['gap-analysis'] }).category,
+  'terminal'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ outcome: 'research-complete', reasons: ['gap-analysis'] }).outcome,
+  'research-complete'
+);
+assert.strictEqual(
+  classifySwarmQueueOutcome({ decision: 'research-complete', reasons: ['gap-analysis', 'stale check disabled'], mergeReadiness: 'discovery-only' }).outcome,
+  'research-complete'
+);
+assert.strictEqual(
   classifySwarmQueueOutcome({ decision: 'checked', reasons: ['checked'] }).category,
   'terminal'
 );
@@ -3527,6 +3539,7 @@ const normalizedTerminalOutcomes = [
   normalizeSwarmTerminalOutcome('superseded'),
   normalizeSwarmTerminalOutcome({ label: 'evidence only' }),
   normalizeSwarmTerminalOutcome({ status: 'no change' }),
+  normalizeSwarmTerminalOutcome({ outcome: 'research complete' }),
   normalizeSwarmTerminalOutcome({ generatedByCollector: true }),
   normalizeSwarmTerminalOutcome({ status: 'patch missing' }),
   normalizeSwarmTerminalOutcome({ outcome: 'bundle missing' }),
@@ -3544,6 +3557,7 @@ assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.label
   'superseded',
   'evidence-only',
   'no-change',
+  'research-complete',
   'generated-by-collector',
   'patch-missing',
   'bundle-missing',
@@ -3562,6 +3576,7 @@ assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.succe
   true,
   true,
   true,
+  true,
   false,
   false,
   false,
@@ -3573,6 +3588,7 @@ assert.deepStrictEqual(normalizedTerminalOutcomes.map((outcome) => outcome.succe
 ]);
 assert.strictEqual(FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS.includes('checked'), true);
 assert.strictEqual(FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS.includes('superseded'), true);
+assert.strictEqual(FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS.includes('research-complete'), true);
 assert.strictEqual(normalizeSwarmTerminalOutcome({ decision: 'human-question' }).category, 'blocked');
 assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'human blocked' }).label, 'human-question');
 assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'patch missing' }).incomplete, true);

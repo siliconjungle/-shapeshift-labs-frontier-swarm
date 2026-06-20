@@ -3312,6 +3312,7 @@ export type FrontierSwarmQueueTerminalOutcome =
   | 'checked'
   | 'superseded'
   | 'no-change'
+  | 'research-complete'
   | 'rejected'
   | 'rerun'
   | 'conflict-blocked'
@@ -3339,6 +3340,7 @@ export const FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS = [
   'superseded',
   'evidence-only',
   'no-change',
+  'research-complete',
   'generated-by-collector',
   'patch-missing',
   'bundle-missing',
@@ -6726,6 +6728,7 @@ export function classifySwarmQueueOutcome(input: FrontierSwarmQueueOutcomeDecisi
     || action === 'record-only'
     || input.disposition === 'rejected'
     || input.mergeReadiness === 'discovery-only'
+    || queueOutcomeHas(search, 'research-complete', 'discovery-complete', 'synthesized')
   ) {
     category = 'terminal';
   } else if (
@@ -7004,6 +7007,7 @@ function terminalOutcomeLabelFromText(value: string | undefined): FrontierSwarmT
   if (token === 'checked' || token === 'check') return 'checked';
   if (token === 'evidence-only' || token === 'evidenceonly' || token === 'evidence') return 'evidence-only';
   if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
+  if (token === 'research-complete' || token === 'discovery-complete' || token === 'synthesized') return 'research-complete';
   if (token === 'generated-by-collector' || token === 'collector-generated' || token === 'generated-collector') return 'generated-by-collector';
   if (token === 'patch-missing' || token === 'missing-patch' || token === 'patchmissing') return 'patch-missing';
   if (token === 'bundle-missing' || token === 'missing-bundle' || token === 'bundlemissing') return 'bundle-missing';
@@ -7040,6 +7044,12 @@ export function normalizeSwarmTerminalOutcome(
       || terminalOutcomeTextMatches(input.outcome, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')
       || terminalOutcomeTextMatches(input.status, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged')
       || terminalOutcomeTextMatches(input.decision, 'no-change', 'nochange', 'no-op', 'noop', 'unchanged');
+  const researchComplete = typeof input === 'string'
+    ? terminalOutcomeTextMatches(input, 'research-complete', 'discovery-complete', 'synthesized')
+    : terminalOutcomeTextMatches(input.label, 'research-complete', 'discovery-complete', 'synthesized')
+      || terminalOutcomeTextMatches(input.outcome, 'research-complete', 'discovery-complete', 'synthesized')
+      || terminalOutcomeTextMatches(input.status, 'research-complete', 'discovery-complete', 'synthesized')
+      || terminalOutcomeTextMatches(input.decision, 'research-complete', 'discovery-complete', 'synthesized');
   const patchMissing = typeof input === 'string'
     ? terminalOutcomeTextMatches(input, 'patch-missing', 'missing-patch', 'patchmissing')
     : input.patchMissing === true
@@ -7090,7 +7100,9 @@ export function normalizeSwarmTerminalOutcome(
       ? 'patch-missing'
       : evidenceOnly
         ? 'evidence-only'
-        : noChange
+        : researchComplete
+          ? 'research-complete'
+          : noChange
           ? 'no-change'
           : generatedByCollector
             ? 'generated-by-collector'
@@ -7102,7 +7114,7 @@ export function normalizeSwarmTerminalOutcome(
                   ? 'coordinator-review'
                   : explicitLabel ?? 'unknown';
 
-  const category: FrontierSwarmTerminalOutcomeCategory = label === 'applied' || label === 'committed' || label === 'checked' || label === 'superseded' || label === 'evidence-only' || label === 'no-change' || label === 'generated-by-collector'
+  const category: FrontierSwarmTerminalOutcomeCategory = label === 'applied' || label === 'committed' || label === 'checked' || label === 'superseded' || label === 'evidence-only' || label === 'no-change' || label === 'research-complete' || label === 'generated-by-collector'
     ? 'success'
     : label === 'patch-missing' || label === 'bundle-missing'
       ? 'incomplete'
@@ -9225,6 +9237,7 @@ function defaultQueueOutcomeForCategory(
   if (category === 'terminal') {
     if (input.decision === 'committed' || queueOutcomeHas(search, 'committed', 'commit')) return 'committed';
     if (action === 'apply-local' || input.decision === 'applied' || queueOutcomeHas(search, 'applied', 'apply-local', 'apply')) return 'applied';
+    if (input.decision === 'research-complete' || queueOutcomeHas(search, 'research-complete', 'discovery-complete', 'synthesized')) return 'research-complete';
     if (input.decision === 'checked' || queueOutcomeHas(search, 'checked', 'check')) return 'checked';
     if (input.decision === 'superseded' || queueOutcomeHas(search, 'superseded')) return 'superseded';
     if (input.decision === 'rerun' || queueOutcomeHas(search, 'rerun', 're-run', 'retry', 'needs-rerun', 'stale-rerun')) return 'rerun';
@@ -9268,6 +9281,7 @@ function canonicalizeSwarmQueueOutcome(value: string): FrontierSwarmQueueOutcome
   if (token === 'checked' || token === 'check') return 'checked';
   if (token === 'superseded') return 'superseded';
   if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged') return 'no-change';
+  if (token === 'research-complete' || token === 'discovery-complete' || token === 'synthesized') return 'research-complete';
   if (token === 'rejected' || token === 'reject' || token === 'failed' || token === 'failure') return 'rejected';
   if (token === 'rerun' || token === 're-run' || token === 'retry' || token === 'needs-rerun' || token === 'stale-rerun') return 'rerun';
   if (token === 'conflict-blocked' || token === 'merge-conflict' || token === 'textual-conflict' || token === 'conflict') return 'conflict-blocked';
@@ -9459,6 +9473,7 @@ function queueOutcomeDecisionIsResolvedOutput(decision: FrontierSwarmQueueOutcom
     || decision.outcome === 'checked'
     || decision.outcome === 'superseded'
     || decision.outcome === 'no-change'
+    || decision.outcome === 'research-complete'
     || decision.outcome === 'recorded'
     || decision.outcome === 'closed';
 }
