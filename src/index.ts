@@ -118,6 +118,8 @@ export const FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND = 'frontier.swarm.queue-out
 export const FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_VERSION = 1;
 export const FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND = 'frontier.swarm.terminal-state-reconciliation';
 export const FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_VERSION = 1;
+export const FRONTIER_SWARM_TERMINAL_OUTCOME_RECORD_KIND = 'frontier.swarm.terminal-outcome-record';
+export const FRONTIER_SWARM_TERMINAL_OUTCOME_RECORD_VERSION = 1;
 export const FRONTIER_SWARM_PRIORITY_POLICY_KIND = 'frontier.swarm.priority-policy';
 export const FRONTIER_SWARM_PRIORITY_POLICY_VERSION = 1;
 export const FRONTIER_SWARM_MODEL_ROUTE_KIND = 'frontier.swarm.model-route';
@@ -4021,6 +4023,31 @@ export const FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS = [
 export type FrontierSwarmTerminalOutcomeLabel = typeof FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS[number] | string;
 export type FrontierSwarmTerminalOutcomeCategory = 'success' | 'incomplete' | 'rerun' | 'rejected' | 'blocked' | 'review' | 'unknown' | string;
 
+export const FRONTIER_SWARM_TERMINAL_OUTCOME_STATUSES = [
+  'applied',
+  'rejected',
+  'superseded',
+  'no-change',
+  'conflict',
+  'human-needed',
+  'research-complete',
+  'rerun'
+] as const;
+
+export const FRONTIER_SWARM_TERMINAL_OUTCOME_REASON_CODES = [
+  'accepted-by-admission',
+  'failed-verification',
+  'superseded-by-newer-output',
+  'no-effective-change',
+  'conflict-detected',
+  'human-decision-required',
+  'research-complete',
+  'stale-rerun-required'
+] as const;
+
+export type FrontierSwarmTerminalOutcomeStatus = typeof FRONTIER_SWARM_TERMINAL_OUTCOME_STATUSES[number] | string;
+export type FrontierSwarmTerminalOutcomeReasonCode = typeof FRONTIER_SWARM_TERMINAL_OUTCOME_REASON_CODES[number] | string;
+
 export interface FrontierSwarmTerminalOutcomeInput {
   label?: FrontierSwarmTerminalOutcomeLabel | string;
   outcome?: FrontierSwarmTerminalOutcomeLabel | string;
@@ -4049,6 +4076,67 @@ export interface FrontierSwarmTerminalOutcome {
   review: boolean;
   generatedByCollector: boolean;
   reasons: string[];
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmTerminalOutcomeRecordInput {
+  id?: string;
+  subjectId?: string;
+  subjectAliases?: readonly string[];
+  jobId?: string;
+  taskId?: string;
+  queueId?: string;
+  queueItemId?: string;
+  queueItemIds?: readonly string[];
+  lane?: string;
+  source?: string;
+  status?: FrontierSwarmTerminalOutcomeStatus | string;
+  outcome?: FrontierSwarmTerminalOutcomeInput | FrontierSwarmTerminalOutcomeLabel | string;
+  label?: FrontierSwarmTerminalOutcomeLabel | string;
+  decision?: string;
+  admitted?: boolean;
+  reasonCodes?: readonly FrontierSwarmTerminalOutcomeReasonCode[];
+  reasons?: readonly string[];
+  conflictingJobIds?: readonly string[];
+  supersedes?: readonly string[];
+  supersededBy?: string;
+  rerunOf?: string;
+  evidenceRefs?: readonly (string | FrontierSwarmNamedRefInput)[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmTerminalOutcomeRecord {
+  kind: typeof FRONTIER_SWARM_TERMINAL_OUTCOME_RECORD_KIND;
+  version: typeof FRONTIER_SWARM_TERMINAL_OUTCOME_RECORD_VERSION;
+  id: string;
+  generatedAt: number;
+  subjectId: string;
+  subjectAliases: string[];
+  jobId?: string;
+  taskId?: string;
+  queueId?: string;
+  queueItemIds: string[];
+  lane?: string;
+  source?: string;
+  status: FrontierSwarmTerminalOutcomeStatus;
+  outcome: FrontierSwarmTerminalOutcome;
+  terminal: true;
+  admitted: boolean;
+  success: boolean;
+  rejected: boolean;
+  conflict: boolean;
+  humanNeeded: boolean;
+  rerun: boolean;
+  noChange: boolean;
+  researchComplete: boolean;
+  reasonCodes: FrontierSwarmTerminalOutcomeReasonCode[];
+  reasons: string[];
+  conflictingJobIds: string[];
+  supersedes: string[];
+  supersededBy?: string;
+  rerunOf?: string;
+  evidenceRefs: FrontierSwarmNamedRef[];
   metadata?: JsonObject;
 }
 
@@ -8723,7 +8811,7 @@ function terminalOutcomeLabelFromText(value: string | undefined): FrontierSwarmT
   if (token === 'rerun' || token === 're-run' || token === 'retry' || token === 'needs-rerun' || token === 'stale-rerun') return 'rerun';
   if (token === 'rejected' || token === 'reject' || token === 'failed' || token === 'failure') return 'rejected';
   if (token === 'conflict-blocked' || token === 'merge-conflict' || token === 'textual-conflict' || token === 'conflict') return 'conflict-blocked';
-  if (token === 'human-question' || token === 'human-blocked' || token === 'blocked') return 'human-question';
+  if (token === 'human-needed' || token === 'human-question' || token === 'human-blocked' || token === 'blocked') return 'human-question';
   if (token === 'coordinator-review' || token === 'needs-port' || token === 'escalated' || token === 'review') return 'coordinator-review';
   return token;
 }
@@ -8781,8 +8869,12 @@ export function normalizeSwarmTerminalOutcome(
       || terminalOutcomeTextMatches(input.status, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict')
       || terminalOutcomeTextMatches(input.decision, 'conflict-blocked', 'merge-conflict', 'textual-conflict', 'conflict');
   const humanQuestion = typeof input === 'string'
-    ? terminalOutcomeTextMatches(input, 'human-question')
+    ? terminalOutcomeTextMatches(input, 'human-needed', 'human-question')
     : input.humanQuestion === true
+      || terminalOutcomeTextMatches(input.label, 'human-needed')
+      || terminalOutcomeTextMatches(input.outcome, 'human-needed')
+      || terminalOutcomeTextMatches(input.status, 'human-needed')
+      || terminalOutcomeTextMatches(input.decision, 'human-needed')
       || terminalOutcomeTextMatches(input.label, 'human-question')
       || terminalOutcomeTextMatches(input.outcome, 'human-question')
       || terminalOutcomeTextMatches(input.status, 'human-question')
@@ -8848,6 +8940,66 @@ export function normalizeSwarmTerminalOutcome(
     generatedByCollector,
     reasons: typeof input === 'string' ? [] : uniqueStrings(input.reasons ?? []),
     ...(typeof input !== 'string' && toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmTerminalOutcomeRecord(input: FrontierSwarmTerminalOutcomeRecordInput = {}): FrontierSwarmTerminalOutcomeRecord {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const queueItemIds = uniqueStrings([input.queueItemId, ...(input.queueItemIds ?? [])]);
+  const subjectId = input.subjectId?.trim()
+    || queueItemIds[0]
+    || input.taskId?.trim()
+    || input.jobId?.trim()
+    || input.id?.trim()
+    || 'unknown-subject';
+  const subjectAliases = uniqueStrings([
+    input.subjectId,
+    ...(input.subjectAliases ?? []),
+    ...queueItemIds,
+    input.taskId,
+    input.jobId
+  ]);
+  const outcome = normalizeSwarmTerminalOutcome(terminalOutcomeInputForRecord(input));
+  const status = terminalOutcomeRecordStatusFromText(input.status)
+    ?? terminalOutcomeRecordStatusFromOutcome(outcome);
+  const reasonCodes = normalizeSwarmTerminalOutcomeReasonCodes([
+    ...(input.reasonCodes ?? []),
+    ...defaultTerminalOutcomeRecordReasonCodes(status)
+  ]);
+  const admitted = input.admitted ?? terminalOutcomeRecordStatusIsAdmitted(status);
+  const evidenceRefs = normalizeNamedRefs(input.evidenceRefs ?? [], 'evidence');
+  return {
+    kind: FRONTIER_SWARM_TERMINAL_OUTCOME_RECORD_KIND,
+    version: FRONTIER_SWARM_TERMINAL_OUTCOME_RECORD_VERSION,
+    id: input.id ?? 'swarm-terminal-outcome-record:' + stableHash([subjectId, subjectAliases, status, reasonCodes, generatedAt]),
+    generatedAt,
+    subjectId,
+    subjectAliases: subjectAliases.length ? subjectAliases : [subjectId],
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.queueId ? { queueId: input.queueId } : {}),
+    queueItemIds,
+    ...(input.lane ? { lane: input.lane } : {}),
+    ...(input.source ? { source: input.source } : {}),
+    status,
+    outcome,
+    terminal: true,
+    admitted,
+    success: outcome.success,
+    rejected: status === 'rejected',
+    conflict: status === 'conflict',
+    humanNeeded: status === 'human-needed',
+    rerun: status === 'rerun',
+    noChange: status === 'no-change',
+    researchComplete: status === 'research-complete',
+    reasonCodes,
+    reasons: uniqueStrings(input.reasons ?? []),
+    conflictingJobIds: uniqueStrings(input.conflictingJobIds ?? []),
+    supersedes: uniqueStrings(input.supersedes ?? []),
+    ...(input.supersededBy ? { supersededBy: input.supersededBy } : {}),
+    ...(input.rerunOf ? { rerunOf: input.rerunOf } : {}),
+    evidenceRefs,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
 }
 
@@ -10998,6 +11150,78 @@ function canonicalizeSwarmQueueOutcome(value: string): FrontierSwarmQueueOutcome
   if (token === 'recorded') return 'recorded';
   if (token === 'closed') return 'closed';
   return undefined;
+}
+
+function terminalOutcomeInputForRecord(input: FrontierSwarmTerminalOutcomeRecordInput): FrontierSwarmTerminalOutcomeInput | FrontierSwarmTerminalOutcomeLabel | string {
+  if (input.outcome && typeof input.outcome === 'object') return input.outcome as FrontierSwarmTerminalOutcomeInput;
+  return {
+    label: input.label,
+    outcome: typeof input.outcome === 'string' ? input.outcome : undefined,
+    status: input.status,
+    decision: input.decision,
+    reasons: input.reasons,
+    metadata: input.metadata
+  };
+}
+
+function terminalOutcomeRecordStatusFromText(value: unknown): FrontierSwarmTerminalOutcomeStatus | undefined {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) return undefined;
+  const token = normalizeSwarmTerminalOutcomeText(normalized);
+  if (token === 'applied' || token === 'apply-local' || token === 'apply' || token === 'committed' || token === 'commit' || token === 'checked' || token === 'check') return 'applied';
+  if (token === 'rejected' || token === 'reject' || token === 'failed' || token === 'failure') return 'rejected';
+  if (token === 'superseded') return 'superseded';
+  if (token === 'no-change' || token === 'nochange' || token === 'no-op' || token === 'noop' || token === 'unchanged' || token === 'recorded' || token === 'closed' || token === 'evidence-only' || token === 'evidenceonly' || token === 'generated-by-collector') return 'no-change';
+  if (token === 'conflict' || token === 'conflict-blocked' || token === 'merge-conflict' || token === 'textual-conflict') return 'conflict';
+  if (token === 'human-needed' || token === 'human-question' || token === 'human-blocked' || token === 'blocked' || token === 'coordinator-review' || token === 'needs-port' || token === 'escalated' || token === 'review') return 'human-needed';
+  if (token === 'research-complete' || token === 'discovery-complete' || token === 'synthesized') return 'research-complete';
+  if (token === 'rerun' || token === 're-run' || token === 'retry' || token === 'needs-rerun' || token === 'stale-rerun') return 'rerun';
+  return token;
+}
+
+function terminalOutcomeRecordStatusFromOutcome(outcome: FrontierSwarmTerminalOutcome): FrontierSwarmTerminalOutcomeStatus {
+  return terminalOutcomeRecordStatusFromText(outcome.label)
+    ?? terminalOutcomeRecordStatusFromText(outcome.category)
+    ?? 'no-change';
+}
+
+function terminalOutcomeRecordStatusIsAdmitted(status: FrontierSwarmTerminalOutcomeStatus): boolean {
+  return status === 'applied'
+    || status === 'superseded'
+    || status === 'no-change'
+    || status === 'research-complete';
+}
+
+function defaultTerminalOutcomeRecordReasonCodes(status: FrontierSwarmTerminalOutcomeStatus): FrontierSwarmTerminalOutcomeReasonCode[] {
+  if (status === 'applied') return ['accepted-by-admission'];
+  if (status === 'rejected') return ['failed-verification'];
+  if (status === 'superseded') return ['superseded-by-newer-output'];
+  if (status === 'no-change') return ['no-effective-change'];
+  if (status === 'conflict') return ['conflict-detected'];
+  if (status === 'human-needed') return ['human-decision-required'];
+  if (status === 'research-complete') return ['research-complete'];
+  if (status === 'rerun') return ['stale-rerun-required'];
+  return [];
+}
+
+function normalizeSwarmTerminalOutcomeReasonCodes(
+  reasonCodes: readonly (FrontierSwarmTerminalOutcomeReasonCode | undefined | null)[]
+): FrontierSwarmTerminalOutcomeReasonCode[] {
+  return uniqueStrings(uniqueStrings(reasonCodes).map(canonicalizeSwarmTerminalOutcomeReasonCode)) as FrontierSwarmTerminalOutcomeReasonCode[];
+}
+
+function canonicalizeSwarmTerminalOutcomeReasonCode(value: string): FrontierSwarmTerminalOutcomeReasonCode {
+  const token = normalizeSwarmTerminalOutcomeText(value);
+  if (!token) return value;
+  if (token === 'accepted' || token === 'admitted' || token === 'accepted-by-admission') return 'accepted-by-admission';
+  if (token === 'failed' || token === 'failed-verification' || token === 'verification-failed') return 'failed-verification';
+  if (token === 'superseded' || token === 'superseded-by-newer-output') return 'superseded-by-newer-output';
+  if (token === 'no-change' || token === 'nochange' || token === 'no-effective-change') return 'no-effective-change';
+  if (token === 'conflict' || token === 'conflict-detected' || token === 'merge-conflict') return 'conflict-detected';
+  if (token === 'human-needed' || token === 'human-decision-required' || token === 'human-question') return 'human-decision-required';
+  if (token === 'research-complete' || token === 'discovery-complete') return 'research-complete';
+  if (token === 'rerun' || token === 'stale-rerun-required' || token === 'needs-rerun') return 'stale-rerun-required';
+  return token;
 }
 
 function queueOutcomeInputsFromMergeQueue(queue: FrontierSwarmHierarchicalMergeQueue): FrontierSwarmQueueOutcomeDecisionInput[] {

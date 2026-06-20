@@ -74,6 +74,8 @@ Queue decisions that resolve to conflict, stale rerun, checked completion, or hu
 
 `normalizeSwarmTerminalOutcome()` keeps terminal labels explicit and stable across bundle, collector, and queue surfaces. It normalizes `applied`, `committed`, `checked`, `superseded`, `evidence-only`, `no-change`, and `generated-by-collector` as success states; `patch-missing` and `bundle-missing` as incomplete result states; and `rerun`, `rejected`, `conflict-blocked`, `human-question`, and `coordinator-review` as distinct terminal outcomes for downstream routing. `human-blocked` remains accepted as a legacy alias, while `coordinator-review` stays review-only and does not count as a human blocker.
 
+`createSwarmTerminalOutcomeRecord()` exports a repository-generic final admission record for runners and coordinators. Its canonical statuses are `applied`, `rejected`, `superseded`, `no-change`, `conflict`, `human-needed`, `research-complete`, and `rerun`; reason codes are similarly generic (`accepted-by-admission`, `failed-verification`, `superseded-by-newer-output`, `no-effective-change`, `conflict-detected`, `human-decision-required`, `research-complete`, and `stale-rerun-required`). The record carries queue/task/job aliases, evidence refs, conflict peers, rerun and supersession links, and boolean routing flags without assuming Codex, git, package, or repository-specific fields.
+
 `reconcileSwarmTerminalState()` adapts older runner bucket snapshots such as `ready`, `review`, `stale`, and `failed` to the newer autonomous decision ledger. A later committed, applied, superseded, or no-change decision for the same queue item, task, or job moves the subject into resolved `done` output instead of leaving it in review debt. Rejected, rerun, conflict-blocked, and human-question decisions remain visible in terminal output, and `human-blocked` stays as a compatibility alias, but they are not counted as ordinary failed worker results.
 
 
@@ -433,7 +435,7 @@ The returned record includes scored candidates, estimated cost and latency, pric
 - `createSwarmSchedule`, `createSwarmLeases`
 - `createSwarmQueueSnapshot`, `createSwarmRunCheckpoint`
 - `FRONTIER_SWARM_REVIEW_PRIORITY_POLICY`
-- `createSwarmQueueOverlay`, `normalizeSwarmTerminalOutcome`, `deriveSwarmQueueStatus`
+- `createSwarmQueueOverlay`, `normalizeSwarmTerminalOutcome`, `createSwarmTerminalOutcomeRecord`, `deriveSwarmQueueStatus`
 - `createSwarmEventStream`, `createSwarmMailbox`, `routeSwarmEventToMailboxes`
 - `checkSwarmBudget`
 - `createSwarmArtifactIndex`

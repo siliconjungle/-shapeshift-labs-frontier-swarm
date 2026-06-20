@@ -19,6 +19,9 @@ import {
   FRONTIER_SWARM_MERGE_CANDIDATE_REASON_CODES,
   FRONTIER_SWARM_SEMANTIC_CHANGE_KIND,
   FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS,
+  FRONTIER_SWARM_TERMINAL_OUTCOME_REASON_CODES,
+  FRONTIER_SWARM_TERMINAL_OUTCOME_RECORD_KIND,
+  FRONTIER_SWARM_TERMINAL_OUTCOME_STATUSES,
   FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND,
   FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS,
   FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND,
@@ -122,6 +125,7 @@ import {
   createSwarmSchedule,
   createSwarmSchedulerRecommendations,
   createSwarmTaskSelection,
+  createSwarmTerminalOutcomeRecord,
   createSwarmUsageGovernor,
   createSwarmWatchpointPlan,
   decodeSwarmJsonl,
@@ -3990,10 +3994,74 @@ assert.strictEqual(FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS.includes('superseded')
 assert.strictEqual(FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS.includes('research-complete'), true);
 assert.strictEqual(normalizeSwarmTerminalOutcome({ decision: 'human-question' }).category, 'blocked');
 assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'human blocked' }).label, 'human-question');
+assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'human-needed' }).label, 'human-question');
 assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'patch missing' }).incomplete, true);
 assert.strictEqual(normalizeSwarmTerminalOutcome({ outcome: 'bundle missing' }).incomplete, true);
 assert.strictEqual(normalizeSwarmTerminalOutcome({ status: 'patch missing' }).blocker, false);
 assert.strictEqual(normalizeSwarmTerminalOutcome({ outcome: 'bundle missing' }).blocker, false);
+
+assert.deepStrictEqual([...FRONTIER_SWARM_TERMINAL_OUTCOME_STATUSES], [
+  'applied',
+  'rejected',
+  'superseded',
+  'no-change',
+  'conflict',
+  'human-needed',
+  'research-complete',
+  'rerun'
+]);
+assert.deepStrictEqual([...FRONTIER_SWARM_TERMINAL_OUTCOME_REASON_CODES], [
+  'accepted-by-admission',
+  'failed-verification',
+  'superseded-by-newer-output',
+  'no-effective-change',
+  'conflict-detected',
+  'human-decision-required',
+  'research-complete',
+  'stale-rerun-required'
+]);
+const terminalOutcomeRecords = [
+  createSwarmTerminalOutcomeRecord({ subjectId: 'queue:a', status: 'applied', reasonCodes: ['accepted'], evidenceRefs: ['evidence:a.json'] }),
+  createSwarmTerminalOutcomeRecord({ subjectId: 'queue:b', status: 'rejected', reasonCodes: ['verification-failed'] }),
+  createSwarmTerminalOutcomeRecord({ subjectId: 'queue:c', status: 'superseded', supersededBy: 'queue:c:newer' }),
+  createSwarmTerminalOutcomeRecord({ subjectId: 'queue:d', status: 'no-op' }),
+  createSwarmTerminalOutcomeRecord({ subjectId: 'queue:e', status: 'merge-conflict', conflictingJobIds: ['job:other'] }),
+  createSwarmTerminalOutcomeRecord({ subjectId: 'queue:f', status: 'human-needed', reasons: ['requires-product-decision'] }),
+  createSwarmTerminalOutcomeRecord({ subjectId: 'queue:g', status: 'discovery-complete' }),
+  createSwarmTerminalOutcomeRecord({ subjectId: 'queue:h', status: 'needs-rerun', rerunOf: 'queue:h:stale' })
+];
+assert.strictEqual(terminalOutcomeRecords[0].kind, FRONTIER_SWARM_TERMINAL_OUTCOME_RECORD_KIND);
+assert.deepStrictEqual(terminalOutcomeRecords.map((record) => record.status), [
+  'applied',
+  'rejected',
+  'superseded',
+  'no-change',
+  'conflict',
+  'human-needed',
+  'research-complete',
+  'rerun'
+]);
+assert.deepStrictEqual(terminalOutcomeRecords.map((record) => record.reasonCodes[0]), [
+  'accepted-by-admission',
+  'failed-verification',
+  'superseded-by-newer-output',
+  'no-effective-change',
+  'conflict-detected',
+  'human-decision-required',
+  'research-complete',
+  'stale-rerun-required'
+]);
+assert.strictEqual(terminalOutcomeRecords[0].admitted, true);
+assert.strictEqual(terminalOutcomeRecords[1].admitted, false);
+assert.strictEqual(terminalOutcomeRecords[2].admitted, true);
+assert.strictEqual(terminalOutcomeRecords[4].conflict, true);
+assert.strictEqual(terminalOutcomeRecords[4].outcome.label, 'conflict-blocked');
+assert.strictEqual(terminalOutcomeRecords[4].conflictingJobIds[0], 'job:other');
+assert.strictEqual(terminalOutcomeRecords[5].humanNeeded, true);
+assert.strictEqual(terminalOutcomeRecords[5].outcome.label, 'human-question');
+assert.strictEqual(terminalOutcomeRecords[6].researchComplete, true);
+assert.strictEqual(terminalOutcomeRecords[7].rerun, true);
+assert.strictEqual(terminalOutcomeRecords[7].rerunOf, 'queue:h:stale');
 
 const terminalOutcomeModel = createSwarmQueueOutcomeModel({ drainWork: terminalDrainWork, generatedAt: 7600 });
 assert.strictEqual(terminalOutcomeModel.kind, FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND);
