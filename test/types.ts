@@ -34,6 +34,8 @@ import {
   checkSwarmUsageGovernor,
   createSwarmLanePlaybook,
   createSwarmPatchStackPlan,
+  createSwarmMergeCandidate,
+  createSwarmMergeCandidateGraph,
   createSwarmBacklog,
   createSwarmBacklogTaskPlan,
   mergeSwarmBacklogs,
@@ -48,6 +50,7 @@ import {
   createSwarmReviewPlan,
   createSwarmMergeIndex,
   createSwarmMergeAdmission,
+  classifySwarmMergeCandidateAdmission,
   createSwarmHierarchicalMergeQueue,
   createSwarmMergePlan,
   createSwarmMergeBundle,
@@ -64,14 +67,23 @@ import {
   createSwarmEvidenceRecord,
   createSwarmGateEvidenceGraph,
   createSwarmGateRecord,
+  createSwarmPatchEvent,
+  createSwarmReplayRecord,
+  createSwarmReplayRecordGraph,
+  createSwarmImprovementLoop,
+  createSwarmImprovementLoopGraph,
   createSwarmRunGraph,
   createSwarmRunGraphChain,
+  createSwarmSemanticChange,
   defineSwarmTasks,
   normalizeSwarmTerminalOutcome,
   reconcileSwarmTerminalState,
   resolveSwarmChangedRegions,
   resolveSwarmCompute,
+  mapSwarmMergeCandidatesToGraph,
   createSwarmScheduleInputFromAdaptiveLoadPlan,
+  FRONTIER_SWARM_MERGE_CANDIDATE_ADMISSION_STATUSES,
+  FRONTIER_SWARM_MERGE_CANDIDATE_REASON_CODES,
   FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS,
   FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS,
   FRONTIER_SWARM_RUN_GRAPH_KIND,
@@ -108,11 +120,14 @@ import {
   type FrontierSwarmHierarchicalMergeQueue,
   type FrontierSwarmOracleCorpus,
   type FrontierSwarmParityOracle,
+  type FrontierSwarmPatchEvent,
   type FrontierSwarmProgressModel,
   type FrontierSwarmRebaseReport,
   type FrontierSwarmReferenceOraclePlan,
   type FrontierSwarmReferenceOracleResponse,
+  type FrontierSwarmReplayRecord,
   type FrontierSwarmReplayBundle,
+  type FrontierSwarmImprovementLoop,
   type FrontierSwarmLanePlaybook,
   type FrontierSwarmPatchStackPlan,
   type FrontierSwarmModelRoutingFeedback,
@@ -128,6 +143,11 @@ import {
   type FrontierSwarmOptimizationSummaryCounts,
   type FrontierSwarmOptimizationSummaryInput,
   type FrontierSwarmMergeBundle,
+  type FrontierSwarmMergeCandidate,
+  type FrontierSwarmMergeCandidateAdmissionStatus,
+  type FrontierSwarmMergeCandidateGraphProjection,
+  type FrontierSwarmMergeCandidateInput,
+  type FrontierSwarmMergeCandidateReasonCode,
   type FrontierSwarmMergeConflict,
   type FrontierSwarmMergeIndex,
   type FrontierSwarmMergeAdmission,
@@ -144,6 +164,9 @@ import {
   type FrontierSwarmSchedule,
   type FrontierSwarmSchedulerRecommendations,
   type FrontierSwarmSemanticImportSummary,
+  type FrontierSwarmSemanticChange,
+  type FrontierSwarmSemanticChangeInput,
+  type FrontierSwarmSourceSpan,
   type FrontierSwarmEventStream,
   type FrontierSwarmTask,
   type FrontierSwarmQueueOutcomeModel,
@@ -203,6 +226,60 @@ const graphChunk: FrontierSwarmRunGraphChunk = createSwarmRunGraphChain({
   ]
 });
 const runGraphKind: typeof FRONTIER_SWARM_RUN_GRAPH_KIND = runGraph.kind;
+const semanticChangeInput: FrontierSwarmSemanticChangeInput = {
+  symbolId: 'formatTitle',
+  declarationKind: 'function',
+  sourceSpan: {
+    path: 'src/title.ts',
+    startLine: 1,
+    endLine: 5,
+    sourceHash: 'sha:new',
+    expectedSourceHash: 'sha:old'
+  },
+  operation: 'modify',
+  confidence: 0.9,
+  conflictReason: 'symbol-conflict'
+};
+const semanticChange: FrontierSwarmSemanticChange = createSwarmSemanticChange(semanticChangeInput);
+const sourceSpan: FrontierSwarmSourceSpan = semanticChange.sourceSpan;
+const mergeCandidateInput: FrontierSwarmMergeCandidateInput = {
+  jobId: 'job-semantic',
+  sidecarPath: 'agent-runs/job-semantic/evidence/semantic-imports.json',
+  hasLosses: true,
+  testsRequired: true,
+  testsPassed: true,
+  semanticChanges: [semanticChange]
+};
+const mergeCandidate: FrontierSwarmMergeCandidate = createSwarmMergeCandidate(mergeCandidateInput);
+const semanticCandidateProjection: FrontierSwarmMergeCandidateGraphProjection = mapSwarmMergeCandidatesToGraph({
+  candidates: [mergeCandidate]
+});
+const semanticCandidateGraph: FrontierSwarmRunGraph = createSwarmMergeCandidateGraph({ candidates: [mergeCandidate] });
+const semanticCandidateStatus: FrontierSwarmMergeCandidateAdmissionStatus = classifySwarmMergeCandidateAdmission(['tests-missing']);
+const semanticCandidateReason: FrontierSwarmMergeCandidateReasonCode = FRONTIER_SWARM_MERGE_CANDIDATE_REASON_CODES[0];
+FRONTIER_SWARM_MERGE_CANDIDATE_ADMISSION_STATUSES satisfies readonly FrontierSwarmMergeCandidateAdmissionStatus[];
+FRONTIER_SWARM_MERGE_CANDIDATE_REASON_CODES satisfies readonly FrontierSwarmMergeCandidateReasonCode[];
+semanticChange.symbolId satisfies string;
+semanticChange.declarationKind satisfies string;
+semanticChange.operation satisfies string;
+semanticChange.confidence satisfies string | number;
+semanticChange.conflictReason satisfies FrontierSwarmMergeCandidateReasonCode | undefined;
+semanticChange.status satisfies FrontierSwarmMergeCandidateAdmissionStatus;
+semanticChange.reasonCodes satisfies FrontierSwarmMergeCandidateReasonCode[];
+sourceSpan.path satisfies string | undefined;
+mergeCandidate.symbolId satisfies string;
+mergeCandidate.declarationKind satisfies string;
+mergeCandidate.sourceSpan satisfies FrontierSwarmSourceSpan;
+mergeCandidate.operation satisfies string;
+mergeCandidate.confidence satisfies string | number;
+mergeCandidate.conflictReason satisfies FrontierSwarmMergeCandidateReasonCode | undefined;
+mergeCandidate.status satisfies FrontierSwarmMergeCandidateAdmissionStatus;
+mergeCandidate.reasonCodes satisfies FrontierSwarmMergeCandidateReasonCode[];
+semanticCandidateProjection.nodes[0].kind satisfies string;
+semanticCandidateProjection.edges[0].kind satisfies string;
+semanticCandidateGraph.summary.nodeKinds.candidate satisfies number | undefined;
+semanticCandidateStatus satisfies FrontierSwarmMergeCandidateAdmissionStatus;
+semanticCandidateReason satisfies FrontierSwarmMergeCandidateReasonCode;
 const queueSnapshot: FrontierSwarmQueueSnapshot = createSwarmQueueSnapshot({ plan, leases });
 const budget: FrontierSwarmBudgetDecision = checkSwarmBudget(plan.jobs[0], { inputTokens: 1 });
 const run = createSwarmRun({
@@ -241,6 +318,43 @@ const runStoreShards: FrontierSwarmRunStoreShards = createSwarmRunStoreShards({ 
 const contextPack: FrontierSwarmContextPack = createSwarmContextPack({ job: plan.jobs[0] });
 const oracleCorpus: FrontierSwarmOracleCorpus = createSwarmOracleCorpus({ artifacts: [{ id: 'oracle', path: 'oracle.json' }] });
 const replayBundle: FrontierSwarmReplayBundle = createSwarmReplayBundle({ commands: ['node replay.mjs'] });
+const patchEvent: FrontierSwarmPatchEvent = createSwarmPatchEvent({
+  operation: 'replace',
+  path: '/items/0/status',
+  hash: 'sha256:patch',
+  graphRefs: [{ nodeId: 'task:runtime-port', role: 'updates-task' }]
+});
+const replayRecord: FrontierSwarmReplayRecord = createSwarmReplayRecord({
+  status: 'passed',
+  replayBundleId: replayBundle.id,
+  patchEvents: [patchEvent],
+  evidenceRefs: [{ path: 'agent-runs/run/evidence/replay.json' }],
+  graphRefs: [{ nodeId: 'replay:runtime-port' }]
+});
+const replayRecordGraph: FrontierSwarmRunGraph = createSwarmReplayRecordGraph({ replayRecords: [replayRecord] });
+const improvementLoop: FrontierSwarmImprovementLoop = createSwarmImprovementLoop({
+  observation: { mismatch: '/items/0/status' },
+  action: { patchEventId: patchEvent.id },
+  result: { status: 'passed' },
+  replayRecordIds: [replayRecord.id],
+  patchEventIds: [patchEvent.id],
+  graphRefs: [{ nodeId: 'rsi:runtime-port' }]
+});
+const improvementLoopGraph: FrontierSwarmRunGraph = createSwarmImprovementLoopGraph({ improvementLoops: [improvementLoop] });
+patchEvent.operation satisfies string;
+patchEvent.path satisfies string;
+patchEvent.hash satisfies string | undefined;
+patchEvent.graphRefs[0]?.nodeId satisfies string | undefined;
+replayRecord.status satisfies string;
+replayRecord.patchEvents[0]?.hash satisfies string | undefined;
+replayRecord.evidenceRefs[0]?.path satisfies string | undefined;
+replayRecord.graphRefs[0]?.nodeId satisfies string | undefined;
+replayRecordGraph.summary.nodeKinds.replay satisfies number | undefined;
+improvementLoop.observation satisfies JsonValue | undefined;
+improvementLoop.action satisfies JsonValue | undefined;
+improvementLoop.result satisfies JsonValue | undefined;
+improvementLoop.graphRefs[0]?.nodeId satisfies string | undefined;
+improvementLoopGraph.summary.nodeKinds.rsi satisfies number | undefined;
 const parityOracle: FrontierSwarmParityOracle = createSwarmParityOracle({ comparators: [{ status: 'passed' }] });
 const divergenceReport: FrontierSwarmDivergenceReport = createSwarmDivergenceReport({ observabilityPoints: [{ operationIndex: 1 }] });
 const watchpointPlan: FrontierSwarmWatchpointPlan = createSwarmWatchpointPlan({ watchpoints: [{ path: '/value' }] });

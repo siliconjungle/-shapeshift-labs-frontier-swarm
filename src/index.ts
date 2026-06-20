@@ -22,6 +22,12 @@ export const FRONTIER_SWARM_GATE_RECORD_KIND = 'frontier.swarm.gate-record';
 export const FRONTIER_SWARM_GATE_RECORD_VERSION = 1;
 export const FRONTIER_SWARM_EVIDENCE_RECORD_KIND = 'frontier.swarm.evidence-record';
 export const FRONTIER_SWARM_EVIDENCE_RECORD_VERSION = 1;
+export const FRONTIER_SWARM_PATCH_EVENT_KIND = 'frontier.swarm.patch-event';
+export const FRONTIER_SWARM_PATCH_EVENT_VERSION = 1;
+export const FRONTIER_SWARM_REPLAY_RECORD_KIND = 'frontier.swarm.replay-record';
+export const FRONTIER_SWARM_REPLAY_RECORD_VERSION = 1;
+export const FRONTIER_SWARM_IMPROVEMENT_LOOP_KIND = 'frontier.swarm.improvement-loop';
+export const FRONTIER_SWARM_IMPROVEMENT_LOOP_VERSION = 1;
 export const FRONTIER_SWARM_MAILBOX_KIND = 'frontier.swarm.mailbox';
 export const FRONTIER_SWARM_MAILBOX_VERSION = 1;
 export const FRONTIER_SWARM_PROOF_KIND = 'frontier.swarm.proof';
@@ -42,6 +48,10 @@ export const FRONTIER_SWARM_MERGE_PLAN_KIND = 'frontier.swarm.merge-plan';
 export const FRONTIER_SWARM_MERGE_PLAN_VERSION = 1;
 export const FRONTIER_SWARM_MERGE_BUNDLE_KIND = 'frontier.swarm.merge-bundle';
 export const FRONTIER_SWARM_MERGE_BUNDLE_VERSION = 1;
+export const FRONTIER_SWARM_SEMANTIC_CHANGE_KIND = 'frontier.swarm.semantic-change';
+export const FRONTIER_SWARM_SEMANTIC_CHANGE_VERSION = 1;
+export const FRONTIER_SWARM_MERGE_CANDIDATE_KIND = 'frontier.swarm.merge-candidate';
+export const FRONTIER_SWARM_MERGE_CANDIDATE_VERSION = 1;
 export const FRONTIER_SWARM_QUEUE_OVERLAY_KIND = 'frontier.swarm.queue-overlay';
 export const FRONTIER_SWARM_QUEUE_OVERLAY_VERSION = 1;
 export const FRONTIER_SWARM_MERGE_INDEX_KIND = 'frontier.swarm.merge-index';
@@ -151,6 +161,21 @@ export const FRONTIER_SWARM_GRAPH_EDGE_KINDS = [
   'conflictsWith',
   'supersedes',
   'mergesInto'
+] as const;
+export const FRONTIER_SWARM_MERGE_CANDIDATE_ADMISSION_STATUSES = [
+  'safe',
+  'safe-with-losses',
+  'review-required',
+  'blocked'
+] as const;
+export const FRONTIER_SWARM_MERGE_CANDIDATE_REASON_CODES = [
+  'missing-sidecar',
+  'empty-sidecar',
+  'stale-source-hash',
+  'symbol-conflict',
+  'effect-conflict',
+  'lossy-import',
+  'tests-missing'
 ] as const;
 
 export type FrontierSwarmComputeKind = 'codex' | 'shell' | 'human' | 'external' | string;
@@ -1227,6 +1252,159 @@ export interface FrontierSwarmGraphEdge {
   metadata?: JsonObject;
 }
 
+export type FrontierSwarmMergeCandidateAdmissionStatus =
+  (typeof FRONTIER_SWARM_MERGE_CANDIDATE_ADMISSION_STATUSES)[number]
+  | string;
+export type FrontierSwarmMergeCandidateReasonCode =
+  (typeof FRONTIER_SWARM_MERGE_CANDIDATE_REASON_CODES)[number]
+  | string;
+export type FrontierSwarmSemanticChangeOperation =
+  | 'add'
+  | 'modify'
+  | 'delete'
+  | 'move'
+  | 'rename'
+  | 'replace'
+  | 'unknown'
+  | string;
+export type FrontierSwarmSemanticChangeConfidence = FrontierSwarmConfidence | number;
+
+export interface FrontierSwarmSourceSpanInput {
+  path?: string;
+  startLine?: number;
+  startColumn?: number;
+  endLine?: number;
+  endColumn?: number;
+  startOffset?: number;
+  endOffset?: number;
+  sourceHash?: string;
+  expectedSourceHash?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmSourceSpan {
+  path?: string;
+  startLine?: number;
+  startColumn?: number;
+  endLine?: number;
+  endColumn?: number;
+  startOffset?: number;
+  endOffset?: number;
+  sourceHash?: string;
+  expectedSourceHash?: string;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmSemanticChangeInput {
+  id?: string;
+  symbolId: string;
+  declarationKind: string;
+  sourceSpan?: FrontierSwarmSourceSpanInput;
+  sourcePath?: string;
+  sourceHash?: string;
+  expectedSourceHash?: string;
+  operation: FrontierSwarmSemanticChangeOperation;
+  confidence?: FrontierSwarmSemanticChangeConfidence;
+  conflictReason?: FrontierSwarmMergeCandidateReasonCode;
+  status?: FrontierSwarmMergeCandidateAdmissionStatus;
+  reasonCodes?: readonly FrontierSwarmMergeCandidateReasonCode[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmSemanticChange {
+  kind: typeof FRONTIER_SWARM_SEMANTIC_CHANGE_KIND;
+  version: typeof FRONTIER_SWARM_SEMANTIC_CHANGE_VERSION;
+  id: string;
+  symbolId: string;
+  declarationKind: string;
+  sourceSpan: FrontierSwarmSourceSpan;
+  operation: FrontierSwarmSemanticChangeOperation;
+  confidence: FrontierSwarmSemanticChangeConfidence;
+  conflictReason?: FrontierSwarmMergeCandidateReasonCode;
+  status: FrontierSwarmMergeCandidateAdmissionStatus;
+  reasonCodes: FrontierSwarmMergeCandidateReasonCode[];
+  generatedAt: number;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmMergeCandidateInput {
+  id?: string;
+  jobId?: string;
+  taskId?: string;
+  lane?: string;
+  title?: string;
+  sidecarPath?: string;
+  sidecarRequired?: boolean;
+  sidecarEmpty?: boolean;
+  symbolId?: string;
+  declarationKind?: string;
+  sourceSpan?: FrontierSwarmSourceSpanInput;
+  sourcePath?: string;
+  sourceHash?: string;
+  expectedSourceHash?: string;
+  operation?: FrontierSwarmSemanticChangeOperation;
+  confidence?: FrontierSwarmSemanticChangeConfidence;
+  conflictReason?: FrontierSwarmMergeCandidateReasonCode;
+  status?: FrontierSwarmMergeCandidateAdmissionStatus;
+  reasonCodes?: readonly FrontierSwarmMergeCandidateReasonCode[];
+  semanticChanges?: readonly (FrontierSwarmSemanticChangeInput | FrontierSwarmSemanticChange)[];
+  changes?: readonly (FrontierSwarmSemanticChangeInput | FrontierSwarmSemanticChange)[];
+  hasLosses?: boolean;
+  testsRequired?: boolean;
+  testsPassed?: boolean;
+  evidencePaths?: readonly string[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmMergeCandidate {
+  kind: typeof FRONTIER_SWARM_MERGE_CANDIDATE_KIND;
+  version: typeof FRONTIER_SWARM_MERGE_CANDIDATE_VERSION;
+  id: string;
+  jobId?: string;
+  taskId?: string;
+  lane?: string;
+  title?: string;
+  sidecarPath?: string;
+  symbolId: string;
+  symbolIds: string[];
+  declarationKind: string;
+  declarationKinds: string[];
+  sourceSpan: FrontierSwarmSourceSpan;
+  operation: FrontierSwarmSemanticChangeOperation;
+  confidence: FrontierSwarmSemanticChangeConfidence;
+  conflictReason?: FrontierSwarmMergeCandidateReasonCode;
+  status: FrontierSwarmMergeCandidateAdmissionStatus;
+  reasonCodes: FrontierSwarmMergeCandidateReasonCode[];
+  semanticChanges: FrontierSwarmSemanticChange[];
+  changedPaths: string[];
+  evidencePaths: string[];
+  generatedAt: number;
+  summary: {
+    changeCount: number;
+    symbolCount: number;
+    reasonCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmMergeCandidateGraphInput {
+  id?: string;
+  runId?: string;
+  title?: string;
+  candidates: readonly (FrontierSwarmMergeCandidateInput | FrontierSwarmMergeCandidate)[];
+  includeChangeNodes?: boolean;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmMergeCandidateGraphProjection {
+  candidates: FrontierSwarmMergeCandidate[];
+  nodes: FrontierSwarmGraphNodeInput[];
+  edges: FrontierSwarmGraphEdgeInput[];
+}
+
 export interface FrontierSwarmGraphEventInput {
   id?: string;
   type: string;
@@ -1319,6 +1497,25 @@ export type FrontierSwarmEvidenceRecordType =
   | 'replay'
   | 'artifact'
   | string;
+export type FrontierSwarmPatchEventOperation =
+  | 'add'
+  | 'remove'
+  | 'replace'
+  | 'move'
+  | 'copy'
+  | 'test'
+  | string;
+export type FrontierSwarmReplayRecordStatus = 'pending' | 'running' | 'passed' | 'failed' | 'blocked' | 'skipped' | 'unknown' | string;
+export type FrontierSwarmImprovementLoopStatus =
+  | 'observed'
+  | 'planned'
+  | 'running'
+  | 'applied'
+  | 'verified'
+  | 'failed'
+  | 'blocked'
+  | 'unknown'
+  | string;
 
 export interface FrontierSwarmGateRecordInput {
   id?: string;
@@ -1386,6 +1583,149 @@ export interface FrontierSwarmEvidenceRecord {
   metadata?: JsonObject;
 }
 
+export interface FrontierSwarmGraphRefInput {
+  id?: string;
+  kind?: string;
+  graphId?: string;
+  nodeId?: string;
+  edgeId?: string;
+  role?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmGraphRef {
+  id: string;
+  kind: string;
+  graphId?: string;
+  nodeId?: string;
+  edgeId?: string;
+  role?: string;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmPatchEventInput {
+  id?: string;
+  operation: FrontierSwarmPatchEventOperation;
+  path: string;
+  from?: string;
+  hash?: string;
+  sequence?: number;
+  value?: unknown;
+  before?: unknown;
+  after?: unknown;
+  jobId?: string;
+  taskId?: string;
+  replayRecordId?: string;
+  graphRefs?: readonly FrontierSwarmGraphRefInput[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmPatchEvent {
+  kind: typeof FRONTIER_SWARM_PATCH_EVENT_KIND;
+  version: typeof FRONTIER_SWARM_PATCH_EVENT_VERSION;
+  id: string;
+  operation: FrontierSwarmPatchEventOperation;
+  path: string;
+  from?: string;
+  hash?: string;
+  sequence?: number;
+  value?: JsonValue;
+  before?: JsonValue;
+  after?: JsonValue;
+  jobId?: string;
+  taskId?: string;
+  replayRecordId?: string;
+  graphRefs: FrontierSwarmGraphRef[];
+  generatedAt: number;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmReplayRecordInput {
+  id?: string;
+  title?: string;
+  status?: FrontierSwarmReplayRecordStatus;
+  subject?: string;
+  replayBundleId?: string;
+  patchEvents?: readonly (FrontierSwarmPatchEventInput | FrontierSwarmPatchEvent)[];
+  evidenceRefs?: readonly (string | FrontierSwarmNamedRefInput)[];
+  graphRefs?: readonly FrontierSwarmGraphRefInput[];
+  jobId?: string;
+  taskId?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmReplayRecord {
+  kind: typeof FRONTIER_SWARM_REPLAY_RECORD_KIND;
+  version: typeof FRONTIER_SWARM_REPLAY_RECORD_VERSION;
+  id: string;
+  title: string;
+  status: FrontierSwarmReplayRecordStatus;
+  subject?: string;
+  replayBundleId?: string;
+  patchEvents: FrontierSwarmPatchEvent[];
+  evidenceRefs: FrontierSwarmNamedRef[];
+  graphRefs: FrontierSwarmGraphRef[];
+  jobId?: string;
+  taskId?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  generatedAt: number;
+  summary: {
+    patchEventCount: number;
+    evidenceRefCount: number;
+    graphRefCount: number;
+  };
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmImprovementLoopInput {
+  id?: string;
+  title?: string;
+  status?: FrontierSwarmImprovementLoopStatus;
+  subject?: string;
+  observation?: unknown;
+  action?: unknown;
+  result?: unknown;
+  replayRecordIds?: readonly string[];
+  patchEventIds?: readonly string[];
+  evidenceRefs?: readonly (string | FrontierSwarmNamedRefInput)[];
+  graphRefs?: readonly FrontierSwarmGraphRefInput[];
+  jobId?: string;
+  taskId?: string;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmImprovementLoop {
+  kind: typeof FRONTIER_SWARM_IMPROVEMENT_LOOP_KIND;
+  version: typeof FRONTIER_SWARM_IMPROVEMENT_LOOP_VERSION;
+  id: string;
+  title: string;
+  status: FrontierSwarmImprovementLoopStatus;
+  subject?: string;
+  observation?: JsonValue;
+  action?: JsonValue;
+  result?: JsonValue;
+  replayRecordIds: string[];
+  patchEventIds: string[];
+  evidenceRefs: FrontierSwarmNamedRef[];
+  graphRefs: FrontierSwarmGraphRef[];
+  jobId?: string;
+  taskId?: string;
+  generatedAt: number;
+  summary: {
+    replayRecordCount: number;
+    patchEventCount: number;
+    evidenceRefCount: number;
+    graphRefCount: number;
+  };
+  metadata?: JsonObject;
+}
+
 export interface FrontierSwarmRunGraphChunkInput {
   id?: string;
   nodes?: readonly FrontierSwarmGraphNodeInput[];
@@ -1410,6 +1750,56 @@ export interface FrontierSwarmRunGraphChunk {
     exitCount: number;
   };
   metadata?: JsonObject;
+}
+
+export interface FrontierSwarmRunGraphSynthesisChunkInput {
+  id?: string;
+  source?: FrontierSwarmGraphNodeInput;
+  panel?: FrontierSwarmGraphNodeInput;
+  candidates?: readonly FrontierSwarmGraphNodeInput[];
+  selectedCandidateId?: string;
+  rejectedCandidateIds?: readonly string[];
+  decision?: FrontierSwarmGraphNodeInput;
+  output?: FrontierSwarmGraphNodeInput;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRunGraphVerificationGateChunkInput {
+  id?: string;
+  subject: FrontierSwarmGraphNodeInput;
+  gate: FrontierSwarmGraphNodeInput;
+  evidence?: readonly FrontierSwarmGraphNodeInput[];
+  pass?: FrontierSwarmGraphNodeInput;
+  block?: FrontierSwarmGraphNodeInput;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRunGraphMergeGateChunkInput {
+  id?: string;
+  candidate: FrontierSwarmGraphNodeInput;
+  gate?: FrontierSwarmGraphNodeInput;
+  decision?: FrontierSwarmGraphNodeInput;
+  target: FrontierSwarmGraphNodeInput;
+  blockers?: readonly FrontierSwarmGraphNodeInput[];
+  superseded?: readonly FrontierSwarmGraphNodeInput[];
+  status?: FrontierSwarmGraphStatus;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRunGraphBarrierInput {
+  id?: string;
+  prerequisites: readonly FrontierSwarmGraphNodeInput[];
+  barrier?: FrontierSwarmGraphNodeInput;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRunGraphRaceSelectInput {
+  id?: string;
+  branches: readonly FrontierSwarmGraphNodeInput[];
+  selector?: FrontierSwarmGraphNodeInput;
+  selectedBranchId?: string;
+  rejectedBranchIds?: readonly string[];
+  metadata?: unknown;
 }
 
 export interface FrontierSwarmScheduleInput {
@@ -1915,6 +2305,8 @@ export interface FrontierSwarmSemanticImportSummary {
   lossesBySeverity?: Record<string, unknown>;
   semanticIndex?: { symbols?: number; [key: string]: unknown };
   semanticSidecars?: { ownershipRegions?: number; patchHints?: number; [key: string]: unknown };
+  semanticChanges?: readonly FrontierSwarmSemanticChange[];
+  mergeCandidates?: readonly FrontierSwarmMergeCandidate[];
   dependencies?: unknown;
   semanticEditScripts?: unknown;
   semanticEditProjection?: unknown;
@@ -4518,6 +4910,122 @@ export function createSwarmEvidenceRecord(input: FrontierSwarmEvidenceRecordInpu
   };
 }
 
+export function createSwarmPatchEvent(input: FrontierSwarmPatchEventInput): FrontierSwarmPatchEvent {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const graphRefs = normalizeSwarmGraphRefs(input.graphRefs ?? []);
+  const sequence = input.sequence !== undefined ? Math.max(0, Math.floor(input.sequence)) : undefined;
+  return {
+    kind: FRONTIER_SWARM_PATCH_EVENT_KIND,
+    version: FRONTIER_SWARM_PATCH_EVENT_VERSION,
+    id: input.id ?? 'swarm-patch-event:' + stableHash([input.replayRecordId, sequence, input.operation, input.path, input.from, input.hash]),
+    operation: input.operation,
+    path: input.path,
+    ...(input.from ? { from: input.from } : {}),
+    ...(input.hash ? { hash: input.hash } : {}),
+    ...(sequence !== undefined ? { sequence } : {}),
+    ...(input.value !== undefined ? { value: toJsonValue(input.value) } : {}),
+    ...(input.before !== undefined ? { before: toJsonValue(input.before) } : {}),
+    ...(input.after !== undefined ? { after: toJsonValue(input.after) } : {}),
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.replayRecordId ? { replayRecordId: input.replayRecordId } : {}),
+    graphRefs,
+    generatedAt,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmReplayRecord(input: FrontierSwarmReplayRecordInput = {}): FrontierSwarmReplayRecord {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const title = input.title ?? titleFromId(input.id ?? input.subject ?? input.replayBundleId ?? 'replay record');
+  const evidenceRefs = normalizeNamedRefs(input.evidenceRefs ?? [], 'evidence');
+  const graphRefs = normalizeSwarmGraphRefs(input.graphRefs ?? []);
+  const replayId = input.id ?? 'swarm-replay-record:' + stableHash([
+    title,
+    input.status,
+    input.subject,
+    input.replayBundleId,
+    input.patchEvents ?? [],
+    evidenceRefs,
+    graphRefs,
+    input.jobId,
+    input.taskId
+  ]);
+  const patchEvents = (input.patchEvents ?? [])
+    .map((event, index) => normalizeSwarmPatchEvent(event, replayId, index))
+    .sort((left, right) => (left.sequence ?? Number.MAX_SAFE_INTEGER) - (right.sequence ?? Number.MAX_SAFE_INTEGER) || left.id.localeCompare(right.id));
+  return {
+    kind: FRONTIER_SWARM_REPLAY_RECORD_KIND,
+    version: FRONTIER_SWARM_REPLAY_RECORD_VERSION,
+    id: replayId,
+    title,
+    status: input.status ?? 'unknown',
+    ...(input.subject ? { subject: input.subject } : {}),
+    ...(input.replayBundleId ? { replayBundleId: input.replayBundleId } : {}),
+    patchEvents,
+    evidenceRefs,
+    graphRefs,
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
+    ...(input.finishedAt !== undefined ? { finishedAt: input.finishedAt } : {}),
+    generatedAt,
+    summary: {
+      patchEventCount: patchEvents.length,
+      evidenceRefCount: evidenceRefs.length,
+      graphRefCount: graphRefs.length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmImprovementLoop(input: FrontierSwarmImprovementLoopInput = {}): FrontierSwarmImprovementLoop {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const title = input.title ?? titleFromId(input.id ?? input.subject ?? 'improvement loop');
+  const replayRecordIds = uniqueStrings(input.replayRecordIds ?? []);
+  const patchEventIds = uniqueStrings(input.patchEventIds ?? []);
+  const evidenceRefs = normalizeNamedRefs(input.evidenceRefs ?? [], 'evidence');
+  const graphRefs = normalizeSwarmGraphRefs(input.graphRefs ?? []);
+  return {
+    kind: FRONTIER_SWARM_IMPROVEMENT_LOOP_KIND,
+    version: FRONTIER_SWARM_IMPROVEMENT_LOOP_VERSION,
+    id: input.id ?? 'swarm-improvement-loop:' + stableHash([
+      title,
+      input.status,
+      input.subject,
+      input.observation,
+      input.action,
+      input.result,
+      replayRecordIds,
+      patchEventIds,
+      evidenceRefs,
+      graphRefs,
+      input.jobId,
+      input.taskId
+    ]),
+    title,
+    status: input.status ?? inferImprovementLoopStatus(input),
+    ...(input.subject ? { subject: input.subject } : {}),
+    ...(input.observation !== undefined ? { observation: toJsonValue(input.observation) } : {}),
+    ...(input.action !== undefined ? { action: toJsonValue(input.action) } : {}),
+    ...(input.result !== undefined ? { result: toJsonValue(input.result) } : {}),
+    replayRecordIds,
+    patchEventIds,
+    evidenceRefs,
+    graphRefs,
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    generatedAt,
+    summary: {
+      replayRecordCount: replayRecordIds.length,
+      patchEventCount: patchEventIds.length,
+      evidenceRefCount: evidenceRefs.length,
+      graphRefCount: graphRefs.length
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
 export function mapSwarmGateEvidenceToGraph(input: {
   runId?: string;
   gates?: readonly (FrontierSwarmGateRecordInput | FrontierSwarmGateRecord)[];
@@ -4579,6 +5087,371 @@ export function mapSwarmGateEvidenceToGraph(input: {
 
 export function createSwarmGateEvidenceGraph(input: Parameters<typeof mapSwarmGateEvidenceToGraph>[0]): FrontierSwarmRunGraph {
   return mapSwarmGateEvidenceToGraph(input);
+}
+
+export function classifySwarmMergeCandidateAdmission(input: {
+  status?: FrontierSwarmMergeCandidateAdmissionStatus;
+  reasonCodes?: readonly FrontierSwarmMergeCandidateReasonCode[];
+} | readonly FrontierSwarmMergeCandidateReasonCode[] = {}): FrontierSwarmMergeCandidateAdmissionStatus {
+  const arrayInput = Array.isArray(input);
+  const objectInput = arrayInput
+    ? undefined
+    : input as { status?: FrontierSwarmMergeCandidateAdmissionStatus; reasonCodes?: readonly FrontierSwarmMergeCandidateReasonCode[] };
+  const status = objectInput ? normalizeOptionalString(objectInput.status) : undefined;
+  if (status) return status;
+  const reasonCodes = arrayInput
+    ? normalizeSwarmMergeCandidateReasonCodes(input)
+    : normalizeSwarmMergeCandidateReasonCodes(objectInput?.reasonCodes ?? []);
+  if (reasonCodes.some((reason) => FRONTIER_SWARM_BLOCKING_MERGE_CANDIDATE_REASON_CODES.has(reason))) return 'blocked';
+  if (reasonCodes.some((reason) => FRONTIER_SWARM_REVIEW_MERGE_CANDIDATE_REASON_CODES.has(reason))) return 'review-required';
+  if (reasonCodes.includes('lossy-import')) return 'safe-with-losses';
+  return 'safe';
+}
+
+export function createSwarmSemanticChange(input: FrontierSwarmSemanticChangeInput | FrontierSwarmSemanticChange): FrontierSwarmSemanticChange {
+  if (isSwarmSemanticChange(input)) return cloneJsonValue(input) as FrontierSwarmSemanticChange;
+  const generatedAt = input.generatedAt ?? Date.now();
+  const symbolId = normalizeId(input.symbolId, 'semantic change symbol id');
+  const declarationKind = normalizeId(input.declarationKind, 'semantic change declaration kind');
+  const sourceSpan = normalizeSwarmSourceSpan(input.sourceSpan, {
+    sourcePath: input.sourcePath,
+    sourceHash: input.sourceHash,
+    expectedSourceHash: input.expectedSourceHash
+  });
+  const operation = normalizeOptionalString(input.operation) ?? 'unknown';
+  const derivedReasonCodes = deriveSwarmSemanticChangeReasonCodes(input, sourceSpan);
+  const reasonCodes = normalizeSwarmMergeCandidateReasonCodes([...(input.reasonCodes ?? []), ...derivedReasonCodes]);
+  const conflictReason = normalizeSwarmConflictReason(input.conflictReason, reasonCodes);
+  return {
+    kind: FRONTIER_SWARM_SEMANTIC_CHANGE_KIND,
+    version: FRONTIER_SWARM_SEMANTIC_CHANGE_VERSION,
+    id: input.id ?? 'swarm-semantic-change:' + stableHash([symbolId, declarationKind, sourceSpan, operation, reasonCodes]),
+    symbolId,
+    declarationKind,
+    sourceSpan,
+    operation,
+    confidence: normalizeSwarmSemanticConfidence(input.confidence),
+    ...(conflictReason ? { conflictReason } : {}),
+    status: classifySwarmMergeCandidateAdmission({ status: input.status, reasonCodes }),
+    reasonCodes,
+    generatedAt,
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmMergeCandidate(input: FrontierSwarmMergeCandidateInput | FrontierSwarmMergeCandidate): FrontierSwarmMergeCandidate {
+  if (isSwarmMergeCandidate(input)) return cloneJsonValue(input) as FrontierSwarmMergeCandidate;
+  const generatedAt = input.generatedAt ?? Date.now();
+  const shorthandChange = input.symbolId || input.declarationKind || input.operation || input.sourceSpan || input.sourcePath
+    ? [{
+      symbolId: input.symbolId ?? 'unknown-symbol',
+      declarationKind: input.declarationKind ?? 'unknown',
+      operation: input.operation ?? 'unknown',
+      sourceSpan: input.sourceSpan,
+      sourcePath: input.sourcePath,
+      sourceHash: input.sourceHash,
+      expectedSourceHash: input.expectedSourceHash,
+      confidence: input.confidence,
+      conflictReason: input.conflictReason,
+      status: input.status,
+      reasonCodes: input.reasonCodes,
+      generatedAt
+    } satisfies FrontierSwarmSemanticChangeInput]
+    : [];
+  const semanticChanges = [...(input.semanticChanges ?? []), ...(input.changes ?? []), ...shorthandChange]
+    .map((change) => createSwarmSemanticChange({ ...change, generatedAt: (change as { generatedAt?: number }).generatedAt ?? generatedAt }));
+  const primaryChange = semanticChanges[0];
+  const candidateSourceSpan = primaryChange?.sourceSpan ?? normalizeSwarmSourceSpan(input.sourceSpan, {
+    sourcePath: input.sourcePath,
+    sourceHash: input.sourceHash,
+    expectedSourceHash: input.expectedSourceHash
+  });
+  const derivedReasonCodes = deriveSwarmMergeCandidateReasonCodes(input, semanticChanges, candidateSourceSpan);
+  const reasonCodes = normalizeSwarmMergeCandidateReasonCodes([
+    ...(input.reasonCodes ?? []),
+    ...semanticChanges.flatMap((change) => change.reasonCodes),
+    ...derivedReasonCodes
+  ]);
+  const symbolIds = uniqueStrings([
+    input.symbolId,
+    ...semanticChanges.map((change) => change.symbolId)
+  ]);
+  const declarationKinds = uniqueStrings([
+    input.declarationKind,
+    ...semanticChanges.map((change) => change.declarationKind)
+  ]);
+  const changedPaths = uniqueStrings(semanticChanges.map((change) => change.sourceSpan.path).concat(candidateSourceSpan.path));
+  const conflictReason = normalizeSwarmConflictReason(input.conflictReason, reasonCodes);
+  const metadata = toJsonObject(input.metadata);
+  return {
+    kind: FRONTIER_SWARM_MERGE_CANDIDATE_KIND,
+    version: FRONTIER_SWARM_MERGE_CANDIDATE_VERSION,
+    id: input.id ?? 'swarm-merge-candidate:' + stableHash([input.jobId, input.taskId, symbolIds, declarationKinds, semanticChanges, reasonCodes]),
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.lane ? { lane: input.lane } : {}),
+    ...(input.title ? { title: input.title } : {}),
+    ...(input.sidecarPath ? { sidecarPath: input.sidecarPath } : {}),
+    symbolId: symbolIds[0] ?? primaryChange?.symbolId ?? 'unknown-symbol',
+    symbolIds,
+    declarationKind: declarationKinds[0] ?? primaryChange?.declarationKind ?? 'unknown',
+    declarationKinds,
+    sourceSpan: candidateSourceSpan,
+    operation: input.operation ?? primaryChange?.operation ?? 'unknown',
+    confidence: normalizeSwarmSemanticConfidence(input.confidence ?? primaryChange?.confidence),
+    ...(conflictReason ? { conflictReason } : {}),
+    status: classifySwarmMergeCandidateAdmission({ status: input.status, reasonCodes }),
+    reasonCodes,
+    semanticChanges,
+    changedPaths,
+    evidencePaths: uniqueStrings(input.evidencePaths ?? []),
+    generatedAt,
+    summary: {
+      changeCount: semanticChanges.length,
+      symbolCount: symbolIds.length,
+      reasonCount: reasonCodes.length
+    },
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+export function mapSwarmMergeCandidatesToGraph(input: FrontierSwarmMergeCandidateGraphInput): FrontierSwarmMergeCandidateGraphProjection {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const candidates = input.candidates.map((candidate) => createSwarmMergeCandidate({ ...candidate, generatedAt: (candidate as { generatedAt?: number }).generatedAt ?? generatedAt }));
+  const includeChangeNodes = input.includeChangeNodes !== false;
+  const nodes: FrontierSwarmGraphNodeInput[] = [];
+  const edges: FrontierSwarmGraphEdgeInput[] = [];
+  for (const candidate of candidates) {
+    const candidateNodeId = graphNodeId('candidate', candidate.id);
+    nodes.push({
+      id: candidateNodeId,
+      kind: 'candidate',
+      title: candidate.title ?? candidate.symbolId,
+      status: candidate.status,
+      jobId: candidate.jobId,
+      taskId: candidate.taskId,
+      path: candidate.changedPaths[0],
+      generatedAt,
+      metadata: candidate
+    });
+    if (!includeChangeNodes) continue;
+    for (const change of candidate.semanticChanges) {
+      const changeNodeId = graphNodeId('semantic-change', change.id);
+      nodes.push({
+        id: changeNodeId,
+        kind: 'semantic-change',
+        title: `${change.operation} ${change.symbolId}`,
+        status: change.status,
+        jobId: candidate.jobId,
+        taskId: candidate.taskId,
+        path: change.sourceSpan.path,
+        generatedAt,
+        metadata: change
+      });
+      edges.push({
+        kind: 'produces',
+        from: candidateNodeId,
+        to: changeNodeId,
+        label: 'semantic-change',
+        generatedAt,
+        metadata: {
+          symbolId: change.symbolId,
+          declarationKind: change.declarationKind,
+          operation: change.operation,
+          reasonCodes: change.reasonCodes
+        }
+      });
+      if (change.conflictReason) {
+        edges.push({
+          kind: 'conflictsWith',
+          from: candidateNodeId,
+          to: changeNodeId,
+          label: change.conflictReason,
+          generatedAt
+        });
+      }
+    }
+  }
+  return { candidates, nodes, edges };
+}
+
+export function createSwarmMergeCandidateGraph(input: FrontierSwarmMergeCandidateGraphInput): FrontierSwarmRunGraph {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const projection = mapSwarmMergeCandidatesToGraph({ ...input, generatedAt });
+  return createSwarmRunGraph({
+    id: input.id,
+    runId: input.runId,
+    title: input.title ?? 'Semantic merge candidate graph',
+    generatedAt,
+    nodes: projection.nodes,
+    edges: projection.edges,
+    metadata: input.metadata
+  });
+}
+
+export function mapSwarmReplayRecordsToGraph(input: {
+  runId?: string;
+  replayRecords?: readonly (FrontierSwarmReplayRecordInput | FrontierSwarmReplayRecord)[];
+  generatedAt?: number;
+}): FrontierSwarmRunGraph {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const replayRecords = (input.replayRecords ?? []).map((record) => isSwarmReplayRecord(record) ? record : createSwarmReplayRecord(record));
+  const nodes: FrontierSwarmGraphNodeInput[] = [];
+  const edges: FrontierSwarmGraphEdgeInput[] = [];
+  for (const replay of replayRecords) {
+    const replayNodeId = graphNodeId('replay', replay.id);
+    nodes.push({
+      id: replayNodeId,
+      kind: 'replay',
+      title: replay.title,
+      status: replay.status,
+      jobId: replay.jobId,
+      taskId: replay.taskId,
+      generatedAt,
+      metadata: replay
+    });
+    for (const event of replay.patchEvents) {
+      const eventNodeId = graphNodeId('replay', event.id);
+      nodes.push({
+        id: eventNodeId,
+        kind: 'replay',
+        title: `${event.operation} ${event.path}`,
+        jobId: event.jobId ?? replay.jobId,
+        taskId: event.taskId ?? replay.taskId,
+        path: event.path,
+        generatedAt,
+        metadata: event
+      });
+      edges.push({
+        kind: 'produces',
+        from: replayNodeId,
+        to: eventNodeId,
+        label: event.operation,
+        generatedAt
+      });
+    }
+    for (const evidence of replay.evidenceRefs) {
+      const evidenceNodeId = graphNodeId('evidence', evidence.id);
+      nodes.push({
+        id: evidenceNodeId,
+        kind: 'evidence',
+        title: evidence.path ?? evidence.uri ?? evidence.id,
+        path: evidence.path,
+        generatedAt,
+        metadata: evidence
+      });
+      edges.push({
+        kind: 'verifies',
+        from: evidenceNodeId,
+        to: replayNodeId,
+        label: evidence.role ?? evidence.kind,
+        generatedAt
+      });
+    }
+  }
+  return createSwarmRunGraph({
+    runId: input.runId,
+    title: 'Replay records graph',
+    generatedAt,
+    nodes,
+    edges
+  });
+}
+
+export function createSwarmReplayRecordGraph(input: Parameters<typeof mapSwarmReplayRecordsToGraph>[0]): FrontierSwarmRunGraph {
+  return mapSwarmReplayRecordsToGraph(input);
+}
+
+export function mapSwarmImprovementLoopsToGraph(input: {
+  runId?: string;
+  improvementLoops?: readonly (FrontierSwarmImprovementLoopInput | FrontierSwarmImprovementLoop)[];
+  generatedAt?: number;
+}): FrontierSwarmRunGraph {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const loops = (input.improvementLoops ?? []).map((loop) => isSwarmImprovementLoop(loop) ? loop : createSwarmImprovementLoop(loop));
+  const nodes: FrontierSwarmGraphNodeInput[] = [];
+  const edges: FrontierSwarmGraphEdgeInput[] = [];
+  for (const loop of loops) {
+    const phaseNodes: FrontierSwarmGraphNodeInput[] = [];
+    if (loop.observation !== undefined) {
+      phaseNodes.push(createImprovementLoopPhaseNode(loop, 'observation', loop.observation, generatedAt));
+    }
+    if (loop.action !== undefined) {
+      phaseNodes.push(createImprovementLoopPhaseNode(loop, 'action', loop.action, generatedAt));
+    }
+    if (loop.result !== undefined) {
+      phaseNodes.push(createImprovementLoopPhaseNode(loop, 'result', loop.result, generatedAt));
+    }
+    if (phaseNodes.length === 0) {
+      phaseNodes.push({
+        id: graphNodeId('rsi', loop.id),
+        kind: 'rsi',
+        title: loop.title,
+        status: loop.status,
+        jobId: loop.jobId,
+        taskId: loop.taskId,
+        generatedAt,
+        metadata: loop
+      });
+    }
+    nodes.push(...phaseNodes);
+    for (let index = 1; index < phaseNodes.length; index += 1) {
+      edges.push({
+        kind: 'produces',
+        from: phaseNodes[index - 1].id as string,
+        to: phaseNodes[index].id as string,
+        label: index === 1 ? 'action' : 'result',
+        generatedAt
+      });
+    }
+    const entryNodeId = phaseNodes[0]?.id as string | undefined;
+    const exitNodeId = phaseNodes.at(-1)?.id as string | undefined;
+    for (const replayRecordId of loop.replayRecordIds) {
+      const replayNodeId = graphNodeId('replay', replayRecordId);
+      nodes.push({
+        id: replayNodeId,
+        kind: 'replay',
+        title: titleFromId(replayRecordId),
+        generatedAt,
+        metadata: { replayRecordId }
+      });
+      if (entryNodeId) edges.push({ kind: 'produces', from: replayNodeId, to: entryNodeId, label: 'feeds-rsi', generatedAt });
+    }
+    for (const patchEventId of loop.patchEventIds) {
+      const patchNodeId = graphNodeId('replay', patchEventId);
+      nodes.push({
+        id: patchNodeId,
+        kind: 'replay',
+        title: titleFromId(patchEventId),
+        generatedAt,
+        metadata: { patchEventId }
+      });
+      if (entryNodeId) edges.push({ kind: 'produces', from: patchNodeId, to: entryNodeId, label: 'feeds-rsi', generatedAt });
+    }
+    for (const evidence of loop.evidenceRefs) {
+      const evidenceNodeId = graphNodeId('evidence', evidence.id);
+      nodes.push({
+        id: evidenceNodeId,
+        kind: 'evidence',
+        title: evidence.path ?? evidence.uri ?? evidence.id,
+        path: evidence.path,
+        generatedAt,
+        metadata: evidence
+      });
+      if (exitNodeId) edges.push({ kind: 'verifies', from: evidenceNodeId, to: exitNodeId, label: evidence.role ?? evidence.kind, generatedAt });
+    }
+  }
+  return createSwarmRunGraph({
+    runId: input.runId,
+    title: 'Improvement loop graph',
+    generatedAt,
+    nodes,
+    edges
+  });
+}
+
+export function createSwarmImprovementLoopGraph(input: Parameters<typeof mapSwarmImprovementLoopsToGraph>[0]): FrontierSwarmRunGraph {
+  return mapSwarmImprovementLoopsToGraph(input);
 }
 
 export function createSwarmRunGraphChunk(input: FrontierSwarmRunGraphChunkInput = {}): FrontierSwarmRunGraphChunk {
@@ -4650,6 +5523,116 @@ export function createSwarmRunGraphJoin(input: { id?: string; branches: readonly
   });
 }
 
+export function createSwarmRunGraphBarrier(input: FrontierSwarmRunGraphBarrierInput): FrontierSwarmRunGraphChunk {
+  const prerequisites = input.prerequisites.map((node) => normalizeGraphNode(node));
+  const prerequisiteIds = prerequisites.map((node) => node.id);
+  const barrierMetadata = toJsonObject(input.barrier?.metadata);
+  const barrier = normalizeGraphNode({
+    ...(input.barrier ?? {}),
+    id: input.barrier?.id ?? (input.id ? `${input.id}:barrier` : graphNodeId('gate', 'barrier:' + stableHash(prerequisiteIds))),
+    kind: input.barrier?.kind ?? 'gate',
+    title: input.barrier?.title ?? 'Barrier',
+    metadata: {
+      ...(barrierMetadata ?? {}),
+      role: 'barrier',
+      graphChunkKind: 'barrier',
+      prerequisiteIds,
+      prerequisiteCount: prerequisiteIds.length
+    }
+  });
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes: [...prerequisites, barrier],
+    edges: prerequisites.map((node, index) => ({
+      kind: 'dependsOn',
+      from: node.id,
+      to: barrier.id,
+      label: 'barrier',
+      metadata: {
+        role: 'barrier-prerequisite',
+        barrierId: barrier.id,
+        prerequisiteId: node.id,
+        prerequisiteIndex: index,
+        prerequisiteCount: prerequisites.length
+      }
+    })),
+    entryNodeIds: prerequisiteIds,
+    exitNodeIds: [barrier.id],
+    metadata: input.metadata
+  });
+}
+
+export function createSwarmRunGraphRaceSelect(input: FrontierSwarmRunGraphRaceSelectInput): FrontierSwarmRunGraphChunk {
+  const baseBranches = input.branches.map((node) => normalizeGraphNode(node));
+  const branchIds = baseBranches.map((node) => node.id);
+  const selectedBranchId = input.selectedBranchId && branchIds.includes(input.selectedBranchId) ? input.selectedBranchId : undefined;
+  const rejectedBranchIds = new Set(selectedBranchId
+    ? branchIds.filter((id) => id !== selectedBranchId)
+    : uniqueStrings(input.rejectedBranchIds ?? []).filter((id) => branchIds.includes(id)));
+  if (selectedBranchId) rejectedBranchIds.delete(selectedBranchId);
+  const selectorMetadata = toJsonObject(input.selector?.metadata);
+  const selector = normalizeGraphNode({
+    ...(input.selector ?? {}),
+    id: input.selector?.id ?? (input.id ? `${input.id}:selector` : graphNodeId('decision', 'race-select:' + stableHash(branchIds))),
+    kind: input.selector?.kind ?? 'decision',
+    title: input.selector?.title ?? 'Race/select',
+    metadata: {
+      ...(selectorMetadata ?? {}),
+      role: 'race-select',
+      graphChunkKind: 'race-select',
+      branchIds,
+      branchCount: branchIds.length,
+      ...(selectedBranchId ? { selectedBranchId } : {}),
+      rejectedBranchIds: Array.from(rejectedBranchIds).sort()
+    }
+  });
+  const branches = baseBranches.map((node, index) => {
+    const disposition = node.id === selectedBranchId ? 'selected' : rejectedBranchIds.has(node.id) ? 'rejected' : 'candidate';
+    return normalizeGraphNode({
+      ...node,
+      status: node.status ?? (disposition === 'selected' ? 'accepted' : disposition === 'rejected' ? 'rejected' : undefined),
+      metadata: {
+        ...(node.metadata ?? {}),
+        raceSelect: {
+          selectorId: selector.id,
+          branchId: node.id,
+          branchIndex: index,
+          branchCount: baseBranches.length,
+          disposition,
+          selected: disposition === 'selected',
+          rejected: disposition === 'rejected'
+        }
+      }
+    }, node.generatedAt);
+  });
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes: [selector, ...branches],
+    edges: branches.map((branch, index) => {
+      const disposition = branch.id === selectedBranchId ? 'selected' : rejectedBranchIds.has(branch.id) ? 'rejected' : 'candidate';
+      return {
+        kind: disposition === 'selected' ? 'mergesInto' : disposition === 'rejected' ? 'supersedes' : 'dependsOn',
+        from: branch.id,
+        to: selector.id,
+        label: disposition,
+        metadata: {
+          role: 'race-select-branch',
+          selectorId: selector.id,
+          branchId: branch.id,
+          branchIndex: index,
+          branchCount: branches.length,
+          disposition,
+          selected: disposition === 'selected',
+          rejected: disposition === 'rejected'
+        }
+      } satisfies FrontierSwarmGraphEdgeInput;
+    }),
+    entryNodeIds: branchIds,
+    exitNodeIds: [selector.id],
+    metadata: input.metadata
+  });
+}
+
 export function createSwarmRunGraphTournament(input: { id?: string; candidates: readonly FrontierSwarmGraphNodeInput[]; winner?: string; rejectedCandidates?: readonly string[]; metadata?: unknown }): FrontierSwarmRunGraphChunk {
   const tournament = normalizeGraphNode({ id: input.id ? `${input.id}:tournament` : undefined, kind: 'decision', title: 'Tournament', metadata: input.metadata });
   const candidates = input.candidates.map((node) => normalizeGraphNode({ ...node, kind: node.kind ?? 'candidate' }));
@@ -4703,6 +5686,164 @@ export function createSwarmRunGraphRsiLoop(input: { id?: string; observe: Fronti
     ],
     entryNodeIds: [observe.id],
     exitNodeIds: [apply?.id ?? improve.id],
+    metadata: input.metadata
+  });
+}
+
+export function createSwarmRunGraphSynthesisChunk(input: FrontierSwarmRunGraphSynthesisChunkInput = {}): FrontierSwarmRunGraphChunk {
+  const source = input.source ? normalizeGraphNode(input.source) : undefined;
+  const panel = normalizeGraphNode({
+    ...input.panel,
+    id: input.panel?.id ?? (input.id ? `${input.id}:panel` : undefined),
+    kind: input.panel?.kind ?? 'decision',
+    title: input.panel?.title ?? 'Synthesis panel'
+  });
+  const candidates = (input.candidates ?? []).map((candidate) => normalizeGraphNode({
+    ...candidate,
+    kind: candidate.kind ?? 'candidate'
+  }));
+  const rejectedCandidateIds = new Set(input.rejectedCandidateIds ?? candidates
+    .filter((candidate) => candidate.status === 'rejected' || candidate.status === 'failed' || candidate.status === 'superseded')
+    .map((candidate) => candidate.id));
+  const selectedCandidateId = input.selectedCandidateId ?? candidates.find((candidate) => !rejectedCandidateIds.has(candidate.id))?.id;
+  const selectedCandidate = selectedCandidateId ? candidates.find((candidate) => candidate.id === selectedCandidateId) : undefined;
+  const decision = input.decision ? normalizeGraphNode({
+    ...input.decision,
+    id: input.decision.id ?? (input.id ? `${input.id}:decision` : undefined),
+    kind: input.decision.kind ?? 'decision',
+    title: input.decision.title ?? 'Coordinator synthesis decision'
+  }) : undefined;
+  const output = input.output ? normalizeGraphNode({
+    ...input.output,
+    kind: input.output.kind ?? 'candidate'
+  }) : undefined;
+  const edges: FrontierSwarmGraphEdgeInput[] = [];
+  if (source) {
+    edges.push({ kind: 'produces', from: source.id, to: panel.id, label: 'synthesis-request' });
+  }
+  for (const candidate of candidates) {
+    edges.push({ kind: 'produces', from: panel.id, to: candidate.id, label: 'candidate' });
+  }
+  if (decision && selectedCandidate) {
+    edges.push({ kind: 'mergesInto', from: selectedCandidate.id, to: decision.id, label: 'selected' });
+  }
+  for (const candidate of candidates) {
+    if (!rejectedCandidateIds.has(candidate.id)) continue;
+    edges.push(selectedCandidate && selectedCandidate.id !== candidate.id
+      ? { kind: 'supersedes', from: selectedCandidate.id, to: candidate.id, label: 'rejected' }
+      : { kind: 'supersedes', from: candidate.id, to: decision?.id ?? panel.id, label: 'rejected' });
+  }
+  if (decision && output) {
+    edges.push({
+      kind: isBlockingGraphStatus(decision.status) ? 'blocks' : 'produces',
+      from: decision.id,
+      to: output.id,
+      label: isBlockingGraphStatus(decision.status) ? 'blocked-output' : 'synthesized-output'
+    });
+  } else if (selectedCandidate && output) {
+    edges.push({ kind: 'mergesInto', from: selectedCandidate.id, to: output.id, label: 'synthesized-output' });
+  }
+  const nodes = [source, panel, ...candidates, decision, output].filter((node): node is FrontierSwarmGraphNode => Boolean(node));
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes,
+    edges,
+    entryNodeIds: [source?.id ?? panel.id],
+    exitNodeIds: [output?.id ?? decision?.id ?? selectedCandidate?.id ?? panel.id],
+    metadata: input.metadata
+  });
+}
+
+export function createSwarmRunGraphVerificationGateChunk(input: FrontierSwarmRunGraphVerificationGateChunkInput): FrontierSwarmRunGraphChunk {
+  const subject = normalizeGraphNode(input.subject);
+  const gate = normalizeGraphNode({
+    ...input.gate,
+    kind: input.gate.kind ?? 'gate',
+    title: input.gate.title ?? 'Verification gate'
+  });
+  const evidence = (input.evidence ?? []).map((node) => normalizeGraphNode({
+    ...node,
+    kind: node.kind ?? 'evidence'
+  }));
+  const pass = input.pass ? normalizeGraphNode(input.pass) : undefined;
+  const block = input.block ? normalizeGraphNode(input.block) : undefined;
+  const passing = isPassingGraphStatus(gate.status);
+  const blocking = isBlockingGraphStatus(gate.status);
+  const edges: FrontierSwarmGraphEdgeInput[] = [
+    { kind: 'verifies', from: gate.id, to: subject.id, label: 'gate' },
+    ...evidence.map((node) => ({ kind: 'produces' as FrontierSwarmGraphEdgeKind, from: gate.id, to: node.id, label: 'evidence' })),
+    ...evidence.map((node) => ({ kind: 'verifies' as FrontierSwarmGraphEdgeKind, from: node.id, to: gate.id, label: 'evidence-verifies-gate' }))
+  ];
+  if (passing && pass) {
+    edges.push({ kind: 'mergesInto', from: gate.id, to: pass.id, label: 'passed' });
+  }
+  if (blocking) {
+    edges.push({ kind: 'blocks', from: gate.id, to: block?.id ?? subject.id, label: gate.status === 'failed' ? 'failed' : 'blocked' });
+  }
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes: [subject, gate, ...evidence, pass, block].filter((node): node is FrontierSwarmGraphNode => Boolean(node)),
+    edges,
+    entryNodeIds: [subject.id],
+    exitNodeIds: [passing && pass ? pass.id : blocking && block ? block.id : gate.id],
+    metadata: input.metadata
+  });
+}
+
+export function createSwarmRunGraphMergeGateChunk(input: FrontierSwarmRunGraphMergeGateChunkInput): FrontierSwarmRunGraphChunk {
+  const candidate = normalizeGraphNode({
+    ...input.candidate,
+    kind: input.candidate.kind ?? 'candidate'
+  });
+  const target = normalizeGraphNode(input.target);
+  const gate = input.gate ? normalizeGraphNode({
+    ...input.gate,
+    kind: input.gate.kind ?? 'gate',
+    title: input.gate.title ?? 'Merge gate'
+  }) : undefined;
+  const decision = input.decision ? normalizeGraphNode({
+    ...input.decision,
+    kind: input.decision.kind ?? 'decision',
+    title: input.decision.title ?? 'Coordinator merge decision'
+  }) : undefined;
+  const blockers = (input.blockers ?? []).map((node) => normalizeGraphNode({
+    ...node,
+    kind: node.kind ?? 'gate'
+  }));
+  const superseded = (input.superseded ?? []).map((node) => normalizeGraphNode({
+    ...node,
+    kind: node.kind ?? 'candidate'
+  }));
+  const status = input.status ?? decision?.status ?? gate?.status ?? candidate.status;
+  const passing = isPassingGraphStatus(status);
+  const blocking = isBlockingGraphStatus(status);
+  const edges: FrontierSwarmGraphEdgeInput[] = [];
+  if (gate) {
+    edges.push({ kind: 'verifies', from: gate.id, to: candidate.id, label: 'merge-gate' });
+  }
+  if (gate && decision) {
+    edges.push({ kind: blocking ? 'blocks' : 'produces', from: gate.id, to: decision.id, label: 'gate-decision' });
+  }
+  if (decision) {
+    edges.push({ kind: 'verifies', from: decision.id, to: candidate.id, label: 'coordinator-decision' });
+  }
+  for (const blocker of blockers) {
+    edges.push({ kind: 'blocks', from: blocker.id, to: candidate.id, label: 'merge-blocker' });
+  }
+  for (const node of superseded) {
+    edges.push({ kind: 'supersedes', from: candidate.id, to: node.id, label: 'superseded' });
+  }
+  if (passing) {
+    edges.push({ kind: 'mergesInto', from: candidate.id, to: target.id, label: 'accepted' });
+  } else if (blocking) {
+    edges.push({ kind: 'blocks', from: decision?.id ?? gate?.id ?? candidate.id, to: target.id, label: status === 'failed' ? 'failed' : 'blocked' });
+  }
+  return createSwarmRunGraphChunk({
+    id: input.id,
+    nodes: [candidate, target, gate, decision, ...blockers, ...superseded].filter((node): node is FrontierSwarmGraphNode => Boolean(node)),
+    edges,
+    entryNodeIds: [candidate.id],
+    exitNodeIds: [passing ? target.id : blocking ? decision?.id ?? gate?.id ?? candidate.id : target.id],
     metadata: input.metadata
   });
 }
@@ -10508,6 +11649,116 @@ function countBy(values: readonly string[]): Record<string, number> {
   return out;
 }
 
+const FRONTIER_SWARM_BLOCKING_MERGE_CANDIDATE_REASON_CODES = new Set<FrontierSwarmMergeCandidateReasonCode>([
+  'missing-sidecar',
+  'empty-sidecar',
+  'stale-source-hash',
+  'symbol-conflict',
+  'effect-conflict'
+]);
+
+const FRONTIER_SWARM_REVIEW_MERGE_CANDIDATE_REASON_CODES = new Set<FrontierSwarmMergeCandidateReasonCode>([
+  'tests-missing'
+]);
+
+const FRONTIER_SWARM_CONFLICT_MERGE_CANDIDATE_REASON_CODES = new Set<FrontierSwarmMergeCandidateReasonCode>([
+  'symbol-conflict',
+  'effect-conflict'
+]);
+
+function isSwarmSemanticChange(input: FrontierSwarmSemanticChangeInput | FrontierSwarmSemanticChange): input is FrontierSwarmSemanticChange {
+  return (input as FrontierSwarmSemanticChange).kind === FRONTIER_SWARM_SEMANTIC_CHANGE_KIND;
+}
+
+function isSwarmMergeCandidate(input: FrontierSwarmMergeCandidateInput | FrontierSwarmMergeCandidate): input is FrontierSwarmMergeCandidate {
+  return (input as FrontierSwarmMergeCandidate).kind === FRONTIER_SWARM_MERGE_CANDIDATE_KIND;
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeSwarmMergeCandidateReasonCodes(
+  reasonCodes: readonly (FrontierSwarmMergeCandidateReasonCode | undefined | null)[]
+): FrontierSwarmMergeCandidateReasonCode[] {
+  return uniqueStrings(reasonCodes) as FrontierSwarmMergeCandidateReasonCode[];
+}
+
+function normalizeSwarmSourceSpan(
+  input: FrontierSwarmSourceSpanInput | undefined,
+  fallback: { sourcePath?: string; sourceHash?: string; expectedSourceHash?: string } = {}
+): FrontierSwarmSourceSpan {
+  const metadata = toJsonObject(input?.metadata);
+  const startLine = readNonNegativeNumber(input?.startLine);
+  const startColumn = readNonNegativeNumber(input?.startColumn);
+  const endLine = readNonNegativeNumber(input?.endLine);
+  const endColumn = readNonNegativeNumber(input?.endColumn);
+  const startOffset = readNonNegativeNumber(input?.startOffset);
+  const endOffset = readNonNegativeNumber(input?.endOffset);
+  const path = normalizeOptionalString(input?.path) ?? normalizeOptionalString(fallback.sourcePath);
+  const sourceHash = normalizeOptionalString(input?.sourceHash) ?? normalizeOptionalString(fallback.sourceHash);
+  const expectedSourceHash = normalizeOptionalString(input?.expectedSourceHash) ?? normalizeOptionalString(fallback.expectedSourceHash);
+  return {
+    ...(path ? { path } : {}),
+    ...(startLine !== undefined ? { startLine: Math.floor(startLine) } : {}),
+    ...(startColumn !== undefined ? { startColumn: Math.floor(startColumn) } : {}),
+    ...(endLine !== undefined ? { endLine: Math.floor(endLine) } : {}),
+    ...(endColumn !== undefined ? { endColumn: Math.floor(endColumn) } : {}),
+    ...(startOffset !== undefined ? { startOffset: Math.floor(startOffset) } : {}),
+    ...(endOffset !== undefined ? { endOffset: Math.floor(endOffset) } : {}),
+    ...(sourceHash ? { sourceHash } : {}),
+    ...(expectedSourceHash ? { expectedSourceHash } : {}),
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function deriveSwarmSemanticChangeReasonCodes(
+  input: FrontierSwarmSemanticChangeInput,
+  sourceSpan: FrontierSwarmSourceSpan
+): FrontierSwarmMergeCandidateReasonCode[] {
+  const reasons: FrontierSwarmMergeCandidateReasonCode[] = [];
+  if (input.conflictReason) reasons.push(input.conflictReason);
+  if (sourceSpan.sourceHash && sourceSpan.expectedSourceHash && sourceSpan.sourceHash !== sourceSpan.expectedSourceHash) {
+    reasons.push('stale-source-hash');
+  }
+  return normalizeSwarmMergeCandidateReasonCodes(reasons);
+}
+
+function deriveSwarmMergeCandidateReasonCodes(
+  input: FrontierSwarmMergeCandidateInput,
+  semanticChanges: readonly FrontierSwarmSemanticChange[],
+  sourceSpan: FrontierSwarmSourceSpan
+): FrontierSwarmMergeCandidateReasonCode[] {
+  const reasons: FrontierSwarmMergeCandidateReasonCode[] = [];
+  if (input.sidecarRequired && !input.sidecarPath) reasons.push('missing-sidecar');
+  if (input.sidecarEmpty) reasons.push('empty-sidecar');
+  if (input.hasLosses) reasons.push('lossy-import');
+  if (input.testsRequired && input.testsPassed !== true) reasons.push('tests-missing');
+  if (input.conflictReason) reasons.push(input.conflictReason);
+  if (sourceSpan.sourceHash && sourceSpan.expectedSourceHash && sourceSpan.sourceHash !== sourceSpan.expectedSourceHash) {
+    reasons.push('stale-source-hash');
+  }
+  if (semanticChanges.length === 0 && input.sidecarPath) reasons.push('empty-sidecar');
+  return normalizeSwarmMergeCandidateReasonCodes(reasons);
+}
+
+function normalizeSwarmSemanticConfidence(value: unknown): FrontierSwarmSemanticChangeConfidence {
+  if (typeof value === 'number' && Number.isFinite(value)) return clamp01(value);
+  const normalized = normalizeOptionalString(value);
+  return normalized ?? 'medium';
+}
+
+function normalizeSwarmConflictReason(
+  conflictReason: FrontierSwarmMergeCandidateReasonCode | undefined,
+  reasonCodes: readonly FrontierSwarmMergeCandidateReasonCode[]
+): FrontierSwarmMergeCandidateReasonCode | undefined {
+  const explicit = normalizeOptionalString(conflictReason);
+  if (explicit) return explicit;
+  return reasonCodes.find((reason) => FRONTIER_SWARM_CONFLICT_MERGE_CANDIDATE_REASON_CODES.has(reason));
+}
+
 function normalizeGraphNode(input: FrontierSwarmGraphNodeInput | FrontierSwarmGraphNode, generatedAt = Date.now()): FrontierSwarmGraphNode {
   const metadata = toJsonObject(input.metadata);
   const id = input.id ?? graphNodeId(input.kind, input.title ?? input.jobId ?? input.taskId ?? String(generatedAt));
@@ -10548,6 +11799,14 @@ function normalizeGraphEvent(input: FrontierSwarmGraphEventInput | FrontierSwarm
     timestamp,
     ...(metadata ? { metadata } : {})
   };
+}
+
+function isPassingGraphStatus(status: FrontierSwarmGraphStatus | undefined): boolean {
+  return status === 'passed' || status === 'accepted' || status === 'verified' || status === 'completed';
+}
+
+function isBlockingGraphStatus(status: FrontierSwarmGraphStatus | undefined): boolean {
+  return status === 'failed' || status === 'rejected' || status === 'blocked';
 }
 
 function dedupeGraphNodes(nodes: readonly FrontierSwarmGraphNode[]): FrontierSwarmGraphNode[] {
@@ -10595,12 +11854,84 @@ function normalizeGraphIdPart(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9_.:-]+/g, '-').replace(/^-+|-+$/g, '') || stableHash(value);
 }
 
+function normalizeSwarmGraphRef(input: FrontierSwarmGraphRefInput): FrontierSwarmGraphRef {
+  return {
+    id: input.id ?? 'swarm-graph-ref:' + stableHash([input.kind, input.graphId, input.nodeId, input.edgeId, input.role]),
+    kind: input.kind ?? 'graph',
+    ...(input.graphId ? { graphId: input.graphId } : {}),
+    ...(input.nodeId ? { nodeId: input.nodeId } : {}),
+    ...(input.edgeId ? { edgeId: input.edgeId } : {}),
+    ...(input.role ? { role: input.role } : {}),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+function normalizeSwarmGraphRefs(input: readonly FrontierSwarmGraphRefInput[]): FrontierSwarmGraphRef[] {
+  return input.map(normalizeSwarmGraphRef).sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function normalizeSwarmPatchEvent(
+  input: FrontierSwarmPatchEventInput | FrontierSwarmPatchEvent,
+  replayRecordId?: string,
+  index?: number
+): FrontierSwarmPatchEvent {
+  if (isSwarmPatchEvent(input) && (!replayRecordId || input.replayRecordId) && (index === undefined || input.sequence !== undefined)) {
+    return input;
+  }
+  return createSwarmPatchEvent({
+    ...input,
+    replayRecordId: input.replayRecordId ?? replayRecordId,
+    sequence: input.sequence ?? index
+  });
+}
+
+function inferImprovementLoopStatus(input: FrontierSwarmImprovementLoopInput): FrontierSwarmImprovementLoopStatus {
+  if (input.result !== undefined) return 'applied';
+  if (input.action !== undefined) return 'planned';
+  if (input.observation !== undefined) return 'observed';
+  return 'unknown';
+}
+
+function createImprovementLoopPhaseNode(
+  loop: FrontierSwarmImprovementLoop,
+  phase: 'observation' | 'action' | 'result',
+  value: JsonValue,
+  generatedAt: number
+): FrontierSwarmGraphNodeInput {
+  return {
+    id: graphNodeId('rsi', `${loop.id}:${phase}`),
+    kind: 'rsi',
+    title: `${loop.title} ${phase}`,
+    status: loop.status,
+    jobId: loop.jobId,
+    taskId: loop.taskId,
+    generatedAt,
+    metadata: {
+      phase,
+      value,
+      loop
+    }
+  };
+}
+
 function isSwarmGateRecord(input: FrontierSwarmGateRecordInput | FrontierSwarmGateRecord): input is FrontierSwarmGateRecord {
   return (input as FrontierSwarmGateRecord).kind === FRONTIER_SWARM_GATE_RECORD_KIND;
 }
 
 function isSwarmEvidenceRecord(input: FrontierSwarmEvidenceRecordInput | FrontierSwarmEvidenceRecord): input is FrontierSwarmEvidenceRecord {
   return (input as FrontierSwarmEvidenceRecord).kind === FRONTIER_SWARM_EVIDENCE_RECORD_KIND;
+}
+
+function isSwarmPatchEvent(input: FrontierSwarmPatchEventInput | FrontierSwarmPatchEvent): input is FrontierSwarmPatchEvent {
+  return (input as FrontierSwarmPatchEvent).kind === FRONTIER_SWARM_PATCH_EVENT_KIND;
+}
+
+function isSwarmReplayRecord(input: FrontierSwarmReplayRecordInput | FrontierSwarmReplayRecord): input is FrontierSwarmReplayRecord {
+  return (input as FrontierSwarmReplayRecord).kind === FRONTIER_SWARM_REPLAY_RECORD_KIND;
+}
+
+function isSwarmImprovementLoop(input: FrontierSwarmImprovementLoopInput | FrontierSwarmImprovementLoop): input is FrontierSwarmImprovementLoop {
+  return (input as FrontierSwarmImprovementLoop).kind === FRONTIER_SWARM_IMPROVEMENT_LOOP_KIND;
 }
 
 function mergeGraphMetadata(left: JsonObject | undefined, right: JsonObject | undefined): JsonObject | undefined {

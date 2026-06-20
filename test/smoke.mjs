@@ -8,9 +8,16 @@ import {
   FRONTIER_SWARM_MODEL_ROUTE_KIND,
   FRONTIER_SWARM_OPTIMIZATION_SUMMARY_KIND,
   FRONTIER_SWARM_PANEL_EVALUATION_KIND,
+  FRONTIER_SWARM_PATCH_EVENT_KIND,
   FRONTIER_SWARM_PRIORITY_POLICY_KIND,
   FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
+  FRONTIER_SWARM_REPLAY_RECORD_KIND,
+  FRONTIER_SWARM_IMPROVEMENT_LOOP_KIND,
   FRONTIER_SWARM_RUN_GRAPH_KIND,
+  FRONTIER_SWARM_MERGE_CANDIDATE_ADMISSION_STATUSES,
+  FRONTIER_SWARM_MERGE_CANDIDATE_KIND,
+  FRONTIER_SWARM_MERGE_CANDIDATE_REASON_CODES,
+  FRONTIER_SWARM_SEMANTIC_CHANGE_KIND,
   FRONTIER_SWARM_TERMINAL_OUTCOME_LABELS,
   FRONTIER_SWARM_TERMINAL_STATE_RECONCILIATION_KIND,
   FRONTIER_SWARM_VERIFICATION_CATEGORY_HINTS,
@@ -23,6 +30,7 @@ import {
   FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND,
   checkSwarmOwnership,
   classifySwarmMergeDisposition,
+  classifySwarmMergeCandidateAdmission,
   classifySwarmMergeReadiness,
   classifySwarmQueueOutcome,
   collapseSwarmQueueOutcomeDecisions,
@@ -55,6 +63,8 @@ import {
   createSwarmHierarchicalMergeQueue,
   createSwarmLanePlaybook,
   createSwarmMergeAdmission,
+  createSwarmMergeCandidate,
+  createSwarmMergeCandidateGraph,
   createSwarmManifest,
   createSwarmMergeBundle,
   mergeSwarmBacklogs,
@@ -63,9 +73,14 @@ import {
   createSwarmModelRoutingPolicy,
   createSwarmModelRoute,
   FRONTIER_SWARM_TASK_MODEL_PROFILES,
+  createSwarmPatchEvent,
   createSwarmEvidenceRecord,
   createSwarmGateEvidenceGraph,
   createSwarmGateRecord,
+  createSwarmReplayRecord,
+  createSwarmReplayRecordGraph,
+  createSwarmImprovementLoop,
+  createSwarmImprovementLoopGraph,
   createSwarmOracleCorpus,
   createSwarmPatchStackPlan,
   createSwarmParityOracle,
@@ -74,6 +89,7 @@ import {
   createSwarmProgressModel,
   createSwarmSemanticOwnershipStableKey,
   createSwarmSemanticOwnershipRegionId,
+  createSwarmSemanticChange,
   createSwarmQueueOutcomeDecision,
   createSwarmQueueOutcomeModel,
   createSwarmRebaseReport,
@@ -89,12 +105,17 @@ import {
   createSwarmReviewPlan,
   createSwarmReviewerLanePlan,
   createSwarmRunGraph,
+  createSwarmRunGraphBarrier,
   createSwarmRunGraphChain,
   createSwarmRunGraphFork,
   createSwarmRunGraphJoin,
+  createSwarmRunGraphRaceSelect,
   createSwarmRunGraphRetryLoop,
   createSwarmRunGraphRsiLoop,
+  createSwarmRunGraphMergeGateChunk,
+  createSwarmRunGraphSynthesisChunk,
   createSwarmRunGraphTournament,
+  createSwarmRunGraphVerificationGateChunk,
   createSwarmRunStoreShards,
   createSwarmRunCheckpoint,
   createSwarmRun,
@@ -110,6 +131,7 @@ import {
   encodeSwarmJsonl,
   deriveSwarmQueueStatus,
   matchesGlob,
+  mapSwarmMergeCandidatesToGraph,
   querySwarmBlackboard,
   querySwarmBacklog,
   querySwarmEvidenceIndex,
@@ -231,6 +253,68 @@ assert.strictEqual(gateEvidenceGraph.summary.nodeKinds.gate, 1);
 assert.strictEqual(gateEvidenceGraph.summary.nodeKinds.evidence, 1);
 assert.strictEqual(gateEvidenceGraph.summary.edgeKinds.produces, 1);
 
+const patchEvent = createSwarmPatchEvent({
+  operation: 'replace',
+  path: '/queue/items/0/status',
+  hash: 'sha256:patch-event',
+  graphRefs: [{ nodeId: 'task:one', role: 'updates-task' }],
+  metadata: { source: 'smoke' }
+});
+assert.strictEqual(patchEvent.kind, FRONTIER_SWARM_PATCH_EVENT_KIND);
+assert.strictEqual(patchEvent.operation, 'replace');
+assert.strictEqual(patchEvent.path, '/queue/items/0/status');
+assert.strictEqual(patchEvent.hash, 'sha256:patch-event');
+assert.strictEqual(patchEvent.graphRefs[0].nodeId, 'task:one');
+
+const replayRecord = createSwarmReplayRecord({
+  title: 'Replay queue status',
+  status: 'passed',
+  replayBundleId: 'bundle:queue',
+  patchEvents: [patchEvent],
+  evidenceRefs: [{ id: 'evidence:replay', path: 'agent-runs/run/evidence/replay.json', hash: 'sha256:replay' }],
+  graphRefs: [{ nodeId: 'replay:queue', role: 'record-node' }]
+});
+assert.strictEqual(replayRecord.kind, FRONTIER_SWARM_REPLAY_RECORD_KIND);
+assert.strictEqual(replayRecord.status, 'passed');
+assert.strictEqual(replayRecord.patchEvents[0].operation, 'replace');
+assert.strictEqual(replayRecord.patchEvents[0].path, '/queue/items/0/status');
+assert.strictEqual(replayRecord.patchEvents[0].hash, 'sha256:patch-event');
+assert.strictEqual(replayRecord.evidenceRefs[0].hash, 'sha256:replay');
+assert.strictEqual(replayRecord.graphRefs[0].nodeId, 'replay:queue');
+const replayRecordGraph = createSwarmReplayRecordGraph({
+  runId: 'run-1',
+  replayRecords: [replayRecord]
+});
+assert.strictEqual(replayRecordGraph.summary.nodeKinds.replay, 2);
+assert.strictEqual(replayRecordGraph.summary.nodeKinds.evidence, 1);
+assert.strictEqual(replayRecordGraph.summary.edgeKinds.produces, 1);
+assert.strictEqual(replayRecordGraph.summary.edgeKinds.verifies, 1);
+
+const improvementLoop = createSwarmImprovementLoop({
+  title: 'Improve queue replay',
+  observation: { failure: 'status mismatch' },
+  action: { patchEventId: patchEvent.id },
+  result: { status: 'passed' },
+  replayRecordIds: [replayRecord.id],
+  patchEventIds: [patchEvent.id],
+  evidenceRefs: [{ id: 'evidence:rsi', path: 'agent-runs/run/evidence/rsi.json' }],
+  graphRefs: [{ nodeId: 'rsi:queue', role: 'loop-node' }]
+});
+assert.strictEqual(improvementLoop.kind, FRONTIER_SWARM_IMPROVEMENT_LOOP_KIND);
+assert.deepStrictEqual(improvementLoop.observation, { failure: 'status mismatch' });
+assert.deepStrictEqual(improvementLoop.action, { patchEventId: patchEvent.id });
+assert.deepStrictEqual(improvementLoop.result, { status: 'passed' });
+assert.strictEqual(improvementLoop.graphRefs[0].nodeId, 'rsi:queue');
+const improvementLoopGraph = createSwarmImprovementLoopGraph({
+  runId: 'run-1',
+  improvementLoops: [improvementLoop]
+});
+assert.strictEqual(improvementLoopGraph.summary.nodeKinds.rsi, 3);
+assert.strictEqual(improvementLoopGraph.summary.nodeKinds.replay, 2);
+assert.strictEqual(improvementLoopGraph.summary.nodeKinds.evidence, 1);
+assert.strictEqual(improvementLoopGraph.summary.edgeKinds.produces, 4);
+assert.strictEqual(improvementLoopGraph.summary.edgeKinds.verifies, 1);
+
 assert.strictEqual(createSwarmRunGraphChain({
   nodes: [
     { id: 'chain:start', kind: 'intent' },
@@ -251,6 +335,46 @@ assert.strictEqual(createSwarmRunGraphJoin({
   ],
   join: { id: 'join:done', kind: 'decision' }
 }).summary.entryCount, 2);
+const barrierChunk = createSwarmRunGraphBarrier({
+  id: 'barrier:smoke',
+  prerequisites: [
+    { id: 'barrier:a', kind: 'gate', status: 'passed' },
+    { id: 'barrier:b', kind: 'gate', status: 'passed' }
+  ],
+  barrier: { id: 'barrier:ready', kind: 'decision', title: 'Ready to merge' }
+});
+assert.deepStrictEqual(barrierChunk.summary, { nodeCount: 3, edgeCount: 2, entryCount: 2, exitCount: 1 });
+assert.deepStrictEqual(barrierChunk.entryNodeIds, ['barrier:a', 'barrier:b']);
+assert.deepStrictEqual(barrierChunk.exitNodeIds, ['barrier:ready']);
+assert.deepStrictEqual(
+  barrierChunk.edges.map((edge) => [edge.id, edge.label, edge.metadata?.role, edge.metadata?.prerequisiteIndex]),
+  [
+    ['dependsOn:barrier:a->barrier:ready', 'barrier', 'barrier-prerequisite', 0],
+    ['dependsOn:barrier:b->barrier:ready', 'barrier', 'barrier-prerequisite', 1]
+  ]
+);
+assert.deepStrictEqual(barrierChunk.nodes.find((node) => node.id === 'barrier:ready')?.metadata?.prerequisiteIds, ['barrier:a', 'barrier:b']);
+const raceSelectChunk = createSwarmRunGraphRaceSelect({
+  id: 'race:smoke',
+  branches: [
+    { id: 'race:fast', kind: 'candidate' },
+    { id: 'race:slow', kind: 'candidate' },
+    { id: 'race:blocked', kind: 'candidate' }
+  ],
+  selectedBranchId: 'race:fast'
+});
+assert.deepStrictEqual(raceSelectChunk.summary, { nodeCount: 4, edgeCount: 3, entryCount: 3, exitCount: 1 });
+assert.deepStrictEqual(
+  raceSelectChunk.edges.map((edge) => [edge.id, edge.kind, edge.label, edge.metadata?.disposition]),
+  [
+    ['mergesInto:race:fast->race:smoke:selector', 'mergesInto', 'selected', 'selected'],
+    ['supersedes:race:blocked->race:smoke:selector', 'supersedes', 'rejected', 'rejected'],
+    ['supersedes:race:slow->race:smoke:selector', 'supersedes', 'rejected', 'rejected']
+  ]
+);
+assert.strictEqual(raceSelectChunk.nodes.find((node) => node.id === 'race:fast')?.metadata?.raceSelect?.selected, true);
+assert.strictEqual(raceSelectChunk.nodes.find((node) => node.id === 'race:slow')?.metadata?.raceSelect?.rejected, true);
+assert.deepStrictEqual(raceSelectChunk.nodes.find((node) => node.id === 'race:smoke:selector')?.metadata?.rejectedBranchIds, ['race:blocked', 'race:slow']);
 assert.strictEqual(createSwarmRunGraphTournament({
   candidates: [
     { id: 'candidate:a', kind: 'candidate' },
@@ -268,6 +392,186 @@ assert.strictEqual(createSwarmRunGraphRsiLoop({
   observe: { id: 'rsi:observe', kind: 'rsi' },
   improve: { id: 'rsi:improve', kind: 'rsi' }
 }).summary.edgeCount, 1);
+
+assert.deepStrictEqual([...FRONTIER_SWARM_MERGE_CANDIDATE_ADMISSION_STATUSES], [
+  'safe',
+  'safe-with-losses',
+  'review-required',
+  'blocked'
+]);
+assert.deepStrictEqual([...FRONTIER_SWARM_MERGE_CANDIDATE_REASON_CODES], [
+  'missing-sidecar',
+  'empty-sidecar',
+  'stale-source-hash',
+  'symbol-conflict',
+  'effect-conflict',
+  'lossy-import',
+  'tests-missing'
+]);
+assert.strictEqual(classifySwarmMergeCandidateAdmission([]), 'safe');
+assert.strictEqual(classifySwarmMergeCandidateAdmission(['lossy-import']), 'safe-with-losses');
+assert.strictEqual(classifySwarmMergeCandidateAdmission(['tests-missing']), 'review-required');
+assert.strictEqual(classifySwarmMergeCandidateAdmission(['symbol-conflict']), 'blocked');
+const staleSemanticChange = createSwarmSemanticChange({
+  symbolId: 'formatTitle',
+  declarationKind: 'function',
+  sourceSpan: {
+    path: 'src/title.ts',
+    startLine: 4,
+    startColumn: 2,
+    endLine: 9,
+    endColumn: 1,
+    sourceHash: 'sha:new',
+    expectedSourceHash: 'sha:old'
+  },
+  operation: 'modify',
+  confidence: 0.91,
+  conflictReason: 'symbol-conflict'
+});
+assert.strictEqual(staleSemanticChange.kind, FRONTIER_SWARM_SEMANTIC_CHANGE_KIND);
+assert.strictEqual(staleSemanticChange.status, 'blocked');
+assert.ok(staleSemanticChange.reasonCodes.includes('stale-source-hash'));
+const safeCandidate = createSwarmMergeCandidate({
+  id: 'candidate:safe',
+  jobId: 'job-safe',
+  sidecarPath: 'agent-runs/job-safe/evidence/semantic-imports.json',
+  testsRequired: true,
+  testsPassed: true,
+  symbolId: 'parseTitle',
+  declarationKind: 'function',
+  sourceSpan: { path: 'src/title.ts', startLine: 12, endLine: 20 },
+  operation: 'modify',
+  confidence: 'high'
+});
+const lossyCandidate = createSwarmMergeCandidate({
+  id: 'candidate:lossy',
+  jobId: 'job-lossy',
+  sidecarPath: 'agent-runs/job-lossy/evidence/semantic-imports.json',
+  hasLosses: true,
+  semanticChanges: [{
+    symbolId: 'renderTitle',
+    declarationKind: 'function',
+    sourceSpan: { path: 'src/title.ts', startLine: 22, endLine: 36 },
+    operation: 'replace',
+    confidence: 'medium'
+  }]
+});
+const reviewCandidate = createSwarmMergeCandidate({
+  id: 'candidate:review',
+  jobId: 'job-review',
+  sidecarPath: 'agent-runs/job-review/evidence/semantic-imports.json',
+  testsRequired: true,
+  testsPassed: false,
+  semanticChanges: [{
+    symbolId: 'validateTitle',
+    declarationKind: 'function',
+    sourceSpan: { path: 'src/title.ts', startLine: 40, endLine: 52 },
+    operation: 'modify',
+    confidence: 'medium'
+  }]
+});
+const blockedCandidate = createSwarmMergeCandidate({
+  id: 'candidate:blocked',
+  jobId: 'job-blocked',
+  sidecarRequired: true,
+  sidecarEmpty: true,
+  conflictReason: 'symbol-conflict',
+  reasonCodes: ['effect-conflict'],
+  semanticChanges: [staleSemanticChange]
+});
+assert.strictEqual(safeCandidate.kind, FRONTIER_SWARM_MERGE_CANDIDATE_KIND);
+assert.strictEqual(safeCandidate.status, 'safe');
+assert.strictEqual(lossyCandidate.status, 'safe-with-losses');
+assert.strictEqual(reviewCandidate.status, 'review-required');
+assert.strictEqual(blockedCandidate.status, 'blocked');
+const semanticReasonCoverage = new Set([
+  ...safeCandidate.reasonCodes,
+  ...lossyCandidate.reasonCodes,
+  ...reviewCandidate.reasonCodes,
+  ...blockedCandidate.reasonCodes
+]);
+for (const reasonCode of FRONTIER_SWARM_MERGE_CANDIDATE_REASON_CODES) {
+  assert.ok(semanticReasonCoverage.has(reasonCode), `expected semantic reason code ${reasonCode}`);
+}
+const semanticCandidateProjection = mapSwarmMergeCandidatesToGraph({
+  candidates: [safeCandidate, lossyCandidate, reviewCandidate, blockedCandidate],
+  generatedAt: 275
+});
+assert.strictEqual(semanticCandidateProjection.candidates.length, 4);
+assert.strictEqual(semanticCandidateProjection.nodes.filter((node) => node.kind === 'candidate').length, 4);
+assert.strictEqual(semanticCandidateProjection.nodes.filter((node) => node.kind === 'semantic-change').length, 4);
+assert.ok(semanticCandidateProjection.edges.some((edge) => edge.kind === 'produces'));
+assert.ok(semanticCandidateProjection.edges.some((edge) => edge.kind === 'conflictsWith'));
+const semanticCandidateGraph = createSwarmMergeCandidateGraph({
+  runId: 'run-semantic',
+  candidates: semanticCandidateProjection.candidates,
+  generatedAt: 276
+});
+assert.strictEqual(semanticCandidateGraph.summary.nodeKinds.candidate, 4);
+assert.strictEqual(semanticCandidateGraph.summary.nodeKinds['semantic-change'], 4);
+assert.strictEqual(semanticCandidateGraph.summary.edgeKinds.produces, 4);
+assert.strictEqual(semanticCandidateGraph.summary.edgeKinds.conflictsWith, 1);
+const synthesisChunk = createSwarmRunGraphSynthesisChunk({
+  id: 'synthesis:success',
+  source: { id: 'synthesis:task', kind: 'task', title: 'Synthesize patch' },
+  panel: { id: 'synthesis:panel', kind: 'decision', title: 'Panel synthesis', status: 'passed' },
+  candidates: [
+    { id: 'synthesis:candidate:a', kind: 'candidate', title: 'Patch A', status: 'accepted' },
+    { id: 'synthesis:candidate:b', kind: 'candidate', title: 'Patch B', status: 'rejected' }
+  ],
+  selectedCandidateId: 'synthesis:candidate:a',
+  rejectedCandidateIds: ['synthesis:candidate:b'],
+  decision: { id: 'synthesis:decision', kind: 'decision', title: 'Coordinator accepts patch A', status: 'accepted' },
+  output: { id: 'synthesis:output', kind: 'candidate', title: 'Synthesized patch', status: 'accepted' }
+});
+assert.strictEqual(synthesisChunk.summary.nodeCount, 6);
+assert.ok(synthesisChunk.edges.some((edge) => edge.kind === 'produces' && edge.from === 'synthesis:panel' && edge.to === 'synthesis:candidate:a'));
+assert.ok(synthesisChunk.edges.some((edge) => edge.kind === 'mergesInto' && edge.from === 'synthesis:candidate:a' && edge.to === 'synthesis:decision'));
+assert.ok(synthesisChunk.edges.some((edge) => edge.kind === 'supersedes' && edge.from === 'synthesis:candidate:a' && edge.to === 'synthesis:candidate:b'));
+
+const verificationGateSuccess = createSwarmRunGraphVerificationGateChunk({
+  id: 'verify:success',
+  subject: { id: 'verify:candidate', kind: 'candidate', status: 'accepted' },
+  gate: { id: 'verify:gate', kind: 'gate', title: 'Smoke gate', status: 'passed' },
+  evidence: [{ id: 'verify:evidence', kind: 'evidence', path: 'agent-runs/run/evidence/smoke.log', status: 'high' }],
+  pass: { id: 'verify:accepted', kind: 'decision', status: 'accepted' }
+});
+assert.ok(verificationGateSuccess.edges.some((edge) => edge.kind === 'verifies' && edge.from === 'verify:gate' && edge.to === 'verify:candidate'));
+assert.ok(verificationGateSuccess.edges.some((edge) => edge.kind === 'produces' && edge.from === 'verify:gate' && edge.to === 'verify:evidence'));
+assert.ok(verificationGateSuccess.edges.some((edge) => edge.kind === 'mergesInto' && edge.from === 'verify:gate' && edge.to === 'verify:accepted'));
+
+const verificationGateFailure = createSwarmRunGraphVerificationGateChunk({
+  id: 'verify:failure',
+  subject: { id: 'verify:failed-candidate', kind: 'candidate', status: 'failed' },
+  gate: { id: 'verify:failed-gate', kind: 'gate', title: 'Smoke gate', status: 'failed' },
+  evidence: [{ id: 'verify:failure-evidence', kind: 'evidence', path: 'agent-runs/run/evidence/smoke-failure.log', status: 'low' }],
+  block: { id: 'verify:blocker', kind: 'decision', title: 'Coordinator blocks merge', status: 'blocked' }
+});
+assert.ok(verificationGateFailure.edges.some((edge) => edge.kind === 'blocks' && edge.from === 'verify:failed-gate' && edge.to === 'verify:blocker'));
+assert.strictEqual(verificationGateFailure.exitNodeIds[0], 'verify:blocker');
+
+const mergeGateAccepted = createSwarmRunGraphMergeGateChunk({
+  id: 'merge:accepted',
+  candidate: { id: 'merge:candidate', kind: 'candidate', status: 'accepted' },
+  gate: { id: 'merge:gate', kind: 'gate', status: 'passed' },
+  decision: { id: 'merge:decision', kind: 'decision', status: 'accepted' },
+  target: { id: 'merge:main', kind: 'merge', title: 'main' },
+  superseded: [{ id: 'merge:old-candidate', kind: 'candidate', status: 'superseded' }]
+});
+assert.ok(mergeGateAccepted.edges.some((edge) => edge.kind === 'verifies' && edge.from === 'merge:gate' && edge.to === 'merge:candidate'));
+assert.ok(mergeGateAccepted.edges.some((edge) => edge.kind === 'mergesInto' && edge.from === 'merge:candidate' && edge.to === 'merge:main'));
+assert.ok(mergeGateAccepted.edges.some((edge) => edge.kind === 'supersedes' && edge.from === 'merge:candidate' && edge.to === 'merge:old-candidate'));
+
+const mergeGateBlocked = createSwarmRunGraphMergeGateChunk({
+  id: 'merge:blocked',
+  candidate: { id: 'merge:blocked-candidate', kind: 'candidate', status: 'blocked' },
+  gate: { id: 'merge:blocked-gate', kind: 'gate', status: 'failed' },
+  decision: { id: 'merge:blocked-decision', kind: 'decision', status: 'blocked' },
+  target: { id: 'merge:blocked-main', kind: 'merge', title: 'main' },
+  blockers: [{ id: 'merge:conflict', kind: 'gate', title: 'Conflict', status: 'failed' }]
+});
+assert.ok(mergeGateBlocked.edges.some((edge) => edge.kind === 'blocks' && edge.to === 'merge:blocked-main'));
+assert.strictEqual(mergeGateBlocked.edges.some((edge) => edge.kind === 'mergesInto'), false);
 
 const semanticBroadRegionId = 'src/math.ts';
 const semanticFunctionRegionId = createSwarmSemanticOwnershipRegionId({
