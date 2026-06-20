@@ -2527,10 +2527,11 @@ export interface FrontierSwarmMergeIndexEntry {
 export interface FrontierSwarmMergeConflict {
   jobIds: string[];
   key: string;
-  kind: 'path' | 'region' | 'symbol';
+  kind: 'path' | 'region' | 'symbol' | 'public-contract';
   path?: string;
   region?: string;
   symbol?: string;
+  publicContract?: string;
 }
 
 export interface FrontierSwarmRegionOwnershipInput {
@@ -6642,6 +6643,15 @@ const SEMANTIC_IMPORT_CONFLICT_HINT_KEYS = new Set([
   'touchedSymbols'
 ]);
 
+const SEMANTIC_IMPORT_PUBLIC_CONTRACT_HINT_KEYS = new Set([
+  'apiContract',
+  'apiContracts',
+  'publicContract',
+  'publicContractId',
+  'publicContractIds',
+  'publicContracts'
+]);
+
 function semanticImportExportMetadata(value: Record<string, unknown>, key?: string, file?: string): string[] {
   const explicitKind = semanticImportStringValue(value.kind);
   const declarationKind = semanticImportStringValue(value.declarationKind)
@@ -6732,11 +6742,27 @@ function semanticImportStringValue(value: unknown): string | undefined {
 function semanticMergeConflictKeys(semanticImport: FrontierSwarmSemanticImportSummary): string[] {
   const records = semanticImportRecords(semanticImport);
   const sources = records.length > 0 ? records : [semanticImport];
-  return uniqueStrings(sources.flatMap((source) => semanticImportConflictHintStringsForValue(
+  return uniqueStrings(sources.flatMap((source) => semanticImportConflictKeyStringsForValue(
     'mergeCandidate' in source && source.mergeCandidate !== undefined
       ? source.mergeCandidate
       : source
-  ).map((symbol) => `symbol:${symbol}`)));
+  )));
+}
+
+function semanticImportConflictKeyStringsForValue(value: unknown, key?: string, depth = 0): string[] {
+  if (value === undefined || value === null) return [];
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (!normalized) return [];
+    if (key && SEMANTIC_IMPORT_PUBLIC_CONTRACT_HINT_KEYS.has(key)) return [`public-contract:${publicContractConflictValue(normalized)}`];
+    if (key && SEMANTIC_IMPORT_CONFLICT_HINT_KEYS.has(key)) return [`symbol:${normalized}`];
+    return [];
+  }
+  if (depth >= 4 || typeof value !== 'object') return [];
+  if (Array.isArray(value)) return value.flatMap((item) => semanticImportConflictKeyStringsForValue(item, key, depth + 1));
+  return Object.entries(value as Record<string, unknown>).flatMap(([nextKey, nextValue]) => (
+    semanticImportConflictKeyStringsForValue(nextValue, nextKey, depth + 1)
+  ));
 }
 
 function semanticImportConflictHintStringsForValue(value: unknown, key?: string, depth = 0): string[] {
@@ -9785,13 +9811,25 @@ function createMergeIndexConflicts(entries: readonly FrontierSwarmMergeIndexEntr
       if (!left || !right) continue;
       const keys = pairConflictKeys(left, right);
       for (const key of keys) {
-        const kind = key.startsWith('symbol:') ? 'symbol' as const : key.startsWith('region:') ? 'region' as const : 'path' as const;
+        const kind = key.startsWith('symbol:')
+          ? 'symbol' as const
+          : key.startsWith('public-contract:')
+            ? 'public-contract' as const
+            : key.startsWith('region:')
+              ? 'region' as const
+              : 'path' as const;
         const value = key.slice(key.indexOf(':') + 1);
         conflicts.push({
           jobIds: [left.jobId, right.jobId].sort(),
           key,
           kind,
-          ...(kind === 'region' ? { region: value } : kind === 'symbol' ? { symbol: value } : { path: value })
+          ...(kind === 'region'
+            ? { region: value }
+            : kind === 'symbol'
+              ? { symbol: value }
+              : kind === 'public-contract'
+                ? { publicContract: value }
+                : { path: value })
         });
       }
     }
@@ -9810,6 +9848,8 @@ function pairConflictKeys(
   const rightKeySet = new Set(rightKeys);
   const sharedSymbols = leftKeys.filter((key) => key.startsWith('symbol:') && rightKeySet.has(key));
   if (sharedSymbols.length > 0) return sharedSymbols.sort();
+  const sharedPublicContracts = leftKeys.filter((key) => key.startsWith('public-contract:') && rightKeySet.has(key));
+  if (sharedPublicContracts.length > 0) return sharedPublicContracts.sort();
   const leftRegions = leftKeys.filter((key) => key.startsWith('region:'));
   const rightRegions = rightKeys.filter((key) => key.startsWith('region:'));
   if (leftRegions.length > 0 && rightRegions.length > 0) {
@@ -9873,6 +9913,12 @@ function stableIdPart(value: string): string {
   const normalized = value.trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_.@/$*-]+/g, '_').replace(/^_+|_+$/g, '');
   if (normalized === '*') return 'star';
   return normalized.length > 0 ? normalized : 'anonymous';
+}
+
+function publicContractConflictValue(value: string): string {
+  const trimmed = value.trim();
+  const withoutPrefix = trimmed.startsWith('public-contract:') ? trimmed.slice('public-contract:'.length) : trimmed;
+  return stableIdPart(withoutPrefix);
 }
 
 function reviewerLaneReasons(entry: FrontierSwarmMergeIndexEntry): string[] {

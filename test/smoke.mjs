@@ -1619,6 +1619,61 @@ assert.deepStrictEqual(
   sameSymbolAcrossPathsIndex.entries.find((entry) => entry.jobId === sameSymbolAcrossPathsBundleFormat.jobId).conflictingJobIds,
   [sameSymbolAcrossPathsBundleParse.jobId]
 );
+const publicContractSemanticImportA = {
+  records: [{
+    path: 'src/users.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSymbols: ['acceptUser'],
+      publicContracts: ['api.users']
+    }
+  }]
+};
+const publicContractSemanticImportB = {
+  records: [{
+    path: 'src/admin-users.ts',
+    status: 'imported',
+    mergeCandidate: {
+      touchedSymbols: ['rejectUser'],
+      publicContract: 'api.users'
+    }
+  }]
+};
+const publicContractBundleA = createSwarmMergeBundle({
+  job: sameSymbolAcrossPathsPlan.jobs[0],
+  result: {
+    jobId: 'public-contract-users-a',
+    status: 'verified',
+    changedPaths: ['src/users.ts'],
+    changedRegions: ['feature.users.accept'],
+    queueItemIds: ['public-contract-users-a'],
+    verification: [{ status: 0 }]
+  },
+  semanticImport: publicContractSemanticImportA,
+  patchPath: 'agent-runs/public-contract/users-a.patch',
+  riskLevel: 'low'
+});
+const publicContractBundleB = createSwarmMergeBundle({
+  job: sameSymbolAcrossPathsPlan.jobs[1],
+  result: {
+    jobId: 'public-contract-users-b',
+    status: 'verified',
+    changedPaths: ['src/admin-users.ts'],
+    changedRegions: ['feature.users.reject'],
+    queueItemIds: ['public-contract-users-b'],
+    verification: [{ status: 0 }]
+  },
+  semanticImport: publicContractSemanticImportB,
+  patchPath: 'agent-runs/public-contract/users-b.patch',
+  riskLevel: 'low'
+});
+const publicContractConflictIndex = createSwarmMergeIndex({
+  bundles: [publicContractBundleA, publicContractBundleB],
+  generatedAt: 6555
+});
+assert.strictEqual(publicContractConflictIndex.summary.conflictCount, 1);
+assert.strictEqual(publicContractConflictIndex.conflicts[0].kind, 'public-contract');
+assert.strictEqual(publicContractConflictIndex.conflicts[0].publicContract, 'api.users');
 
 const tasks = defineSwarmTasks([
   {
@@ -1895,6 +1950,66 @@ assert.strictEqual(scalePlan.validation.valid, true);
 const scaleSchedule = createSwarmSchedule(scalePlan);
 assert.strictEqual(scaleSchedule.ready.length, 40);
 assert.ok(scaleSchedule.blocked.length > 0);
+
+const refillManifest = defineSwarmManifest({
+  id: 'refill.swarm',
+  package: '@example/refill-worker',
+  compute: [{ id: 'worker', kind: 'codex', model: 'gpt-test' }],
+  lanes: [{ id: 'work', layer: 'implementation', allowedWrites: ['src/**'] }],
+  policy: { defaultCompute: 'worker', defaultConcurrency: 2 }
+});
+const refillPlan = createSwarmPlan(refillManifest, defineSwarmTasks([
+  { id: 'refill-completed', lane: 'work', priority: 0, targetRefs: ['src/completed.ts'] },
+  { id: 'refill-verified', lane: 'work', priority: 1, targetRefs: ['src/verified.ts'] },
+  { id: 'refill-running', lane: 'work', priority: 2, targetRefs: ['src/running.ts'] },
+  { id: 'refill-next', lane: 'work', priority: 3, targetRefs: ['src/next.ts'] },
+  { id: 'refill-deferred', lane: 'work', priority: 4, targetRefs: ['src/deferred.ts'] }
+]), { includeCompleted: true, maxLaneConcurrency: { work: 2 }, maxReadyJobs: 10 });
+const refillJobsByTaskId = new Map(refillPlan.jobs.map((job) => [job.taskId, job]));
+const refillCompletedJob = refillJobsByTaskId.get('refill-completed');
+const refillVerifiedJob = refillJobsByTaskId.get('refill-verified');
+const refillRunningJob = refillJobsByTaskId.get('refill-running');
+const refillNextJob = refillJobsByTaskId.get('refill-next');
+assert.ok(refillCompletedJob);
+assert.ok(refillVerifiedJob);
+assert.ok(refillRunningJob);
+assert.ok(refillNextJob);
+let refillRun = createSwarmRun({ plan: refillPlan, startedAt: 1210 });
+refillRun = completeSwarmJob(refillRun, {
+  jobId: refillCompletedJob.id,
+  status: 'completed',
+  exitCode: 0,
+  startedAt: 1211,
+  finishedAt: 1212,
+  changedPaths: ['src/completed.ts'],
+  evidencePaths: ['agent-runs/refill/completed/evidence.json']
+});
+refillRun = completeSwarmJob(refillRun, {
+  jobId: refillVerifiedJob.id,
+  status: 'verified',
+  exitCode: 0,
+  startedAt: 1213,
+  finishedAt: 1214,
+  changedPaths: ['src/verified.ts'],
+  evidencePaths: ['agent-runs/refill/verified/evidence.json'],
+  verification: [{ command: ['node', 'test/refill-smoke.mjs'], status: 0 }]
+});
+refillRun = {
+  ...refillRun,
+  jobs: refillRun.jobs.map((job) => job.id === refillRunningJob.id ? { ...job, status: 'running' } : job)
+};
+const refillSchedule = createSwarmSchedule({ plan: refillPlan, run: refillRun, now: 1215 });
+assert.deepStrictEqual(refillSchedule.completed, [refillCompletedJob.id, refillVerifiedJob.id].sort());
+assert.deepStrictEqual(refillSchedule.running.map((job) => job.jobId), [refillRunningJob.id]);
+assert.deepStrictEqual(refillSchedule.ready.map((job) => job.jobId), [refillNextJob.id]);
+assert.strictEqual(refillSchedule.summary.runningCount + refillSchedule.summary.readyCount, 2);
+assert.strictEqual(refillSchedule.summary.completedCount, 2);
+assert.strictEqual(refillSchedule.summary.blockedCount, 1);
+assert.ok(refillSchedule.blocked[0].reasons.includes('lane-capacity'));
+assert.ok(!refillSchedule.ready.some((job) => job.jobId === refillCompletedJob.id || job.jobId === refillVerifiedJob.id));
+const refillLeases = createSwarmLeases({ schedule: refillSchedule, workerId: 'refill-supervisor', now: 1216, leaseMs: 5000, count: 5 });
+assert.deepStrictEqual(refillLeases.map((lease) => lease.jobId), [refillNextJob.id]);
+
 const leases = createSwarmLeases({ schedule: scaleSchedule, workerId: 'worker-1', now: 1000, leaseMs: 5000, count: 5 });
 assert.strictEqual(leases.length, 5);
 assert.strictEqual(leases[0].expiresAt, 6000);
