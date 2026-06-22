@@ -64,6 +64,9 @@ import {
   createSwarmLeases,
   createSwarmHotspotReport,
   createSwarmHierarchicalMergeQueue,
+  createSwarmSemanticLeaseStateForMergeQueue,
+  acquireSwarmCoordinatorSemanticLease,
+  validateSwarmCoordinatorSemanticLeaseFence,
   createSwarmLanePlaybook,
   createSwarmMergeAdmission,
   createSwarmMergeCandidate,
@@ -1491,6 +1494,52 @@ assert.deepStrictEqual(
   sameFileIndependentExportQueue.leaseRecords.filter((record) => record.scopeClass === 'semantic').map((record) => record.leaseKey).sort(),
   sameFileIndependentExportQueue.assignments.map((assignment) => assignment.leaseKey).sort()
 );
+assert.strictEqual(sameFileIndependentExportQueue.semanticLeaseScopes.length >= 3, true);
+assert.ok(sameFileIndependentExportQueue.assignments.every((assignment) => assignment.requiredSemanticLeaseScopes?.[0]?.scopeKind === 'export'));
+let sameFileSemanticLeaseState = createSwarmSemanticLeaseStateForMergeQueue(sameFileIndependentExportQueue, {
+  id: 'same-file-export-lease-state',
+  repository: 'repo',
+  packageId: 'pkg'
+});
+const sameFileFirstLease = acquireSwarmCoordinatorSemanticLease({
+  queue: sameFileIndependentExportQueue,
+  assignment: sameFileIndependentExportQueue.assignments[0],
+  state: sameFileSemanticLeaseState,
+  ownerId: 'coordinator-a',
+  now: 7000,
+  ttlMs: 1000
+});
+assert.strictEqual(sameFileFirstLease.mutation.granted, true);
+sameFileSemanticLeaseState = sameFileFirstLease.state;
+const sameFileSecondLease = acquireSwarmCoordinatorSemanticLease({
+  queue: sameFileIndependentExportQueue,
+  assignment: sameFileIndependentExportQueue.assignments[1],
+  state: sameFileSemanticLeaseState,
+  ownerId: 'coordinator-b',
+  now: 7001,
+  ttlMs: 1000
+});
+assert.strictEqual(sameFileSecondLease.mutation.granted, true);
+sameFileSemanticLeaseState = sameFileSecondLease.state;
+const validSameFileFence = validateSwarmCoordinatorSemanticLeaseFence({
+  assignment: sameFileIndependentExportQueue.assignments[0],
+  state: sameFileSemanticLeaseState,
+  lease: sameFileFirstLease.lease,
+  token: sameFileFirstLease.lease.token,
+  fencingToken: sameFileFirstLease.lease.fencingToken,
+  now: 7002
+});
+assert.strictEqual(validSameFileFence.ok, true);
+const staleSameFileFence = validateSwarmCoordinatorSemanticLeaseFence({
+  assignment: sameFileIndependentExportQueue.assignments[0],
+  state: sameFileSemanticLeaseState,
+  lease: sameFileFirstLease.lease,
+  token: 'stale-token',
+  fencingToken: sameFileFirstLease.lease.fencingToken,
+  now: 7002
+});
+assert.strictEqual(staleSameFileFence.ok, false);
+assert.ok(staleSameFileFence.reasons.includes('token-mismatch'));
 
 const sameSymbolAcrossPathsFormatRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/format-title.ts',

@@ -22,6 +22,18 @@ import {
   type FrontierRunProjection,
   type FrontierRunStatus
 } from '@shapeshift-labs/frontier-run';
+import {
+  acquireSemanticLease,
+  createSemanticLeaseState,
+  defineSemanticLeaseScope,
+  validateSemanticLeaseFence,
+  type FrontierSemanticLeaseAcquireInput,
+  type FrontierSemanticLeaseMutation,
+  type FrontierSemanticLeaseRecord,
+  type FrontierSemanticLeaseScope,
+  type FrontierSemanticLeaseScopeKind,
+  type FrontierSemanticLeaseState
+} from '@shapeshift-labs/frontier-lease';
 
 export const FRONTIER_SWARM_MANIFEST_KIND = 'frontier.swarm.manifest';
 export const FRONTIER_SWARM_MANIFEST_VERSION = 1;
@@ -3787,6 +3799,7 @@ export interface FrontierSwarmMergeQueueScope {
   changedRegions: string[];
   leaseKey: string;
   jobIds: string[];
+  semanticLeaseScope?: FrontierSemanticLeaseScope;
   metadata?: JsonObject;
 }
 
@@ -3798,6 +3811,8 @@ export interface FrontierSwarmMergeQueueRetrySlice {
   leaseKey: string;
   requiredLeaseScopeIds?: string[];
   requiredLeaseKeys?: string[];
+  semanticLeaseScope?: FrontierSemanticLeaseScope;
+  requiredSemanticLeaseScopes?: FrontierSemanticLeaseScope[];
   lane?: string;
   changedPaths: string[];
   changedRegions: string[];
@@ -3875,6 +3890,7 @@ export interface FrontierSwarmHierarchicalQueueLeaseRecord {
   lane?: string;
   title: string;
   leaseKey: string;
+  semanticLeaseScope?: FrontierSemanticLeaseScope;
   localLeader?: FrontierSwarmHierarchicalQueueLocalLeader;
   promotion: FrontierSwarmHierarchicalQueuePromotionState;
   conflictReasons: string[];
@@ -3929,6 +3945,7 @@ export interface FrontierSwarmHierarchicalMergeQueue {
   byScope: Record<string, string[]>;
   byLeaseKey: Record<string, string[]>;
   byAction: Record<string, string[]>;
+  semanticLeaseScopes: FrontierSemanticLeaseScope[];
   summary: {
     scopeCount: number;
     assignmentCount: number;
@@ -3964,6 +3981,7 @@ export interface FrontierSwarmMergeQueueAssignment {
   leaseKey: string;
   requiredLeaseScopeIds?: string[];
   requiredLeaseKeys?: string[];
+  requiredSemanticLeaseScopes?: FrontierSemanticLeaseScope[];
   promoteToScopeId?: string;
   terminalDecisionId?: string;
   terminalDecisionQueueItemIds?: string[];
@@ -4505,6 +4523,7 @@ export interface FrontierSwarmCoordinatorAgentDrainLease {
   title: string;
   leaseScope: string;
   leaseKey: string;
+  semanticLeaseScope?: FrontierSemanticLeaseScope;
   parentQueueId?: string;
   lane?: string;
   changedPaths: string[];
@@ -4548,6 +4567,7 @@ export interface FrontierSwarmCoordinatorAgentDrainAssignment {
   semanticSliceLeaseKeys?: string[];
   requiredLeaseScopeIds?: string[];
   requiredLeaseKeys?: string[];
+  requiredSemanticLeaseScopes?: FrontierSemanticLeaseScope[];
   parentDecisionRegions?: string[];
   unknownRegions?: string[];
   metadata?: JsonObject;
@@ -4570,9 +4590,52 @@ export interface FrontierSwarmCoordinatorAgentDrainTerminalDecision {
   semanticSliceLeaseKeys?: string[];
   requiredLeaseScopeIds?: string[];
   requiredLeaseKeys?: string[];
+  requiredSemanticLeaseScopes?: FrontierSemanticLeaseScope[];
   parentDecisionRegions?: string[];
   unknownRegions?: string[];
   metadata?: JsonObject;
+}
+
+export interface FrontierSwarmSemanticLeaseScopeOptions {
+  repository?: string;
+  packageId?: string;
+  rootScopeId?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmCoordinatorSemanticLeaseAcquireInput {
+  queue: FrontierSwarmHierarchicalMergeQueue;
+  assignment: FrontierSwarmMergeQueueAssignment | FrontierSwarmCoordinatorAgentDrainAssignment;
+  state?: FrontierSemanticLeaseState;
+  ownerId: string;
+  holderId?: string;
+  now?: number;
+  ttlMs?: number;
+  purpose?: string;
+  reason?: string;
+  repository?: string;
+  packageId?: string;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmCoordinatorSemanticLeaseAcquireResult {
+  state: FrontierSemanticLeaseState;
+  mutation: FrontierSemanticLeaseMutation;
+  scopes: FrontierSemanticLeaseScope[];
+  requiredLeaseScopeIds: string[];
+  requiredLeaseKeys: string[];
+  lease?: FrontierSemanticLeaseRecord;
+}
+
+export interface FrontierSwarmCoordinatorSemanticLeaseFenceInput {
+  assignment: FrontierSwarmMergeQueueAssignment | FrontierSwarmCoordinatorAgentDrainAssignment;
+  state: FrontierSemanticLeaseState;
+  lease?: FrontierSemanticLeaseRecord;
+  leaseId?: string;
+  token: string;
+  fencingToken: number;
+  now?: number;
+  requiredSemanticLeaseScopes?: readonly FrontierSemanticLeaseScope[];
 }
 
 export interface FrontierSwarmCoordinatorAgentPromotedWork {
@@ -4592,6 +4655,7 @@ export interface FrontierSwarmCoordinatorAgentPromotedWork {
   reasons: string[];
   requiredLeaseScopeIds?: string[];
   requiredLeaseKeys?: string[];
+  requiredSemanticLeaseScopes?: FrontierSemanticLeaseScope[];
   metadata?: JsonObject;
 }
 
@@ -8690,6 +8754,11 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     mergeQueueScopeRank(left.kind) - mergeQueueScopeRank(right.kind)
     || left.id.localeCompare(right.id)
   ));
+  const semanticLeaseScopeMap = createSwarmSemanticLeaseScopeMap(orderedScopes, {
+    rootScopeId,
+    ...semanticLeaseScopeOptionsFromMetadata(input.metadata)
+  });
+  const scopesWithSemanticLeases = orderedScopes.map((scope) => attachSemanticLeaseScopeToMergeQueueScope(scope, semanticLeaseScopeMap));
   const queueId = input.id ?? 'swarm-hierarchical-merge-queue:' + stableHash([input.index.id, input.admission?.id, orderedScopes, assignments, promotions, generatedAt]);
   const linkedAssignments = assignments.map((assignment) => {
     if (!coordinatorAgentDrainActionIsTerminal(assignment.action)) return assignment;
@@ -8698,19 +8767,19 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
       terminalDecisionId: hierarchicalQueueTerminalDecisionId(queueId, assignment),
       terminalDecisionQueueItemIds: [...assignment.queueItemIds]
     };
-  });
+  }).map((assignment) => attachSemanticLeaseScopesToAssignment(assignment, semanticLeaseScopeMap));
   const leaseRecords = createHierarchicalQueueLeaseRecords({
     queueId,
     rootScopeId,
     generatedAt,
-    scopes: orderedScopes,
+    scopes: scopesWithSemanticLeases,
     assignments: linkedAssignments,
     promotions,
     localLeader: input.localLeader,
     localLeaders: input.localLeaders
   });
   const byLeaseKey = groupJobIdsByMany(linkedAssignments, (assignment) => assignment.requiredLeaseKeys ?? [assignment.leaseKey]);
-  const scopeTree = createHierarchicalQueueScopeTree(orderedScopes, rootScopeId);
+  const scopeTree = createHierarchicalQueueScopeTree(scopesWithSemanticLeases, rootScopeId);
   return {
     kind: FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_KIND,
     version: FRONTIER_SWARM_HIERARCHICAL_MERGE_QUEUE_VERSION,
@@ -8720,13 +8789,14 @@ export function createSwarmHierarchicalMergeQueue(input: FrontierSwarmHierarchic
     generatedAt,
     rootScopeId,
     scopeTree,
-    scopes: orderedScopes,
+    scopes: scopesWithSemanticLeases,
     leaseRecords,
     assignments: linkedAssignments,
     promotions,
     byScope,
     byLeaseKey,
     byAction,
+    semanticLeaseScopes: uniqueSemanticLeaseScopes(Array.from(semanticLeaseScopeMap.values())),
     summary: {
       scopeCount: orderedScopes.length,
       assignmentCount: linkedAssignments.length,
@@ -8759,6 +8829,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       title: scope.title,
       leaseScope: scope.leaseKey,
       leaseKey: scope.leaseKey,
+      ...(scope.semanticLeaseScope ? { semanticLeaseScope: scope.semanticLeaseScope } : {}),
       ...(scope.parentId ? { parentQueueId: scope.parentId } : {}),
       ...(scope.lane ? { lane: scope.lane } : {}),
       changedPaths: [...scope.changedPaths],
@@ -8788,6 +8859,9 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
     const requiredLeaseKeys = assignmentRequiredLeaseKeys.length
       ? [...assignmentRequiredLeaseKeys]
       : [leaseScope];
+    const requiredSemanticLeaseScopes = requiredLeaseScopeIds
+      .map((scopeId) => scopesById.get(scopeId)?.semanticLeaseScope)
+      .filter((scope): scope is FrontierSemanticLeaseScope => Boolean(scope));
     const decision = coordinatorAgentDrainDecisionForAction(assignment.action);
     const terminal = coordinatorAgentDrainActionIsTerminal(assignment.action);
     const parentQueueId = assignment.action === 'promote'
@@ -8824,6 +8898,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       conflictingJobIds: [...assignment.conflictingJobIds],
       requiredLeaseScopeIds,
       requiredLeaseKeys,
+      ...(requiredSemanticLeaseScopes.length ? { requiredSemanticLeaseScopes } : {}),
       ...(assignment.retrySlices?.length ? { retrySlices: cloneMergeQueueRetrySlices(assignment.retrySlices) } : {}),
       ...(assignment.semanticSliceScopeIds?.length ? { semanticSliceScopeIds: [...assignment.semanticSliceScopeIds] } : {}),
       ...(assignment.semanticSliceLeaseKeys?.length ? { semanticSliceLeaseKeys: [...assignment.semanticSliceLeaseKeys] } : {}),
@@ -8848,6 +8923,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       reasons: [...assignment.reasons],
       requiredLeaseScopeIds: [...(assignment.requiredLeaseScopeIds ?? [])],
       requiredLeaseKeys: [...(assignment.requiredLeaseKeys ?? [])],
+      ...(assignment.requiredSemanticLeaseScopes?.length ? { requiredSemanticLeaseScopes: assignment.requiredSemanticLeaseScopes.map(cloneSemanticLeaseScope) } : {}),
       ...(assignment.retrySlices?.length ? { retrySlices: cloneMergeQueueRetrySlices(assignment.retrySlices) } : {}),
       ...(assignment.semanticSliceScopeIds?.length ? { semanticSliceScopeIds: [...assignment.semanticSliceScopeIds] } : {}),
       ...(assignment.semanticSliceLeaseKeys?.length ? { semanticSliceLeaseKeys: [...assignment.semanticSliceLeaseKeys] } : {}),
@@ -8874,6 +8950,7 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
       reasons: [...assignment.reasons],
       requiredLeaseScopeIds: [...(assignment.requiredLeaseScopeIds ?? [])],
       requiredLeaseKeys: [...(assignment.requiredLeaseKeys ?? [])],
+      ...(assignment.requiredSemanticLeaseScopes?.length ? { requiredSemanticLeaseScopes: assignment.requiredSemanticLeaseScopes.map(cloneSemanticLeaseScope) } : {}),
       ...(assignment.metadata ? { metadata: cloneJsonValue(assignment.metadata) as JsonObject } : {})
     }));
   const activeAssignments = assignments.filter((assignment) => !coordinatorAgentDrainAssignmentIsTerminal(assignment));
@@ -8930,6 +9007,143 @@ export function createSwarmCoordinatorAgentDrainWork(input: FrontierSwarmCoordin
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
+}
+
+export function createSwarmSemanticLeaseScopeForMergeQueueScope(
+  scope: FrontierSwarmMergeQueueScope,
+  input: FrontierSwarmSemanticLeaseScopeOptions & {
+    scopes?: readonly FrontierSwarmMergeQueueScope[];
+  } = {}
+): FrontierSemanticLeaseScope {
+  const scopesById = new Map((input.scopes ?? []).map((entry) => [entry.id, entry]));
+  const parentKeys: string[] = [];
+  let parentId = scope.parentId;
+  const visited = new Set<string>([scope.id]);
+  while (parentId && !visited.has(parentId)) {
+    const parent = scopesById.get(parentId);
+    if (!parent) break;
+    parentKeys.push(parent.leaseKey);
+    visited.add(parentId);
+    parentId = parent.parentId;
+  }
+  const regionId = scope.changedRegions.length === 1 ? scope.changedRegions[0] : scope.id;
+  const path = scope.changedPaths.length === 1 ? scope.changedPaths[0] : undefined;
+  const metadata = mergeSwarmMetadata([
+    scope.metadata,
+    toJsonObject(input.metadata),
+    {
+      swarmQueueScopeId: scope.id,
+      swarmQueueScopeKind: scope.kind,
+      swarmLeaseKey: scope.leaseKey,
+      changedPaths: scope.changedPaths,
+      changedRegions: scope.changedRegions
+    }
+  ]);
+  return defineSemanticLeaseScope({
+    kind: semanticLeaseScopeKindForMergeQueueScope(scope),
+    key: scope.leaseKey,
+    repository: input.repository,
+    packageId: input.packageId,
+    lane: scope.lane,
+    path,
+    regionId,
+    name: semanticLeaseScopeNameForMergeQueueScope(scope),
+    parentKeys,
+    metadata
+  });
+}
+
+export function createSwarmSemanticLeaseScopesForMergeQueue(
+  queue: FrontierSwarmHierarchicalMergeQueue,
+  input: FrontierSwarmSemanticLeaseScopeOptions = {}
+): FrontierSemanticLeaseScope[] {
+  const existing = queue.scopes
+    .map((scope) => scope.semanticLeaseScope)
+    .filter((scope): scope is FrontierSemanticLeaseScope => Boolean(scope));
+  if (existing.length) return uniqueSemanticLeaseScopes(existing);
+  return uniqueSemanticLeaseScopes(queue.scopes.map((scope) => (
+    createSwarmSemanticLeaseScopeForMergeQueueScope(scope, {
+      ...input,
+      rootScopeId: input.rootScopeId ?? queue.rootScopeId,
+      scopes: queue.scopes
+    })
+  )));
+}
+
+export function createSwarmSemanticLeaseStateForMergeQueue(
+  queue: FrontierSwarmHierarchicalMergeQueue,
+  input: FrontierSwarmSemanticLeaseScopeOptions & {
+    id?: string;
+    defaultTtlMs?: number;
+    now?: number;
+    metadata?: unknown;
+  } = {}
+): FrontierSemanticLeaseState {
+  const semanticLeaseScopes = createSwarmSemanticLeaseScopesForMergeQueue(queue, input);
+  return createSemanticLeaseState({
+    id: input.id ?? `frontier-swarm-merge-queue:${queue.id}`,
+    defaultTtlMs: input.defaultTtlMs,
+    metadata: mergeSwarmMetadata([
+      toJsonObject(input.metadata),
+      {
+        swarmQueueId: queue.id,
+        swarmMergeIndexId: queue.mergeIndexId,
+        rootScopeId: queue.rootScopeId,
+        semanticLeaseScopeCount: semanticLeaseScopes.length,
+        generatedAt: input.now ?? queue.generatedAt
+      }
+    ])
+  });
+}
+
+export function acquireSwarmCoordinatorSemanticLease(
+  input: FrontierSwarmCoordinatorSemanticLeaseAcquireInput
+): FrontierSwarmCoordinatorSemanticLeaseAcquireResult {
+  const scopes = semanticLeaseScopesForCoordinatorAssignment(input.queue, input.assignment, input);
+  const requiredLeaseScopeIds = coordinatorAssignmentRequiredLeaseScopeIds(input.assignment);
+  const requiredLeaseKeys = coordinatorAssignmentRequiredLeaseKeys(input.assignment, scopes);
+  const state = input.state ?? createSwarmSemanticLeaseStateForMergeQueue(input.queue, input);
+  const acquireInput: FrontierSemanticLeaseAcquireInput = {
+    ownerId: input.ownerId,
+    holderId: input.holderId,
+    now: input.now,
+    ttlMs: input.ttlMs,
+    purpose: input.purpose ?? `frontier swarm coordinator apply: ${input.assignment.jobId}`,
+    reason: input.reason,
+    scopes,
+    metadata: mergeSwarmMetadata([
+      toJsonObject(input.metadata),
+      {
+        swarmQueueId: input.queue.id,
+        swarmJobId: input.assignment.jobId,
+        swarmTaskId: input.assignment.taskId,
+        requiredLeaseScopeIds,
+        requiredLeaseKeys
+      }
+    ])
+  };
+  const mutation = acquireSemanticLease(state, acquireInput);
+  return {
+    state: mutation.state,
+    mutation,
+    scopes,
+    requiredLeaseScopeIds,
+    requiredLeaseKeys,
+    ...(mutation.lease ? { lease: mutation.lease } : {})
+  };
+}
+
+export function validateSwarmCoordinatorSemanticLeaseFence(input: FrontierSwarmCoordinatorSemanticLeaseFenceInput): ReturnType<typeof validateSemanticLeaseFence> {
+  const requiredScopes = input.requiredSemanticLeaseScopes?.length
+    ? input.requiredSemanticLeaseScopes.map(cloneSemanticLeaseScope)
+    : (input.assignment.requiredSemanticLeaseScopes ?? []).map(cloneSemanticLeaseScope);
+  return validateSemanticLeaseFence(input.state, {
+    leaseId: input.leaseId ?? input.lease?.id ?? '',
+    token: input.token,
+    fencingToken: input.fencingToken,
+    now: input.now,
+    scopes: requiredScopes.length ? requiredScopes : undefined
+  });
 }
 
 export function summarizeSwarmCoordinatorAgentDrainWork(
@@ -10535,6 +10749,160 @@ function ensureMergeQueueScope(
   return scope;
 }
 
+function createSwarmSemanticLeaseScopeMap(
+  scopes: readonly FrontierSwarmMergeQueueScope[],
+  input: FrontierSwarmSemanticLeaseScopeOptions = {}
+): Map<string, FrontierSemanticLeaseScope> {
+  const out = new Map<string, FrontierSemanticLeaseScope>();
+  for (const scope of scopes) {
+    out.set(scope.id, createSwarmSemanticLeaseScopeForMergeQueueScope(scope, { ...input, scopes }));
+  }
+  return out;
+}
+
+function attachSemanticLeaseScopeToMergeQueueScope(
+  scope: FrontierSwarmMergeQueueScope,
+  semanticLeaseScopes: Map<string, FrontierSemanticLeaseScope>
+): FrontierSwarmMergeQueueScope {
+  const semanticLeaseScope = semanticLeaseScopes.get(scope.id);
+  return {
+    ...scope,
+    ...(semanticLeaseScope ? { semanticLeaseScope: cloneSemanticLeaseScope(semanticLeaseScope) } : {})
+  };
+}
+
+function attachSemanticLeaseScopesToAssignment(
+  assignment: FrontierSwarmMergeQueueAssignment,
+  semanticLeaseScopes: Map<string, FrontierSemanticLeaseScope>
+): FrontierSwarmMergeQueueAssignment {
+  const requiredLeaseScopeIds = assignment.requiredLeaseScopeIds?.length ? assignment.requiredLeaseScopeIds : [assignment.scopeId];
+  const requiredSemanticLeaseScopes = requiredLeaseScopeIds
+    .map((scopeId) => semanticLeaseScopes.get(scopeId))
+    .filter((scope): scope is FrontierSemanticLeaseScope => Boolean(scope))
+    .map(cloneSemanticLeaseScope);
+  const retrySlices = assignment.retrySlices?.map((slice) => {
+    const requiredScopeIds = slice.requiredLeaseScopeIds?.length ? slice.requiredLeaseScopeIds : [slice.scopeId];
+    const requiredScopes = requiredScopeIds
+      .map((scopeId) => semanticLeaseScopes.get(scopeId))
+      .filter((scope): scope is FrontierSemanticLeaseScope => Boolean(scope))
+      .map(cloneSemanticLeaseScope);
+    const semanticLeaseScope = semanticLeaseScopes.get(slice.scopeId);
+    return {
+      ...slice,
+      ...(semanticLeaseScope ? { semanticLeaseScope: cloneSemanticLeaseScope(semanticLeaseScope) } : {}),
+      ...(requiredScopes.length ? { requiredSemanticLeaseScopes: requiredScopes } : {})
+    };
+  });
+  return {
+    ...assignment,
+    ...(requiredSemanticLeaseScopes.length ? { requiredSemanticLeaseScopes } : {}),
+    ...(retrySlices?.length ? { retrySlices } : {})
+  };
+}
+
+function semanticLeaseScopesForCoordinatorAssignment(
+  queue: FrontierSwarmHierarchicalMergeQueue,
+  assignment: FrontierSwarmMergeQueueAssignment | FrontierSwarmCoordinatorAgentDrainAssignment,
+  input: FrontierSwarmSemanticLeaseScopeOptions = {}
+): FrontierSemanticLeaseScope[] {
+  if (assignment.requiredSemanticLeaseScopes?.length) {
+    return uniqueSemanticLeaseScopes(assignment.requiredSemanticLeaseScopes.map(cloneSemanticLeaseScope));
+  }
+  const queueScopes = new Map(queue.scopes.map((scope) => [scope.id, scope]));
+  const semanticByKey = new Map(createSwarmSemanticLeaseScopesForMergeQueue(queue, input).map((scope) => [scope.key, scope]));
+  const fromIds = coordinatorAssignmentRequiredLeaseScopeIds(assignment)
+    .map((scopeId) => queueScopes.get(scopeId)?.semanticLeaseScope)
+    .filter((scope): scope is FrontierSemanticLeaseScope => Boolean(scope));
+  if (fromIds.length) return uniqueSemanticLeaseScopes(fromIds);
+  const fromKeys = coordinatorAssignmentRequiredLeaseKeys(assignment, [])
+    .map((key) => semanticByKey.get(key))
+    .filter((scope): scope is FrontierSemanticLeaseScope => Boolean(scope));
+  if (fromKeys.length) return uniqueSemanticLeaseScopes(fromKeys);
+  const fallbackKey = 'leaseScope' in assignment ? assignment.leaseScope : assignment.leaseKey;
+  return [defineSemanticLeaseScope({
+    kind: 'custom',
+    key: fallbackKey,
+    repository: input.repository,
+    packageId: input.packageId,
+    metadata: mergeSwarmMetadata([
+      toJsonObject(input.metadata),
+      {
+        swarmQueueId: queue.id,
+        swarmJobId: assignment.jobId,
+        fallbackLeaseKey: fallbackKey
+      }
+    ])
+  })];
+}
+
+function coordinatorAssignmentRequiredLeaseScopeIds(
+  assignment: FrontierSwarmMergeQueueAssignment | FrontierSwarmCoordinatorAgentDrainAssignment
+): string[] {
+  const explicit = assignment.requiredLeaseScopeIds ?? [];
+  if (explicit.length) return uniqueStrings(explicit);
+  return uniqueStrings(['queueId' in assignment ? assignment.queueId : assignment.scopeId]);
+}
+
+function coordinatorAssignmentRequiredLeaseKeys(
+  assignment: FrontierSwarmMergeQueueAssignment | FrontierSwarmCoordinatorAgentDrainAssignment,
+  scopes: readonly FrontierSemanticLeaseScope[]
+): string[] {
+  const explicit = assignment.requiredLeaseKeys ?? [];
+  if (explicit.length) return uniqueStrings(explicit);
+  if (scopes.length) return uniqueStrings(scopes.map((scope) => scope.key));
+  return uniqueStrings(['leaseScope' in assignment ? assignment.leaseScope : assignment.leaseKey]);
+}
+
+function semanticLeaseScopeOptionsFromMetadata(metadata: unknown): FrontierSwarmSemanticLeaseScopeOptions {
+  const object = toJsonObject(metadata);
+  if (!object) return {};
+  return {
+    ...(typeof object.repository === 'string' ? { repository: object.repository } : {}),
+    ...(typeof object.packageId === 'string' ? { packageId: object.packageId } : {})
+  };
+}
+
+function semanticLeaseScopeKindForMergeQueueScope(scope: FrontierSwarmMergeQueueScope): FrontierSemanticLeaseScopeKind {
+  if (scope.kind === 'root') return 'repository';
+  if (scope.kind === 'path') return 'path';
+  if (scope.kind === 'lane') return 'lane';
+  if (scope.kind === 'semantic-region' || scope.kind === 'semantic') return semanticLeaseScopeKindForRegion(scope.changedRegions[0]);
+  if (scope.kind === 'package') return 'package';
+  return 'custom';
+}
+
+function semanticLeaseScopeKindForRegion(region: string | undefined): FrontierSemanticLeaseScopeKind {
+  if (!region) return 'semantic-region';
+  const normalized = region.toLowerCase();
+  if (normalized.includes(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_EXPORT_STABLE_KEY_KIND) || normalized.includes('named-export') || normalized.includes('default-export')) return 'export';
+  if (normalized.includes(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TYPE_STABLE_KEY_KIND) || normalized.includes('interface') || normalized.includes('type-alias')) return 'type';
+  if (normalized.includes(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_CLI_COMMAND_STABLE_KEY_KIND)) return 'cli-command';
+  if (normalized.includes(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_DOCS_SECTION_STABLE_KEY_KIND)) return 'docs-section';
+  if (normalized.includes(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_FIXTURE_FAMILY_STABLE_KEY_KIND)) return 'test-fixture';
+  if (normalized.includes(FRONTIER_SWARM_SEMANTIC_OWNERSHIP_TEST_CASE_STABLE_KEY_KIND)) return 'test-fixture';
+  if (normalized.includes('function')) return 'function';
+  if (normalized.includes('class')) return 'class';
+  if (normalized.includes('member')) return 'member';
+  return 'semantic-region';
+}
+
+function semanticLeaseScopeNameForMergeQueueScope(scope: FrontierSwarmMergeQueueScope): string | undefined {
+  const region = scope.changedRegions[0];
+  if (region) return region.split(':').filter(Boolean).at(-1);
+  if (scope.changedPaths.length === 1) return scope.changedPaths[0].split('/').at(-1);
+  return scope.title || scope.id;
+}
+
+function uniqueSemanticLeaseScopes(scopes: readonly FrontierSemanticLeaseScope[]): FrontierSemanticLeaseScope[] {
+  const out = new Map<string, FrontierSemanticLeaseScope>();
+  for (const scope of scopes) out.set(scope.key, cloneSemanticLeaseScope(scope));
+  return Array.from(out.values()).sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function cloneSemanticLeaseScope(scope: FrontierSemanticLeaseScope): FrontierSemanticLeaseScope {
+  return cloneJsonValue(scope as unknown as JsonValue) as unknown as FrontierSemanticLeaseScope;
+}
+
 function mergeQueueRootLeaseKey(rootScopeId: string): string {
   return `merge:root:${rootScopeId}`;
 }
@@ -10657,6 +11025,8 @@ function cloneMergeQueueRetrySlices(slices: readonly FrontierSwarmMergeQueueRetr
     leaseKey: slice.leaseKey,
     ...(slice.requiredLeaseScopeIds?.length ? { requiredLeaseScopeIds: [...slice.requiredLeaseScopeIds] } : {}),
     ...(slice.requiredLeaseKeys?.length ? { requiredLeaseKeys: [...slice.requiredLeaseKeys] } : {}),
+    ...(slice.semanticLeaseScope ? { semanticLeaseScope: cloneSemanticLeaseScope(slice.semanticLeaseScope) } : {}),
+    ...(slice.requiredSemanticLeaseScopes?.length ? { requiredSemanticLeaseScopes: slice.requiredSemanticLeaseScopes.map(cloneSemanticLeaseScope) } : {}),
     ...(slice.lane ? { lane: slice.lane } : {}),
     changedPaths: [...slice.changedPaths],
     changedRegions: [...slice.changedRegions],
@@ -10719,6 +11089,7 @@ function createHierarchicalQueueLeaseRecords(input: {
       ...(scope.lane ? { lane: scope.lane } : {}),
       title: scope.title,
       leaseKey: scope.leaseKey,
+      ...(scope.semanticLeaseScope ? { semanticLeaseScope: cloneSemanticLeaseScope(scope.semanticLeaseScope) } : {}),
       ...(hierarchicalQueueLocalLeaderForScope(input, scope) ? { localLeader: hierarchicalQueueLocalLeaderForScope(input, scope) } : {}),
       promotion: {
         state: promotionState,
