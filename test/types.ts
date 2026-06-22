@@ -45,6 +45,7 @@ import {
   createSwarmModelRoutingFeedback,
   createSwarmModelRoutingPolicy,
   createSwarmModelRoute,
+  createSwarmRoutingController,
   createSwarmSchedule,
   createSwarmLeases,
   createSwarmQueueSnapshot,
@@ -73,6 +74,7 @@ import {
   createSwarmQueueOverlayFromRunProjection,
   createSwarmRunFromRunProjection,
   createSwarmOptimizationSummary,
+  rerouteSwarmPlan,
   classifySwarmQueueOutcome,
   collapseSwarmQueueOutcomeDecisions,
   createSwarmQueueOutcomeDecision,
@@ -156,9 +158,15 @@ import {
   type FrontierSwarmModelRoutingPolicyInput,
   type FrontierSwarmModelRoutingPolicySignal,
   type FrontierSwarmModelRoutingPolicySignalInput,
+  type FrontierSwarmModelTelemetryRecordInput,
+  type FrontierSwarmModelTelemetrySummaryInput,
   type FrontierSwarmOptimizationSummary,
   type FrontierSwarmOptimizationSummaryCounts,
   type FrontierSwarmOptimizationSummaryInput,
+  type FrontierSwarmRoutingController,
+  type FrontierSwarmRoutingControllerDecision,
+  type FrontierSwarmRoutingControllerInput,
+  type FrontierSwarmReroutePlanInput,
   type FrontierSwarmMergeBundle,
   type FrontierSwarmMergeCandidate,
   type FrontierSwarmMergeCandidateAdmissionStatus,
@@ -215,6 +223,38 @@ const compute: FrontierSwarmCompute = resolveSwarmCompute(manifest, tasks[0]);
 const schedule: FrontierSwarmSchedule = createSwarmSchedule(plan);
 const leases = createSwarmLeases({ schedule, workerId: 'worker' });
 const stream: FrontierSwarmEventStream = createSwarmEventStream({ lanes: manifest.lanes });
+const telemetryRecord: FrontierSwarmModelTelemetryRecordInput = {
+  jobId: plan.jobs[0].id,
+  taskId: plan.jobs[0].taskId,
+  lane: plan.jobs[0].lane,
+  computeId: plan.jobs[0].compute.id,
+  model: plan.jobs[0].compute.model,
+  status: 'completed',
+  verificationTotal: 1,
+  verificationPassed: 1,
+  estimatedCostUsd: 0.01
+};
+const telemetrySummary: FrontierSwarmModelTelemetrySummaryInput = {
+  recordCount: 1,
+  jobCount: 1,
+  computeCounts: { [plan.jobs[0].compute.id]: 1 },
+  estimatedCostUsd: 0.01
+};
+const routingControllerInput: FrontierSwarmRoutingControllerInput = {
+  plan,
+  records: [telemetryRecord],
+  summary: telemetrySummary,
+  routingMode: 'fill',
+  protectedJobIds: []
+};
+const routingController: FrontierSwarmRoutingController = createSwarmRoutingController(routingControllerInput);
+const routingDecision: FrontierSwarmRoutingControllerDecision | undefined = routingController.decisions[0];
+const rerouteInput: FrontierSwarmReroutePlanInput = {
+  plan,
+  routingPolicy: routingController.policy,
+  routingMode: 'fill'
+};
+const reroutedPlan: FrontierSwarmPlan = rerouteSwarmPlan(rerouteInput);
 const gateRecord: FrontierSwarmGateRecord = createSwarmGateRecord({
   type: 'smoke',
   status: 'passed',
@@ -1251,6 +1291,11 @@ compute.model satisfies string | undefined;
 schedule.ready satisfies readonly { jobId: string }[];
 leases[0]?.token satisfies string | undefined;
 stream.global.eventTypes satisfies string[];
+routingController.policy.feedback satisfies readonly FrontierSwarmModelRoutingFeedback[];
+routingController.policy.signals satisfies readonly FrontierSwarmModelRoutingPolicySignal[];
+routingController.summary.changedComputeCount satisfies number;
+routingDecision?.action satisfies string | undefined;
+reroutedPlan.jobs[0].compute satisfies FrontierSwarmCompute;
 queueSnapshot.summary.jobCount satisfies number;
 checkpoint.hash satisfies string;
 budget.ok satisfies boolean;

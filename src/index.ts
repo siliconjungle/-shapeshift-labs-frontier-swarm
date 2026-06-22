@@ -1106,6 +1106,7 @@ export interface FrontierSwarmPlan {
   id: string;
   runId: string;
   manifestId: string;
+  manifest?: FrontierSwarmManifest;
   createdAt: number;
   filters: FrontierSwarmPlanFilter;
   limits: FrontierSwarmScheduleLimits;
@@ -5026,6 +5027,7 @@ export function createSwarmPlan(
     id,
     runId: options.runId ?? id.replace(/^swarm-plan:/, 'swarm-run:'),
     manifestId: compiled.manifest.id,
+    manifest: compiled.manifest,
     createdAt: options.now ?? Date.now(),
     filters: {
       lanes: options.lanes ? [...options.lanes] : undefined,
@@ -14083,6 +14085,260 @@ function normalizeRouterPolicy(input: FrontierSwarmModelRouterInput['routingPoli
   return createSwarmModelRoutingPolicy(input as FrontierSwarmModelRoutingPolicyInput);
 }
 
+function normalizeSwarmTelemetryRecords(records: readonly FrontierSwarmModelTelemetryRecordInput[]): FrontierSwarmModelTelemetryRecordInput[] {
+  return records.map(normalizeSwarmTelemetryRecord).filter((record) => !!(record.jobId || record.computeId || record.model));
+}
+
+function normalizeSwarmTelemetryRecord(input: FrontierSwarmModelTelemetryRecordInput): FrontierSwarmModelTelemetryRecordInput {
+  const metadata = toJsonObject(input.metadata);
+  const computeId = normalizeOptionalString(input.computeId) ?? normalizeOptionalString(input.compute);
+  const model = normalizeOptionalString(input.model);
+  const workKind = normalizeOptionalString(input.workKind);
+  const taskKind = normalizeOptionalString(input.taskKind);
+  const lane = normalizeOptionalString(input.lane);
+  return {
+    ...(normalizeOptionalString(input.id) ? { id: normalizeOptionalString(input.id) } : {}),
+    ...(readNonNegativeNumber(input.generatedAt) !== undefined ? { generatedAt: readNonNegativeNumber(input.generatedAt) } : {}),
+    ...(normalizeOptionalString(input.runId) ? { runId: normalizeOptionalString(input.runId) } : {}),
+    ...(normalizeOptionalString(input.planId) ? { planId: normalizeOptionalString(input.planId) } : {}),
+    ...(normalizeOptionalString(input.jobId) ? { jobId: normalizeOptionalString(input.jobId) } : {}),
+    ...(normalizeOptionalString(input.taskId) ? { taskId: normalizeOptionalString(input.taskId) } : {}),
+    ...(lane ? { lane } : {}),
+    ...(normalizeOptionalString(input.layer) ? { layer: normalizeOptionalString(input.layer) } : {}),
+    ...(workKind ? { workKind } : {}),
+    ...(taskKind ? { taskKind } : {}),
+    ...(computeId ? { computeId } : {}),
+    ...(normalizeOptionalString(input.computeKind) ? { computeKind: normalizeOptionalString(input.computeKind) } : {}),
+    ...(model ? { model } : {}),
+    ...(normalizeOptionalString(input.modelTier) ? { modelTier: normalizeOptionalString(input.modelTier) } : {}),
+    ...(normalizeOptionalString(input.reasoningEffort) ? { reasoningEffort: normalizeOptionalString(input.reasoningEffort) } : {}),
+    ...(normalizeOptionalString(input.serviceTier) ? { serviceTier: normalizeOptionalString(input.serviceTier) } : {}),
+    ...(normalizeOptionalString(input.status) ? { status: normalizeOptionalString(input.status) } : {}),
+    ...(normalizeOptionalString(input.mergeReadiness) ? { mergeReadiness: normalizeOptionalString(input.mergeReadiness) } : {}),
+    ...(normalizeOptionalString(input.mergeDisposition) ? { mergeDisposition: normalizeOptionalString(input.mergeDisposition) } : {}),
+    durationMs: readNonNegativeNumber(input.durationMs) ?? 0,
+    estimatedCostUsd: readNonNegativeNumber(input.estimatedCostUsd) ?? 0,
+    estimatedInputCostUsd: readNonNegativeNumber(input.estimatedInputCostUsd) ?? 0,
+    estimatedOutputCostUsd: readNonNegativeNumber(input.estimatedOutputCostUsd) ?? 0,
+    billableInputTokens: readNonNegativeNumber(input.billableInputTokens) ?? 0,
+    outputTokens: readNonNegativeNumber(input.outputTokens) ?? 0,
+    priceKnown: input.priceKnown === true,
+    costEstimateInputOnly: input.costEstimateInputOnly === true,
+    costEstimateMissingOutputTokens: input.costEstimateMissingOutputTokens === true,
+    verificationTotal: readNonNegativeNumber(input.verificationTotal) ?? 0,
+    verificationPassed: readNonNegativeNumber(input.verificationPassed) ?? 0,
+    verificationFailed: readNonNegativeNumber(input.verificationFailed) ?? 0,
+    verificationRequiredFailed: readNonNegativeNumber(input.verificationRequiredFailed) ?? 0,
+    ownershipViolationCount: readNonNegativeNumber(input.ownershipViolationCount) ?? 0,
+    changedPathCount: readNonNegativeNumber(input.changedPathCount) ?? 0,
+    evidencePathCount: readNonNegativeNumber(input.evidencePathCount) ?? 0,
+    humanActionCount: readNonNegativeNumber(input.humanActionCount) ?? 0,
+    openHumanActionCount: readNonNegativeNumber(input.openHumanActionCount) ?? 0,
+    semanticImportPresent: input.semanticImportPresent === true,
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function telemetryRecordToRoutingFeedback(
+  record: FrontierSwarmModelTelemetryRecordInput,
+  generatedAt: number
+): FrontierSwarmModelRoutingFeedback {
+  const evidenceScore = telemetryEvidenceScore(record);
+  return createSwarmModelRoutingFeedback({
+    scope: record.taskId ? 'task' : record.lane ? 'lane' : 'global',
+    runId: record.runId,
+    planId: record.planId,
+    jobId: record.jobId,
+    taskId: record.taskId,
+    lane: record.lane,
+    layer: record.layer,
+    workKind: record.workKind,
+    taskKind: record.taskKind ?? record.workKind,
+    computeId: record.computeId,
+    computeKind: record.computeKind,
+    model: record.model,
+    modelTier: record.modelTier,
+    reasoningEffort: record.reasoningEffort,
+    serviceTier: record.serviceTier,
+    resultStatus: record.status,
+    mergeReadiness: record.mergeReadiness,
+    mergeDisposition: record.mergeDisposition as FrontierSwarmMergeDisposition | undefined,
+    evidenceQuality: {
+      band: evidenceScore >= 0.85 ? 'strong' : evidenceScore >= 0.6 ? 'adequate' : evidenceScore > 0 ? 'weak' : 'missing',
+      score: evidenceScore,
+      confidence: telemetryConfidence(record)
+    },
+    selected: true,
+    tags: uniqueStrings([
+      record.status,
+      record.mergeReadiness,
+      record.mergeDisposition,
+      record.priceKnown === false ? 'unknown-price' : undefined,
+      (record.verificationRequiredFailed ?? 0) > 0 ? 'required-verification-failed' : undefined,
+      (record.openHumanActionCount ?? 0) > 0 ? 'open-human-action' : undefined
+    ]),
+    generatedAt: record.generatedAt ?? generatedAt,
+    metadata: {
+      telemetryRecordId: record.id,
+      durationMs: record.durationMs,
+      estimatedCostUsd: record.estimatedCostUsd,
+      estimatedInputCostUsd: record.estimatedInputCostUsd,
+      estimatedOutputCostUsd: record.estimatedOutputCostUsd,
+      billableInputTokens: record.billableInputTokens,
+      outputTokens: record.outputTokens,
+      priceKnown: record.priceKnown,
+      costEstimateInputOnly: record.costEstimateInputOnly,
+      costEstimateMissingOutputTokens: record.costEstimateMissingOutputTokens,
+      verificationTotal: record.verificationTotal,
+      verificationPassed: record.verificationPassed,
+      verificationFailed: record.verificationFailed,
+      verificationRequiredFailed: record.verificationRequiredFailed,
+      humanActionCount: record.humanActionCount,
+      openHumanActionCount: record.openHumanActionCount,
+      semanticImportPresent: record.semanticImportPresent
+    }
+  });
+}
+
+function createTelemetryRoutingSignals(
+  records: readonly FrontierSwarmModelTelemetryRecordInput[],
+  input: Pick<FrontierSwarmRoutingControllerInput, 'minSamples' | 'preferSuccessRate' | 'avoidSuccessRate' | 'highCostUsd'>,
+  generatedAt: number
+): FrontierSwarmModelRoutingPolicySignalInput[] {
+  const minSamples = Math.max(1, Math.floor(input.minSamples ?? 1));
+  const preferSuccessRate = clamp01(input.preferSuccessRate ?? 0.82);
+  const avoidSuccessRate = clamp01(input.avoidSuccessRate ?? 0.45);
+  const highCostUsd = readNonNegativeNumber(input.highCostUsd);
+  const byCompute = new Map<string, FrontierSwarmModelTelemetryRecordInput[]>();
+  for (const record of records) {
+    const key = record.computeId ?? record.model;
+    if (!key) continue;
+    byCompute.set(key, [...(byCompute.get(key) ?? []), record]);
+  }
+  const signals: FrontierSwarmModelRoutingPolicySignalInput[] = [];
+  for (const [computeId, group] of byCompute) {
+    if (group.length < minSamples) continue;
+    const scores = group.map(telemetrySuccessScore);
+    const successRate = scores.reduce((sum, score) => sum + score, 0) / Math.max(1, scores.length);
+    const requiredFailed = group.reduce((sum, record) => sum + (record.verificationRequiredFailed ?? 0), 0);
+    const openHumanActions = group.reduce((sum, record) => sum + (record.openHumanActionCount ?? 0), 0);
+    const knownCosts = group.map((record) => record.estimatedCostUsd).filter((value): value is number => value !== undefined && value > 0);
+    const averageCostUsd = knownCosts.length ? knownCosts.reduce((sum, value) => sum + value, 0) / knownCosts.length : undefined;
+    const confidence = group.length >= 5 ? 'high' : group.length >= 2 ? 'medium' : 'low';
+    const common = {
+      computeId,
+      confidence: confidence as FrontierSwarmConfidence,
+      metadata: {
+        source: 'frontier-swarm-routing-controller',
+        sampleCount: group.length,
+        successRate: roundScore(successRate),
+        requiredFailed,
+        openHumanActions,
+        generatedAt,
+        ...(averageCostUsd !== undefined ? { averageCostUsd } : {})
+      }
+    };
+    if (successRate <= avoidSuccessRate || requiredFailed > 0 || openHumanActions > 0) {
+      signals.push({
+        ...common,
+        mode: 'avoid',
+        reason: requiredFailed > 0
+          ? 'telemetry-required-verification-failed'
+          : openHumanActions > 0
+            ? 'telemetry-human-action-open'
+            : 'telemetry-low-success-rate'
+      });
+    } else if (successRate >= preferSuccessRate && (highCostUsd === undefined || averageCostUsd === undefined || averageCostUsd <= highCostUsd)) {
+      signals.push({
+        ...common,
+        mode: 'prefer',
+        reason: 'telemetry-high-success-rate'
+      });
+    } else {
+      signals.push({
+        ...common,
+        mode: 'observe',
+        reason: averageCostUsd !== undefined && highCostUsd !== undefined && averageCostUsd > highCostUsd
+          ? 'telemetry-high-cost-observed'
+          : 'telemetry-insufficient-routing-pressure'
+      });
+    }
+  }
+  return signals;
+}
+
+function dedupeModelRoutingPolicySignals(
+  signals: readonly (FrontierSwarmModelRoutingPolicySignalInput | FrontierSwarmModelRoutingPolicySignal)[]
+): FrontierSwarmModelRoutingPolicySignalInput[] {
+  const byKey = new Map<string, FrontierSwarmModelRoutingPolicySignalInput>();
+  for (const signal of signals) {
+    const key = [
+      signal.mode ?? 'observe',
+      signal.lane ?? '',
+      signal.layer ?? '',
+      signal.workKind ?? signal.taskKind ?? '',
+      signal.computeId ?? '',
+      signal.model ?? '',
+      signal.modelTier ?? ''
+    ].join('\u0000');
+    byKey.set(key, { ...signal });
+  }
+  return Array.from(byKey.values());
+}
+
+function routingSignalToControllerDecision(
+  signal: FrontierSwarmModelRoutingPolicySignalInput,
+  generatedAt: number
+): FrontierSwarmRoutingControllerDecision {
+  const action = signal.mode === 'prefer' || signal.mode === 'avoid' ? signal.mode : 'observe';
+  const metadata = toJsonObject(signal.metadata);
+  return {
+    id: `routing-controller-decision:${action}:${stableHash([signal, generatedAt])}`,
+    action,
+    ...(signal.computeId ? { computeId: signal.computeId } : {}),
+    ...(signal.model ? { model: signal.model } : {}),
+    ...(signal.lane ? { lane: signal.lane } : {}),
+    ...(signal.workKind ? { workKind: signal.workKind } : {}),
+    ...(signal.taskKind ? { taskKind: signal.taskKind } : {}),
+    confidence: signal.confidence ?? 'low',
+    reason: signal.reason ?? `routing ${action} signal`,
+    ...(readNonNegativeNumber(metadata?.successRate) !== undefined ? { score: readNonNegativeNumber(metadata?.successRate) } : {}),
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function telemetrySuccessScore(record: FrontierSwarmModelTelemetryRecordInput): number {
+  if ((record.verificationRequiredFailed ?? 0) > 0) return 0;
+  if ((record.openHumanActionCount ?? 0) > 0) return 0.2;
+  const status = slug(record.status ?? '');
+  const disposition = slug(record.mergeDisposition ?? '');
+  const readiness = slug(record.mergeReadiness ?? '');
+  if (['completed', 'verified', 'passed', 'success'].includes(status)) return 1;
+  if (['applied', 'committed', 'checked', 'auto-mergeable'].includes(disposition) || readiness === 'patch-candidate') return 0.9;
+  if (['blocked', 'failed', 'failure', 'rejected', 'conflict-blocked'].includes(status) || ['rejected', 'blocked', 'stale-against-head'].includes(disposition)) return 0;
+  if (readiness === 'discovery-only' || disposition === 'discovery-only') return 0.55;
+  if ((record.verificationTotal ?? 0) > 0) {
+    const passed = record.verificationPassed ?? 0;
+    return clamp01(passed / Math.max(1, record.verificationTotal ?? 1));
+  }
+  return 0.5;
+}
+
+function telemetryEvidenceScore(record: FrontierSwarmModelTelemetryRecordInput): number {
+  const verificationTotal = record.verificationTotal ?? 0;
+  const verificationPassed = record.verificationPassed ?? 0;
+  const verificationScore = verificationTotal > 0 ? verificationPassed / Math.max(1, verificationTotal) : undefined;
+  const evidenceScore = (record.evidencePathCount ?? 0) > 0 ? 0.2 : 0;
+  const semanticScore = record.semanticImportPresent ? 0.1 : 0;
+  return clamp01(Math.max(telemetrySuccessScore(record), verificationScore ?? 0) + evidenceScore + semanticScore);
+}
+
+function telemetryConfidence(record: FrontierSwarmModelTelemetryRecordInput): FrontierSwarmConfidence {
+  if ((record.verificationTotal ?? 0) > 0 && (record.evidencePathCount ?? 0) > 0) return 'high';
+  if ((record.verificationTotal ?? 0) > 0 || (record.evidencePathCount ?? 0) > 0 || record.semanticImportPresent) return 'medium';
+  return 'low';
+}
+
 function routingFeedbackForTask(
   feedback: readonly FrontierSwarmModelRoutingFeedback[],
   task: FrontierSwarmTask
@@ -15731,6 +15987,156 @@ export interface FrontierSwarmModelRoutingPolicy {
   metadata?: JsonObject;
 }
 
+export interface FrontierSwarmModelTelemetryRecordInput {
+  id?: string;
+  generatedAt?: number;
+  runId?: string;
+  planId?: string;
+  jobId?: string;
+  taskId?: string;
+  lane?: string;
+  layer?: string;
+  workKind?: string;
+  taskKind?: string;
+  computeId?: string;
+  compute?: string;
+  computeKind?: string;
+  model?: string;
+  modelTier?: string;
+  reasoningEffort?: string;
+  serviceTier?: string;
+  status?: string;
+  mergeReadiness?: FrontierSwarmMergeReadiness | string;
+  mergeDisposition?: FrontierSwarmMergeDisposition | string;
+  durationMs?: number;
+  estimatedCostUsd?: number;
+  estimatedInputCostUsd?: number;
+  estimatedOutputCostUsd?: number;
+  billableInputTokens?: number;
+  outputTokens?: number;
+  priceKnown?: boolean;
+  costEstimateInputOnly?: boolean;
+  costEstimateMissingOutputTokens?: boolean;
+  verificationTotal?: number;
+  verificationPassed?: number;
+  verificationFailed?: number;
+  verificationRequiredFailed?: number;
+  ownershipViolationCount?: number;
+  changedPathCount?: number;
+  evidencePathCount?: number;
+  humanActionCount?: number;
+  openHumanActionCount?: number;
+  semanticImportPresent?: boolean;
+  metadata?: unknown;
+  [key: string]: unknown;
+}
+
+export interface FrontierSwarmModelTelemetrySummaryInput {
+  recordCount?: number;
+  jobCount?: number;
+  statusCounts?: Record<string, number>;
+  computeCounts?: Record<string, number>;
+  modelCounts?: Record<string, number>;
+  taskKindCounts?: Record<string, number>;
+  workKindCounts?: Record<string, number>;
+  totalDurationMs?: number;
+  estimatedCostUsd?: number;
+  estimatedInputCostUsd?: number;
+  estimatedOutputCostUsd?: number;
+  billableInputTokens?: number;
+  outputTokens?: number;
+  priceKnownRecordCount?: number;
+  unknownPriceRecordCount?: number;
+  verificationTotal?: number;
+  verificationPassed?: number;
+  verificationFailed?: number;
+  verificationRequiredFailed?: number;
+  humanActionCount?: number;
+  openHumanActionCount?: number;
+  metadata?: unknown;
+  [key: string]: unknown;
+}
+
+export interface FrontierSwarmRoutingControllerDecision {
+  id: string;
+  action: 'prefer' | 'avoid' | 'observe' | 'reroute' | string;
+  computeId?: string;
+  model?: string;
+  lane?: string;
+  workKind?: string;
+  taskKind?: string;
+  jobId?: string;
+  taskId?: string;
+  score?: number;
+  confidence: FrontierSwarmConfidence;
+  reason: string;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmRoutingControllerInput {
+  id?: string;
+  plan?: FrontierSwarmPlan;
+  records?: readonly FrontierSwarmModelTelemetryRecordInput[];
+  telemetry?: {
+    records?: readonly FrontierSwarmModelTelemetryRecordInput[];
+    summary?: FrontierSwarmModelTelemetrySummaryInput;
+  };
+  summary?: FrontierSwarmModelTelemetrySummaryInput;
+  basePolicy?: FrontierSwarmModelRoutingPolicyInput | FrontierSwarmModelRoutingPolicy | unknown;
+  defaultMode?: FrontierSwarmModelRoutingMode;
+  routingMode?: FrontierSwarmModelRoutingMode;
+  protectedJobIds?: readonly string[];
+  runningJobIds?: readonly string[];
+  completedJobIds?: readonly string[];
+  minSamples?: number;
+  preferSuccessRate?: number;
+  avoidSuccessRate?: number;
+  highCostUsd?: number;
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRoutingControllerSummary {
+  telemetryRecordCount: number;
+  telemetryJobCount: number;
+  feedbackCount: number;
+  signalCount: number;
+  preferCount: number;
+  avoidCount: number;
+  observeCount: number;
+  decisionCount: number;
+  reroutedJobCount: number;
+  changedComputeCount: number;
+  protectedJobCount: number;
+  missingPlanManifest: boolean;
+  summaryRecordCount?: number;
+  summaryEstimatedCostUsd?: number;
+}
+
+export interface FrontierSwarmRoutingController {
+  kind: 'frontier.swarm.routing-controller';
+  version: 1;
+  id: string;
+  generatedAt: number;
+  routingMode: FrontierSwarmModelRoutingMode;
+  policy: FrontierSwarmModelRoutingPolicy;
+  decisions: FrontierSwarmRoutingControllerDecision[];
+  routedPlan?: FrontierSwarmPlan;
+  summary: FrontierSwarmRoutingControllerSummary;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmReroutePlanInput {
+  plan: FrontierSwarmPlan;
+  routingPolicy: FrontierSwarmModelRoutingPolicyInput | FrontierSwarmModelRoutingPolicy | unknown;
+  routingMode?: FrontierSwarmModelRoutingMode;
+  protectedJobIds?: readonly string[];
+  runningJobIds?: readonly string[];
+  completedJobIds?: readonly string[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
 export function createSwarmModelRoutingFeedback(input: FrontierSwarmModelRoutingFeedbackInput = {}): FrontierSwarmModelRoutingFeedback {
   const generatedAt = input.generatedAt ?? Date.now();
   const lane = input.lane ?? 'global';
@@ -15775,6 +16181,156 @@ export function createSwarmModelRoutingPolicy(input: FrontierSwarmModelRoutingPo
       avoidCount: preferences.filter((entry) => entry.mode === 'avoid').length
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function createSwarmRoutingController(input: FrontierSwarmRoutingControllerInput = {}): FrontierSwarmRoutingController {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const records = normalizeSwarmTelemetryRecords([
+    ...(input.records ?? []),
+    ...(input.telemetry?.records ?? [])
+  ]);
+  const summary = input.summary ?? input.telemetry?.summary;
+  const basePolicy = normalizeRouterPolicy(input.basePolicy);
+  const feedback = records.map((record) => telemetryRecordToRoutingFeedback(record, generatedAt));
+  const telemetrySignals = createTelemetryRoutingSignals(records, input, generatedAt);
+  const baseSignals = basePolicy?.signals ?? [];
+  const policy = createSwarmModelRoutingPolicy({
+    id: input.id ? `${input.id}:policy` : undefined,
+    ...(basePolicy ?? {}),
+    defaultMode: input.routingMode ?? input.defaultMode ?? basePolicy?.defaultMode ?? 'fill',
+    signals: dedupeModelRoutingPolicySignals([...baseSignals, ...telemetrySignals]),
+    feedback: [...(basePolicy?.feedback ?? []), ...feedback],
+    generatedAt,
+    metadata: {
+      ...(basePolicy?.metadata ?? {}),
+      source: 'frontier-swarm-routing-controller',
+      telemetryRecordCount: records.length,
+      ...(summary ? { telemetrySummary: cloneJsonValue(summary as JsonValue) } : {}),
+      ...(toJsonObject(input.metadata) ? { input: toJsonObject(input.metadata) } : {})
+    }
+  });
+  const routedPlan = input.plan
+    ? rerouteSwarmPlan({
+      plan: input.plan,
+      routingPolicy: policy,
+      routingMode: input.routingMode ?? policy.defaultMode,
+      protectedJobIds: input.protectedJobIds,
+      runningJobIds: input.runningJobIds,
+      completedJobIds: input.completedJobIds,
+      generatedAt,
+      metadata: { source: 'frontier-swarm-routing-controller' }
+    })
+    : undefined;
+  const changedComputeCount = routedPlan && input.plan
+    ? input.plan.jobs.filter((job) => routedPlan.jobs.find((entry) => entry.id === job.id)?.compute.id !== job.compute.id).length
+    : 0;
+  const protectedJobCount = uniqueStrings([
+    ...(input.protectedJobIds ?? []),
+    ...(input.runningJobIds ?? []),
+    ...(input.completedJobIds ?? [])
+  ]).length;
+  const decisions = [
+    ...telemetrySignals.map((signal) => routingSignalToControllerDecision(signal, generatedAt)),
+    ...(changedComputeCount > 0 ? [{
+      id: `routing-controller-decision:reroute:${stableHash([input.plan?.id, changedComputeCount, generatedAt])}`,
+      action: 'reroute',
+      confidence: 'medium' as FrontierSwarmConfidence,
+      reason: `rerouted ${changedComputeCount} pending jobs from telemetry policy`,
+      metadata: { changedComputeCount }
+    }] : [])
+  ];
+  const signalCounts = countBy(telemetrySignals.map((signal) => signal.mode ?? 'observe'));
+  return {
+    kind: 'frontier.swarm.routing-controller',
+    version: 1,
+    id: input.id ?? 'swarm-routing-controller:' + stableHash([input.plan?.id, records.map((record) => record.id ?? record.jobId), generatedAt]),
+    generatedAt,
+    routingMode: input.routingMode ?? policy.defaultMode,
+    policy,
+    decisions,
+    ...(routedPlan ? { routedPlan } : {}),
+    summary: {
+      telemetryRecordCount: records.length,
+      telemetryJobCount: new Set(records.map((record) => record.jobId).filter(Boolean)).size,
+      feedbackCount: feedback.length,
+      signalCount: telemetrySignals.length,
+      preferCount: signalCounts.prefer ?? 0,
+      avoidCount: signalCounts.avoid ?? 0,
+      observeCount: signalCounts.observe ?? 0,
+      decisionCount: decisions.length,
+      reroutedJobCount: changedComputeCount,
+      changedComputeCount,
+      protectedJobCount,
+      missingPlanManifest: !!input.plan && !input.plan.manifest,
+      ...(summary?.recordCount !== undefined ? { summaryRecordCount: summary.recordCount } : {}),
+      ...(summary?.estimatedCostUsd !== undefined ? { summaryEstimatedCostUsd: summary.estimatedCostUsd } : {})
+    },
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function rerouteSwarmPlan(input: FrontierSwarmReroutePlanInput): FrontierSwarmPlan {
+  const plan = input.plan;
+  const protectedJobIds = new Set(uniqueStrings([
+    ...(input.protectedJobIds ?? []),
+    ...(input.runningJobIds ?? []),
+    ...(input.completedJobIds ?? [])
+  ]));
+  const routingPolicy = normalizeRouterPolicy(input.routingPolicy);
+  if (!plan.manifest || !routingPolicy) {
+    return {
+      ...plan,
+      metadata: mergeSwarmMetadata([plan.metadata, {
+        routingController: {
+          rerouteSkipped: !plan.manifest ? 'missing-plan-manifest' : 'missing-routing-policy',
+          protectedJobCount: protectedJobIds.size,
+          ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+        }
+      }])
+    };
+  }
+  const routed = createSwarmPlan(plan.manifest, plan.jobs.map((job) => job.task), {
+    ...plan.filters,
+    id: plan.id,
+    runId: plan.runId,
+    now: input.generatedAt ?? plan.createdAt,
+    maxReadyJobs: plan.limits.maxReadyJobs,
+    maxLaneConcurrency: plan.limits.maxLaneConcurrency,
+    maxConcurrencyKeyConcurrency: plan.limits.maxConcurrencyKeyConcurrency,
+    maxComputeConcurrency: plan.limits.maxComputeConcurrency,
+    resourceQuotas: plan.limits.resourceQuotas,
+    routingPolicy,
+    routingMode: input.routingMode ?? routingPolicy.defaultMode,
+    routingContext: plan.routingContext,
+    metadata: mergeSwarmMetadata([plan.metadata, input.metadata])
+  });
+  const routedById = new Map(routed.jobs.map((job) => [job.id, job]));
+  let changedComputeCount = 0;
+  const jobs = plan.jobs.map((job) => {
+    if (protectedJobIds.has(job.id)) return job;
+    const next = routedById.get(job.id);
+    if (!next) return job;
+    if (next.compute.id !== job.compute.id) changedComputeCount += 1;
+    return { ...next, status: job.status };
+  });
+  return {
+    ...routed,
+    id: plan.id,
+    runId: plan.runId,
+    createdAt: plan.createdAt,
+    jobs,
+    summary: summarizeJobs(jobs),
+    metadata: mergeSwarmMetadata([routed.metadata, {
+      routingController: {
+        mode: input.routingMode ?? routingPolicy.defaultMode,
+        policyId: routingPolicy.id,
+        protectedJobCount: protectedJobIds.size,
+        changedComputeCount,
+        generatedAt: input.generatedAt ?? Date.now(),
+        ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+      }
+    }])
   };
 }
 

@@ -429,6 +429,8 @@ const route = createSwarmModelRoute({
 
 `createSwarmModelRoutingFeedback` and `createSwarmModelRoutingPolicy` cover the serializable feedback/policy layer above the model router. Matching feedback is converted into model outcome history, cost/duration signals are folded into candidate scoring, prefer/avoid/override signals can select or suppress candidates, and each routed job gets compact `metadata.modelRoute` evidence with fallback, selected, recommended compute ids, policy match counts, cost-signal counts, and route reasons.
 
+`createSwarmRoutingController` turns runtime telemetry records into the next routing policy and, when a plan carries its manifest snapshot, a rerouted plan for pending jobs. It converts per-job model telemetry into routing feedback, emits prefer/avoid/observe signals from success, verification, human-action, cost, and duration signals, and preserves protected/running/completed jobs. `rerouteSwarmPlan` exposes the plan-only step for runners that already have a policy and just need to update unstarted work during a refill.
+
 `createSwarmOptimizationSummary` gives runners a generic evidence record for routing decisions, panel/fusion decisions, tournament observations, RSI-style routing feedback, model diversity, and whether any feedback was consumed. Telemetry can be omitted entirely when unavailable or emitted with real zero counts when the run observed nothing.
 
 The returned record includes scored candidates, estimated cost and latency, price/outcome telemetry fallbacks, panel confidence lift, residual risk, and a human-readable explanation for `single-cheap`, `single-deep`, `panel`, or `tournament` recommendations.

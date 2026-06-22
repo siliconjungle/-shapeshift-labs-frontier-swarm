@@ -80,6 +80,7 @@ import {
   createSwarmModelRoutingFeedback,
   createSwarmModelRoutingPolicy,
   createSwarmModelRoute,
+  createSwarmRoutingController,
   FRONTIER_SWARM_TASK_MODEL_PROFILES,
   createSwarmPatchEvent,
   createSwarmEvidenceRecord,
@@ -121,6 +122,7 @@ import {
   createSwarmQueueSnapshot,
   createSwarmScheduleInputFromAdaptiveLoadPlan,
   createSwarmReviewPlan,
+  rerouteSwarmPlan,
   createSwarmReviewerLanePlan,
   createSwarmRunGraph,
   createSwarmRunGraphBarrier,
@@ -2675,6 +2677,84 @@ const observedLayeredPlan = createSwarmPlan(manifest, layeredImplementationTasks
 assert.strictEqual(observedLayeredPlan.jobs[0].compute.id, 'deep');
 assert.strictEqual(observedLayeredPlan.jobs[0].metadata.modelRoute.selectedComputeId, 'deep');
 assert.deepStrictEqual(observedLayeredPlan.jobs[0].metadata.modelRoute.recommendedComputeIds, ['fast']);
+
+const controllerManifest = defineSwarmManifest({
+  id: 'routing-controller.swarm',
+  package: '@example/routing-controller',
+  compute: [
+    { id: 'fast', kind: 'codex', model: 'gpt-5.4-mini', reasoningEffort: 'medium', metadata: { modelTier: 'cheap' } },
+    { id: 'deep', kind: 'codex', model: 'gpt-5.5', reasoningEffort: 'xhigh', metadata: { modelTier: 'deep' } }
+  ],
+  lanes: [{ id: 'runtime', allowedWrites: ['src/**'] }],
+  policy: { defaultCompute: 'fast', defaultConcurrency: 2 }
+});
+const controllerTasks = defineSwarmTasks([
+  { id: 'already-started', kind: 'implementation', lane: 'runtime', targetRefs: ['src/already-started.ts'] },
+  { id: 'pending-risk', kind: 'implementation', lane: 'runtime', targetRefs: ['src/pending-risk.ts'] }
+]);
+const controllerBasePlan = createSwarmPlan(controllerManifest, controllerTasks);
+assert.strictEqual(controllerBasePlan.manifest.id, 'routing-controller.swarm');
+assert.deepStrictEqual(controllerBasePlan.jobs.map((job) => job.compute.id), ['fast', 'fast']);
+const routingController = createSwarmRoutingController({
+  plan: controllerBasePlan,
+  routingMode: 'fill',
+  completedJobIds: [controllerBasePlan.jobs[0].id],
+  records: [
+    {
+      id: 'telemetry:fast-failed',
+      jobId: 'runtime-fast-failed',
+      taskId: 'fast-failed',
+      lane: 'runtime',
+      workKind: 'implementation',
+      computeId: 'fast',
+      model: 'gpt-5.4-mini',
+      status: 'failed',
+      verificationTotal: 1,
+      verificationFailed: 1,
+      verificationRequiredFailed: 1,
+      estimatedCostUsd: 0.01,
+      durationMs: 1000,
+      evidencePathCount: 1
+    },
+    {
+      id: 'telemetry:deep-passed',
+      jobId: 'runtime-deep-passed',
+      taskId: 'deep-passed',
+      lane: 'runtime',
+      workKind: 'implementation',
+      computeId: 'deep',
+      model: 'gpt-5.5',
+      status: 'completed',
+      mergeDisposition: 'auto-mergeable',
+      verificationTotal: 2,
+      verificationPassed: 2,
+      estimatedCostUsd: 0.08,
+      durationMs: 2200,
+      evidencePathCount: 2,
+      semanticImportPresent: true
+    }
+  ],
+  generatedAt: 13690
+});
+assert.strictEqual(routingController.kind, 'frontier.swarm.routing-controller');
+assert.strictEqual(routingController.policy.feedback.length, 2);
+assert.ok(routingController.policy.signals.some((signal) => signal.mode === 'avoid' && signal.computeId === 'fast'));
+assert.ok(routingController.policy.signals.some((signal) => signal.mode === 'prefer' && signal.computeId === 'deep'));
+assert.strictEqual(routingController.summary.changedComputeCount, 1);
+assert.strictEqual(routingController.summary.protectedJobCount, 1);
+assert.strictEqual(routingController.summary.missingPlanManifest, false);
+assert.deepStrictEqual(routingController.routedPlan.jobs.map((job) => job.compute.id), ['fast', 'deep']);
+assert.strictEqual(routingController.routedPlan.jobs[0].metadata.modelRoute, undefined);
+assert.strictEqual(routingController.routedPlan.jobs[1].metadata.modelRoute.selectedComputeId, 'deep');
+const directlyReroutedPlan = rerouteSwarmPlan({
+  plan: controllerBasePlan,
+  routingPolicy: routingController.policy,
+  routingMode: 'fill',
+  protectedJobIds: [controllerBasePlan.jobs[0].id],
+  generatedAt: 13700
+});
+assert.deepStrictEqual(directlyReroutedPlan.jobs.map((job) => job.compute.id), ['fast', 'deep']);
+assert.strictEqual(directlyReroutedPlan.metadata.routingController.changedComputeCount, 1);
 
 const tournamentEvaluation = createSwarmPanelEvaluation({
   candidates: panelRoute.candidates,
