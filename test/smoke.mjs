@@ -55,6 +55,8 @@ import {
   createSwarmCoordinatorDashboard,
   querySwarmCoordinatorDashboard,
   createSwarmContextPack,
+  claimSwarmCoordinatorQueueItem,
+  claimSwarmCoordinatorQueueLease,
   createSwarmDebugHandoff,
   createSwarmDivergenceReport,
   createSwarmEventStream,
@@ -94,6 +96,7 @@ import {
   createSwarmOptimizationSummary,
   createSwarmProgressModel,
   createRunDashboardFromSwarmRun,
+  createRunEventsFromCoordinatorClaimDecision,
   createRunEventsFromCoordinatorDecision,
   createRunEventsFromMergeBundle,
   createRunEventsFromSwarmLease,
@@ -161,6 +164,7 @@ import {
   resolveSwarmTaskModelProfile,
   routeSwarmEventToMailboxes,
   mergeSwarmMetadata,
+  decideSwarmCoordinatorClaim,
   summarizeSwarmCoordinatorAgentDrainWork,
   validateSwarmManifest
 } from '../dist/index.js';
@@ -1542,6 +1546,52 @@ const staleSameFileFence = validateSwarmCoordinatorSemanticLeaseFence({
 });
 assert.strictEqual(staleSameFileFence.ok, false);
 assert.ok(staleSameFileFence.reasons.includes('token-mismatch'));
+
+let coordinatorClaimLeaseState = createSwarmSemanticLeaseStateForMergeQueue(sameFileIndependentExportQueue, {
+  id: 'coordinator-claim-lease-state',
+  repository: 'repo',
+  packageId: 'pkg'
+});
+const coordinatorQueueClaim = claimSwarmCoordinatorQueueItem({
+  queue: sameFileIndependentExportQueue,
+  jobId: sameFileIndependentExportQueue.assignments[0].jobId,
+  coordinatorId: 'coordinator-claim',
+  now: 7010
+});
+assert.strictEqual(coordinatorQueueClaim.claimed, true);
+assert.strictEqual(coordinatorQueueClaim.jobId, sameFileIndependentExportQueue.assignments[0].jobId);
+assert.deepStrictEqual(coordinatorQueueClaim.requiredLeaseKeys, sameFileIndependentExportQueue.assignments[0].requiredLeaseKeys);
+const coordinatorLeaseClaim = claimSwarmCoordinatorQueueLease({
+  queue: sameFileIndependentExportQueue,
+  claim: coordinatorQueueClaim,
+  state: coordinatorClaimLeaseState,
+  ownerId: 'coordinator-claim',
+  holderId: 'coordinator-process',
+  now: 7011,
+  ttlMs: 1000
+});
+coordinatorClaimLeaseState = coordinatorLeaseClaim.state;
+assert.strictEqual(coordinatorLeaseClaim.granted, true);
+assert.ok(coordinatorLeaseClaim.lease);
+assert.strictEqual(coordinatorLeaseClaim.fence.leaseId, coordinatorLeaseClaim.lease.id);
+const coordinatorClaimDecision = decideSwarmCoordinatorClaim({
+  claim: coordinatorQueueClaim,
+  leaseClaim: coordinatorLeaseClaim,
+  decision: 'applied',
+  reasons: ['git-apply-check-passed'],
+  generatedAt: 7012
+});
+assert.strictEqual(coordinatorClaimDecision.decision.jobId, coordinatorQueueClaim.jobId);
+assert.strictEqual(coordinatorClaimDecision.decision.decision, 'applied');
+assert.strictEqual(coordinatorClaimDecision.decision.terminal, true);
+assert.ok(coordinatorClaimDecision.decision.reasons.includes('semantic-lease-granted'));
+assert.ok(coordinatorClaimDecision.runEvents.some((event) => event.type === 'decision.recorded'));
+const coordinatorClaimRunEvents = createRunEventsFromCoordinatorClaimDecision(coordinatorClaimDecision.decision, {
+  runId: 'claim-run',
+  startActorSeq: 3
+});
+assert.strictEqual(coordinatorClaimRunEvents[0].runId, 'claim-run');
+assert.strictEqual(coordinatorClaimRunEvents[0].actorSeq, 3);
 
 const sameSymbolAcrossPathsFormatRegionId = createSwarmSemanticOwnershipRegionId({
   file: 'src/format-title.ts',

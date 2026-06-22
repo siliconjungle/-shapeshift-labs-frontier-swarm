@@ -25,10 +25,12 @@ import {
 } from '@shapeshift-labs/frontier-run';
 import {
   acquireSemanticLease,
+  createSemanticLeaseFence,
   createSemanticLeaseState,
   defineSemanticLeaseScope,
   validateSemanticLeaseFence,
   type FrontierSemanticLeaseAcquireInput,
+  type FrontierSemanticLeaseFenceTicket,
   type FrontierSemanticLeaseMutation,
   type FrontierSemanticLeaseRecord,
   type FrontierSemanticLeaseScope,
@@ -4654,6 +4656,80 @@ export interface FrontierSwarmCoordinatorSemanticLeaseFenceInput {
   requiredSemanticLeaseScopes?: readonly FrontierSemanticLeaseScope[];
 }
 
+export interface FrontierSwarmCoordinatorQueueItemClaimInput {
+  queue: FrontierSwarmHierarchicalMergeQueue;
+  assignment?: FrontierSwarmMergeQueueAssignment;
+  jobId?: string;
+  queueItemId?: string;
+  coordinatorId?: string;
+  now?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmCoordinatorQueueItemClaim {
+  id: string;
+  queueId: string;
+  mergeIndexId: string;
+  generatedAt: number;
+  coordinatorId: string;
+  claimed: boolean;
+  jobId?: string;
+  taskId?: string;
+  lane?: string;
+  queueItemIds: string[];
+  queueIdForAssignment?: string;
+  assignedAction?: FrontierSwarmMergeQueueAssignmentAction;
+  requiredLeaseScopeIds: string[];
+  requiredLeaseKeys: string[];
+  requiredSemanticLeaseScopes: FrontierSemanticLeaseScope[];
+  reasons: string[];
+  assignment?: FrontierSwarmMergeQueueAssignment;
+  metadata?: JsonObject;
+}
+
+export interface FrontierSwarmCoordinatorQueueLeaseClaimInput extends Omit<FrontierSwarmCoordinatorSemanticLeaseAcquireInput, 'queue' | 'assignment'> {
+  queue: FrontierSwarmHierarchicalMergeQueue;
+  claim: FrontierSwarmCoordinatorQueueItemClaim;
+  state?: FrontierSemanticLeaseState;
+}
+
+export interface FrontierSwarmCoordinatorQueueLeaseClaim {
+  id: string;
+  queueId: string;
+  claimId: string;
+  generatedAt: number;
+  granted: boolean;
+  state: FrontierSemanticLeaseState;
+  mutation: FrontierSemanticLeaseMutation;
+  scopes: FrontierSemanticLeaseScope[];
+  requiredLeaseScopeIds: string[];
+  requiredLeaseKeys: string[];
+  lease?: FrontierSemanticLeaseRecord;
+  fence?: FrontierSemanticLeaseFenceTicket;
+  reasons: string[];
+}
+
+export interface FrontierSwarmCoordinatorClaimDecisionInput {
+  claim: FrontierSwarmCoordinatorQueueItemClaim;
+  leaseClaim?: FrontierSwarmCoordinatorQueueLeaseClaim;
+  decision?: FrontierSwarmCoordinatorAgentDrainDecision | string;
+  outcome?: FrontierSwarmQueueOutcome;
+  category?: FrontierSwarmQueueOutcomeCategory;
+  terminal?: boolean;
+  status?: string;
+  reasons?: readonly string[];
+  conflictingJobIds?: readonly string[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmCoordinatorClaimDecision {
+  claim: FrontierSwarmCoordinatorQueueItemClaim;
+  leaseClaim?: FrontierSwarmCoordinatorQueueLeaseClaim;
+  decision: FrontierSwarmQueueOutcomeDecision;
+  runEvents: FrontierRunEvent[];
+}
+
 export interface FrontierSwarmCoordinatorAgentPromotedWork {
   id: string;
   jobId: string;
@@ -9209,6 +9285,167 @@ export function validateSwarmCoordinatorSemanticLeaseFence(input: FrontierSwarmC
   });
 }
 
+export function claimSwarmCoordinatorQueueItem(input: FrontierSwarmCoordinatorQueueItemClaimInput): FrontierSwarmCoordinatorQueueItemClaim {
+  const generatedAt = input.now ?? Date.now();
+  const coordinatorId = input.coordinatorId ?? 'frontier-swarm-coordinator';
+  const assignment = input.assignment ?? findCoordinatorQueueAssignment(input.queue, input);
+  const reasons = assignment
+    ? uniqueStrings(['queue-item-claimed', ...(assignment.reasons ?? [])])
+    : uniqueStrings(['missing-queue-assignment']);
+  const requiredSemanticLeaseScopes = assignment
+    ? semanticLeaseScopesForCoordinatorAssignment(input.queue, assignment, { metadata: input.metadata }).map(cloneSemanticLeaseScope)
+    : [];
+  const requiredLeaseScopeIds = assignment ? coordinatorAssignmentRequiredLeaseScopeIds(assignment) : [];
+  const requiredLeaseKeys = assignment ? coordinatorAssignmentRequiredLeaseKeys(assignment, requiredSemanticLeaseScopes) : [];
+  return {
+    id: 'swarm-coordinator-queue-item-claim:' + stableHash([input.queue.id, assignment?.jobId, input.queueItemId, input.jobId, coordinatorId, generatedAt]),
+    queueId: input.queue.id,
+    mergeIndexId: input.queue.mergeIndexId,
+    generatedAt,
+    coordinatorId,
+    claimed: Boolean(assignment),
+    ...(assignment?.jobId ? { jobId: assignment.jobId } : {}),
+    ...(assignment?.taskId ? { taskId: assignment.taskId } : {}),
+    ...(assignment?.lane ? { lane: assignment.lane } : {}),
+    queueItemIds: assignment ? [...assignment.queueItemIds] : uniqueStrings([input.queueItemId, input.jobId]),
+    ...(assignment ? { queueIdForAssignment: assignment.scopeId, assignedAction: assignment.action } : {}),
+    requiredLeaseScopeIds,
+    requiredLeaseKeys,
+    requiredSemanticLeaseScopes,
+    reasons,
+    ...(assignment ? { assignment: cloneJsonValue(assignment) as FrontierSwarmMergeQueueAssignment } : {}),
+    ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
+  };
+}
+
+export function claimSwarmCoordinatorQueueLease(input: FrontierSwarmCoordinatorQueueLeaseClaimInput): FrontierSwarmCoordinatorQueueLeaseClaim {
+  const generatedAt = input.now ?? Date.now();
+  const assignment = input.claim.assignment;
+  if (!assignment) {
+    const state = input.state ?? createSemanticLeaseState({ id: `frontier-swarm-merge-queue:${input.queue.id}` });
+    const mutation: FrontierSemanticLeaseMutation = {
+      state,
+      outcome: 'denied',
+      granted: false,
+      conflicts: [],
+      events: [],
+      evidence: {
+        kind: 'frontier.semantic-lease.evidence',
+        version: 1,
+        stateId: state.id,
+        outcome: 'denied',
+        beforeHash: stableHash(state),
+        afterHash: stableHash(state),
+        eventCount: 0,
+        activeLeaseCount: 0,
+        conflictCount: 0,
+        replayVerified: true
+      }
+    };
+    return {
+      id: 'swarm-coordinator-queue-lease-claim:' + stableHash([input.queue.id, input.claim.id, generatedAt, 'missing-assignment']),
+      queueId: input.queue.id,
+      claimId: input.claim.id,
+      generatedAt,
+      granted: false,
+      state,
+      mutation,
+      scopes: [],
+      requiredLeaseScopeIds: [],
+      requiredLeaseKeys: [],
+      reasons: ['missing-queue-assignment']
+    };
+  }
+  const acquired = acquireSwarmCoordinatorSemanticLease({
+    ...input,
+    assignment,
+    ownerId: input.ownerId,
+    holderId: input.holderId,
+    now: generatedAt,
+    metadata: mergeSwarmMetadata([
+      toJsonObject(input.metadata),
+      {
+        claimId: input.claim.id,
+        coordinatorId: input.claim.coordinatorId,
+        queueItemIds: input.claim.queueItemIds
+      }
+    ])
+  });
+  return {
+    id: 'swarm-coordinator-queue-lease-claim:' + stableHash([input.queue.id, input.claim.id, acquired.lease?.id, generatedAt]),
+    queueId: input.queue.id,
+    claimId: input.claim.id,
+    generatedAt,
+    granted: acquired.mutation.granted,
+    state: acquired.state,
+    mutation: acquired.mutation,
+    scopes: acquired.scopes,
+    requiredLeaseScopeIds: acquired.requiredLeaseScopeIds,
+    requiredLeaseKeys: acquired.requiredLeaseKeys,
+    ...(acquired.lease ? { lease: acquired.lease, fence: createSemanticLeaseFence(acquired.lease) } : {}),
+    reasons: acquired.mutation.granted ? ['semantic-lease-granted'] : uniqueStrings(['semantic-lease-denied', ...acquired.mutation.conflicts.map((conflict) => conflict.reason)])
+  };
+}
+
+export function decideSwarmCoordinatorClaim(input: FrontierSwarmCoordinatorClaimDecisionInput): FrontierSwarmCoordinatorClaimDecision {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const assignment = input.claim.assignment;
+  const leaseBlocked = input.leaseClaim && !input.leaseClaim.granted;
+  const decision = createSwarmQueueOutcomeDecision({
+    subjectId: input.claim.queueItemIds[0] ?? input.claim.jobId ?? input.claim.id,
+    subjectAliases: uniqueStrings([input.claim.id, input.leaseClaim?.id, ...(input.claim.queueItemIds ?? [])]),
+    jobId: input.claim.jobId,
+    taskId: input.claim.taskId,
+    queueItemIds: input.claim.queueItemIds,
+    queueId: input.claim.queueIdForAssignment ?? input.claim.queueId,
+    lane: input.claim.lane,
+    action: assignment?.action,
+    assignedAction: assignment?.action,
+    decision: input.decision ?? (leaseBlocked ? 'blocked' : assignment ? coordinatorAgentDrainDecisionForAction(assignment.action) : 'blocked'),
+    category: input.category,
+    outcome: input.outcome,
+    terminal: input.terminal,
+    reasons: uniqueStrings([
+      ...input.claim.reasons,
+      ...(input.leaseClaim?.reasons ?? []),
+      ...(input.reasons ?? [])
+    ]),
+    disposition: assignment?.disposition,
+    mergeReadiness: assignment?.mergeReadiness,
+    status: input.status,
+    conflictingJobIds: input.conflictingJobIds ?? assignment?.conflictingJobIds,
+    generatedAt,
+    metadata: mergeSwarmMetadata([
+      toJsonObject(input.metadata),
+      {
+        source: 'frontier-swarm.coordinator-claim',
+        claimId: input.claim.id,
+        leaseClaimId: input.leaseClaim?.id,
+        semanticLeaseId: input.leaseClaim?.lease?.id,
+        fencingToken: input.leaseClaim?.lease?.fencingToken,
+        requiredLeaseScopeIds: input.claim.requiredLeaseScopeIds,
+        requiredLeaseKeys: input.claim.requiredLeaseKeys
+      }
+    ])
+  });
+  return {
+    claim: input.claim,
+    ...(input.leaseClaim ? { leaseClaim: input.leaseClaim } : {}),
+    decision,
+    runEvents: createRunEventsFromCoordinatorClaimDecision(decision)
+  };
+}
+
+export function createRunEventsFromCoordinatorClaimDecision(
+  decision: FrontierSwarmQueueOutcomeDecision | FrontierSwarmQueueOutcomeDecisionInput,
+  options: FrontierSwarmRunEventAdapterOptions = {}
+): FrontierRunEvent[] {
+  return createRunEventsFromCoordinatorDecision(decision, {
+    actorId: options.actorId ?? 'frontier-swarm-coordinator',
+    ...options
+  });
+}
+
 export function summarizeSwarmCoordinatorAgentDrainWork(
   work: Pick<FrontierSwarmCoordinatorAgentDrainWork, 'leases' | 'assignments' | 'terminalDecisions' | 'promotedWork'>
 ): FrontierSwarmCoordinatorAgentDrainWorkConsumerSummary {
@@ -10896,6 +11133,18 @@ function semanticLeaseScopesForCoordinatorAssignment(
       }
     ])
   })];
+}
+
+function findCoordinatorQueueAssignment(
+  queue: FrontierSwarmHierarchicalMergeQueue,
+  input: Pick<FrontierSwarmCoordinatorQueueItemClaimInput, 'jobId' | 'queueItemId'>
+): FrontierSwarmMergeQueueAssignment | undefined {
+  if (input.queueItemId) {
+    const byQueueItem = queue.assignments.find((assignment) => assignment.queueItemIds.includes(input.queueItemId as string));
+    if (byQueueItem) return byQueueItem;
+  }
+  if (input.jobId) return queue.assignments.find((assignment) => assignment.jobId === input.jobId);
+  return queue.assignments[0];
 }
 
 function coordinatorAssignmentRequiredLeaseScopeIds(

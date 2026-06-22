@@ -11,6 +11,8 @@ import {
   createSwarmDebugHandoff,
   createSwarmInstrumentationBudget,
   checkSwarmInstrumentationBudget,
+  claimSwarmCoordinatorQueueItem,
+  claimSwarmCoordinatorQueueLease,
   createSwarmBottleneckReport,
   createSwarmEvidenceIndex,
   querySwarmEvidenceIndex,
@@ -52,6 +54,7 @@ import {
   createSwarmMergeAdmission,
   classifySwarmMergeCandidateAdmission,
   createSwarmHierarchicalMergeQueue,
+  createSwarmSemanticLeaseStateForMergeQueue,
   createSwarmMergePlan,
   createSwarmMergeBundle,
   createSwarmRunStoreShards,
@@ -60,6 +63,7 @@ import {
   createSwarmPlan,
   createSwarmRun,
   createRunDashboardFromSwarmRun,
+  createRunEventsFromCoordinatorClaimDecision,
   createRunEventsFromCoordinatorDecision,
   createRunEventsFromMergeBundle,
   createRunEventsFromSwarmLease,
@@ -73,6 +77,7 @@ import {
   collapseSwarmQueueOutcomeDecisions,
   createSwarmQueueOutcomeDecision,
   createSwarmQueueOutcomeModel,
+  decideSwarmCoordinatorClaim,
   createSwarmEvidenceRecord,
   createSwarmGateEvidenceGraph,
   createSwarmGateRecord,
@@ -121,6 +126,9 @@ import {
   type FrontierSwarmRunGraph,
   type FrontierSwarmRunGraphChunk,
   type FrontierSwarmCoordinatorAgentDrainWork,
+  type FrontierSwarmCoordinatorClaimDecision,
+  type FrontierSwarmCoordinatorQueueItemClaim,
+  type FrontierSwarmCoordinatorQueueLeaseClaim,
   type FrontierSwarmCoordinatorAgentRootQueueSelectionPressure,
   type FrontierSwarmCoordinatorProcessInput,
   type FrontierSwarmInstrumentationBudgetDecision,
@@ -342,6 +350,22 @@ const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [me
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
 const hierarchicalQueue: FrontierSwarmHierarchicalMergeQueue = createSwarmHierarchicalMergeQueue({ index: mergeIndex, admission });
 const coordinatorDrainWork: FrontierSwarmCoordinatorAgentDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: hierarchicalQueue });
+const coordinatorClaim: FrontierSwarmCoordinatorQueueItemClaim = claimSwarmCoordinatorQueueItem({
+  queue: hierarchicalQueue,
+  jobId: hierarchicalQueue.assignments[0].jobId
+});
+const coordinatorLeaseClaim: FrontierSwarmCoordinatorQueueLeaseClaim = claimSwarmCoordinatorQueueLease({
+  queue: hierarchicalQueue,
+  claim: coordinatorClaim,
+  state: createSwarmSemanticLeaseStateForMergeQueue(hierarchicalQueue),
+  ownerId: 'coordinator'
+});
+const coordinatorClaimDecision: FrontierSwarmCoordinatorClaimDecision = decideSwarmCoordinatorClaim({
+  claim: coordinatorClaim,
+  leaseClaim: coordinatorLeaseClaim,
+  decision: 'applied'
+});
+createRunEventsFromCoordinatorClaimDecision(coordinatorClaimDecision.decision);
 const runStoreShards: FrontierSwarmRunStoreShards = createSwarmRunStoreShards({ plan });
 const contextPack: FrontierSwarmContextPack = createSwarmContextPack({ job: plan.jobs[0] });
 const oracleCorpus: FrontierSwarmOracleCorpus = createSwarmOracleCorpus({ artifacts: [{ id: 'oracle', path: 'oracle.json' }] });
