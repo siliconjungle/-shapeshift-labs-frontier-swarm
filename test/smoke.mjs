@@ -100,6 +100,8 @@ import {
   createRunEventsFromSwarmPlan,
   createRunEventsFromSwarmResult,
   createRunProjectionFromSwarmRunEvents,
+  createSwarmQueueOverlayFromRunProjection,
+  createSwarmRunFromRunProjection,
   createSwarmSemanticOwnershipStableKey,
   createSwarmSemanticOwnershipRegionId,
   createSwarmSemanticChange,
@@ -1897,6 +1899,14 @@ assert.ok(Object.values(runAdapterProjection.run.graph.nodes).some((node) => nod
 const runAdapterDashboard = createRunDashboardFromSwarmRun(run, { runId: run.id });
 assert.strictEqual(runAdapterDashboard.kind, 'frontier.run.dashboard');
 assert.strictEqual(runAdapterDashboard.counts.attempt, 1);
+const projectedSwarmRun = createSwarmRunFromRunProjection(runAdapterProjection, { plan });
+assert.strictEqual(projectedSwarmRun.kind, 'frontier.swarm.run');
+assert.strictEqual(projectedSwarmRun.results[0].jobId, plan.jobs[0].id);
+assert.deepStrictEqual(projectedSwarmRun.results[0].changedPaths, run.results[0].changedPaths);
+assert.deepStrictEqual(projectedSwarmRun.results[0].evidencePaths, run.results[0].evidencePaths);
+const projectedQueueOverlay = createSwarmQueueOverlayFromRunProjection(runAdapterProjection, { plan, generatedAt: 21 });
+assert.strictEqual(projectedQueueOverlay.runId, plan.runId);
+assert.strictEqual(projectedQueueOverlay.entries[0].jobId, plan.jobs[0].id);
 
 const invalid = validateSwarmManifest({
   compute: [{ id: 'known' }],

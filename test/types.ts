@@ -66,6 +66,8 @@ import {
   createRunEventsFromSwarmPlan,
   createRunEventsFromSwarmResult,
   createRunProjectionFromSwarmRunEvents,
+  createSwarmQueueOverlayFromRunProjection,
+  createSwarmRunFromRunProjection,
   createSwarmOptimizationSummary,
   classifySwarmQueueOutcome,
   collapseSwarmQueueOutcomeDecisions,
@@ -316,6 +318,10 @@ const frontierRunProjection = createRunProjectionFromSwarmRunEvents([
 const frontierRunDashboard = createRunDashboardFromSwarmRun(run, { runId: run.id });
 frontierRunProjection.run.id satisfies string;
 frontierRunDashboard.counts satisfies Record<string, number>;
+const swarmRunFromProjection = createSwarmRunFromRunProjection(frontierRunProjection, { plan });
+const queueOverlayFromProjection = createSwarmQueueOverlayFromRunProjection(frontierRunProjection, { plan });
+swarmRunFromProjection.results satisfies readonly unknown[];
+queueOverlayFromProjection.entries satisfies readonly unknown[];
 const adaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
   plan,
   observations: [{ severity: 'warning', reason: 'load spike' }]
