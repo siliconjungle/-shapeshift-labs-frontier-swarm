@@ -1,4 +1,27 @@
 import type { JsonObject, JsonValue } from '@shapeshift-labs/frontier';
+import {
+  createRunDashboardSnapshot,
+  createRunEdgeEvent,
+  createRunEvent,
+  createRunNodeEvent,
+  defineRunArtifact,
+  defineRunAttempt,
+  defineRunDecision,
+  defineRunEvidence,
+  defineRunLane,
+  defineRunPatch,
+  defineRunTask,
+  defineRunVerification,
+  linkRunNodes,
+  replayRunEvents,
+  type FrontierRunActorId,
+  type FrontierRunDashboardSnapshot,
+  type FrontierRunDecisionKind,
+  type FrontierRunEvent,
+  type FrontierRunEventId,
+  type FrontierRunProjection,
+  type FrontierRunStatus
+} from '@shapeshift-labs/frontier-run';
 
 export const FRONTIER_SWARM_MANIFEST_KIND = 'frontier.swarm.manifest';
 export const FRONTIER_SWARM_MANIFEST_VERSION = 1;
@@ -2149,6 +2172,22 @@ export interface FrontierSwarmRun {
   results: FrontierSwarmJobResult[];
   summary: FrontierSwarmSummary;
   metadata?: JsonObject;
+}
+
+export interface FrontierSwarmRunEventAdapterOptions {
+  runId?: string;
+  actorId?: FrontierRunActorId;
+  startActorSeq?: number;
+  parents?: readonly FrontierRunEventId[];
+  time?: string;
+  now?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmRunProjectionOptions {
+  runId?: string;
+  goal?: string;
+  metadata?: unknown;
 }
 
 export interface FrontierSwarmEventInput {
@@ -6313,6 +6352,538 @@ export function createSwarmRun(input: FrontierSwarmRunInput): FrontierSwarmRun {
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
   return run;
+}
+
+export function createRunEventsFromSwarmPlan(
+  plan: FrontierSwarmPlan,
+  options: FrontierSwarmRunEventAdapterOptions = {}
+): FrontierRunEvent[] {
+  const actorId = options.actorId ?? 'frontier-swarm';
+  const runId = options.runId ?? plan.runId;
+  const time = swarmRunEventTime(options, plan.createdAt);
+  let actorSeq = options.startActorSeq ?? 1;
+  const events: FrontierRunEvent[] = [];
+  const created = createRunEvent({
+    runId,
+    actorId,
+    actorSeq: actorSeq++,
+    parents: [...(options.parents ?? [])],
+    time,
+    type: 'run.created',
+    payload: {
+      goal: plan.metadata?.objective ?? plan.metadata?.goal ?? `Frontier swarm ${plan.id}`,
+      metadata: pruneUndefinedJsonObject({
+        source: 'frontier-swarm.plan',
+        planId: plan.id,
+        manifestId: plan.manifestId,
+        summary: plan.summary,
+        filters: plan.filters,
+        limits: plan.limits,
+        metadata: plan.metadata,
+        adapterMetadata: toJsonObject(options.metadata)
+      })
+    }
+  });
+  events.push(created);
+
+  const laneIds = uniqueStrings(plan.jobs.map((job) => job.lane));
+  const laneEventByLane = new Map<string, FrontierRunEvent>();
+  for (const lane of laneIds) {
+    const laneJobs = plan.jobs.filter((job) => job.lane === lane);
+    const laneEvent = createRunNodeEvent(runId, actorId, actorSeq++, defineRunLane({
+      id: swarmRunLaneNodeId(lane),
+      title: lane,
+      packageId: inferSwarmLanePackageId(laneJobs),
+      allowedWrites: uniqueStrings(laneJobs.flatMap((job) => job.allowedWrites)),
+      requiredChecks: uniqueStrings(laneJobs.flatMap((job) => job.verification.map(formatSwarmCommandLine))),
+      maxConcurrency: plan.limits.maxLaneConcurrency[lane],
+      concurrencyKey: lane,
+      semanticRegions: uniqueStrings(laneJobs.flatMap((job) => [...job.ownedRegions, ...job.changedRegions])),
+      status: 'ready',
+      createdAt: time,
+      updatedAt: time,
+      metadata: pruneUndefinedJsonObject({
+        source: 'frontier-swarm.plan.lane',
+        jobIds: laneJobs.map((job) => job.id),
+        taskIds: uniqueStrings(laneJobs.map((job) => job.taskId))
+      })
+    }), {
+      parents: [created.id],
+      time
+    });
+    events.push(laneEvent);
+    laneEventByLane.set(lane, laneEvent);
+  }
+
+  const taskById = new Map<string, FrontierSwarmJob>();
+  for (const job of plan.jobs) if (!taskById.has(job.taskId)) taskById.set(job.taskId, job);
+  for (const job of taskById.values()) {
+    const task = job.task;
+    const taskEvent = createRunNodeEvent(runId, actorId, actorSeq++, defineRunTask({
+      id: swarmRunTaskNodeId(job.taskId),
+      title: task.title || job.title,
+      laneId: swarmRunLaneNodeId(job.lane),
+      status: swarmStatusToRunStatus(job.status),
+      targetRefs: uniqueStrings([...(task.targetRefs ?? []), ...job.allowedWrites]),
+      sourceRefs: task.sourceRefs,
+      allowedWrites: job.allowedWrites,
+      semanticRegions: uniqueStrings([...job.ownedRegions, ...job.changedRegions]),
+      acceptance: job.acceptance,
+      verification: job.verification.map((command) => ({
+        id: command.name,
+        command: command.command,
+        args: command.args,
+        cwd: command.cwd,
+        required: command.required,
+        metadata: command.metadata
+      })),
+      priority: job.priority,
+      concurrencyKey: job.concurrencyKey,
+      createdAt: time,
+      updatedAt: time,
+      metadata: pruneUndefinedJsonObject({
+        source: 'frontier-swarm.plan.task',
+        jobIds: plan.jobs.filter((entry) => entry.taskId === job.taskId).map((entry) => entry.id),
+        workKind: task.workKind,
+        layer: job.layer,
+        compute: job.compute.id,
+        tags: job.tags,
+        task: task
+      })
+    }), {
+      parents: [laneEventByLane.get(job.lane)?.id ?? created.id],
+      time
+    });
+    events.push(taskEvent);
+  }
+
+  return events;
+}
+
+export function createRunEventsFromSwarmLease(
+  lease: FrontierSwarmLease,
+  options: FrontierSwarmRunEventAdapterOptions & { job?: FrontierSwarmJob; eventType?: 'lease.requested' | 'lease.granted' | 'lease.released' } = {}
+): FrontierRunEvent[] {
+  const actorId = options.actorId ?? lease.workerId ?? 'frontier-swarm';
+  const runId = options.runId ?? options.job?.metadata?.runId as string | undefined ?? 'frontier-swarm';
+  const eventType = options.eventType ?? (lease.status === 'released' ? 'lease.released' : 'lease.granted');
+  const time = swarmRunEventTime(options, eventType === 'lease.released' ? options.now : lease.leasedAt);
+  const leaseNode = {
+    kind: 'lease' as const,
+    id: swarmRunLeaseNodeId(lease.id),
+    title: `Lease ${lease.jobId}`,
+    scopeId: options.job ? swarmRunTaskNodeId(options.job.taskId) : swarmRunTaskNodeId(lease.jobId),
+    leaseKey: options.job?.concurrencyKey ?? lease.jobId,
+    holderId: lease.workerId,
+    status: eventType === 'lease.released' ? 'released' as const : 'granted' as const,
+    requestedAt: new Date(lease.leasedAt).toISOString(),
+    grantedAt: new Date(lease.leasedAt).toISOString(),
+    releasedAt: eventType === 'lease.released' ? time : undefined,
+    metadata: pruneUndefinedJsonObject({
+      source: 'frontier-swarm.lease',
+      jobId: lease.jobId,
+      token: lease.token,
+      fencingToken: lease.fencingToken,
+      expiresAt: lease.expiresAt,
+      status: lease.status
+    })
+  };
+  return [createRunEvent({
+    runId,
+    actorId,
+    actorSeq: options.startActorSeq ?? 1,
+    parents: [...(options.parents ?? [])],
+    time,
+    type: eventType,
+    payload: pruneUndefinedJsonObject({
+      subjectId: options.job ? swarmRunTaskNodeId(options.job.taskId) : undefined,
+      lease: leaseNode
+    })
+  })];
+}
+
+export function createRunEventsFromSwarmResult(
+  resultInput: FrontierSwarmJobResult | FrontierSwarmJobResultInput,
+  options: FrontierSwarmRunEventAdapterOptions & { job?: FrontierSwarmJob } = {}
+): FrontierRunEvent[] {
+  const result = isSwarmJobResult(resultInput) ? cloneJsonValue(resultInput) as FrontierSwarmJobResult : normalizeResult(resultInput);
+  const job = options.job;
+  const runId = options.runId ?? 'frontier-swarm';
+  const actorId = options.actorId ?? 'frontier-swarm-worker';
+  const time = swarmRunEventTime(options, result.finishedAt ?? result.startedAt);
+  let actorSeq = options.startActorSeq ?? 1;
+  const parents = [...(options.parents ?? [])];
+  const events: FrontierRunEvent[] = [];
+  const attemptId = swarmRunAttemptNodeId(result.jobId);
+  const taskId = swarmRunTaskNodeId(job?.taskId ?? result.jobId);
+
+  const attemptEvent = createRunNodeEvent(runId, actorId, actorSeq++, defineRunAttempt({
+    id: attemptId,
+    title: job?.title ?? result.jobId,
+    taskId,
+    actorId,
+    runnerId: job?.compute.kind ?? job?.compute.id,
+    workspaceId: job?.worktreePath,
+    status: swarmResultStatusToAttemptStatus(result.status),
+    startedAt: result.startedAt ? new Date(result.startedAt).toISOString() : undefined,
+    endedAt: result.finishedAt ? new Date(result.finishedAt).toISOString() : undefined,
+    model: job?.compute.model,
+    reason: result.error,
+    metadata: pruneUndefinedJsonObject({
+      source: 'frontier-swarm.result',
+      jobId: result.jobId,
+      mergeReadiness: result.mergeReadiness,
+      mergeDisposition: result.mergeDisposition,
+      riskLevel: result.riskLevel,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      queueItemIds: result.queueItemIds,
+      semanticImport: result.semanticImport,
+      metadata: result.metadata
+    })
+  }), { parents, time });
+  events.push(attemptEvent);
+
+  let latestParents: FrontierRunEventId[] = [attemptEvent.id];
+  if (result.patchPath || result.changedPaths.length) {
+    const patchId = swarmRunPatchNodeId(result.jobId);
+    const patchEvent = createRunNodeEvent(runId, actorId, actorSeq++, defineRunPatch({
+      id: patchId,
+      title: `Patch ${result.jobId}`,
+      changedPaths: result.changedPaths,
+      artifactId: result.patchPath ? swarmRunArtifactNodeId(result.patchPath) : undefined,
+      summary: result.lastMessage,
+      risk: swarmRiskToRunRisk(result.riskLevel),
+      metadata: pruneUndefinedJsonObject({
+        source: 'frontier-swarm.result.patch',
+        patchPath: result.patchPath,
+        changedRegions: result.changedRegions,
+        ownershipViolations: result.ownershipViolations
+      })
+    }), { parents: latestParents, time });
+    events.push(patchEvent);
+    events.push(createRunEdgeEvent(runId, actorId, actorSeq++, linkRunNodes(attemptId, patchId, 'produces-patch', { createdAt: time }), {
+      parents: [patchEvent.id],
+      time
+    }));
+    if (result.patchPath) {
+      events.push(createRunEvent({
+        runId,
+        actorId,
+        actorSeq: actorSeq++,
+        parents: [patchEvent.id],
+        time,
+        type: 'artifact.attached',
+        payload: {
+          subjectId: patchId,
+          artifact: toJsonValue(defineRunArtifact({
+            id: swarmRunArtifactNodeId(result.patchPath),
+            title: result.patchPath,
+            artifactType: 'patch',
+            path: result.patchPath,
+            summary: `Patch artifact for ${result.jobId}`,
+            metadata: { source: 'frontier-swarm.result.patch-artifact', jobId: result.jobId }
+          }))
+        }
+      }));
+    }
+    latestParents = [patchEvent.id];
+  }
+
+  for (const evidencePath of result.evidencePaths) {
+    const artifactId = swarmRunArtifactNodeId(evidencePath);
+    const evidenceId = swarmRunEvidenceNodeId(result.jobId, evidencePath);
+    const artifactEvent = createRunEvent({
+      runId,
+      actorId,
+      actorSeq: actorSeq++,
+      parents: latestParents,
+      time,
+      type: 'artifact.attached',
+      payload: {
+        subjectId: attemptId,
+        artifact: toJsonValue(defineRunArtifact({
+          id: artifactId,
+          title: evidencePath,
+          artifactType: inferSwarmArtifactType(evidencePath),
+          path: evidencePath,
+          summary: `Evidence artifact for ${result.jobId}`,
+          metadata: { source: 'frontier-swarm.result.evidence-artifact', jobId: result.jobId }
+        }))
+      }
+    });
+    events.push(artifactEvent);
+    const evidenceEvent = createRunNodeEvent(runId, actorId, actorSeq++, defineRunEvidence({
+      id: evidenceId,
+      title: evidencePath,
+      evidenceType: inferSwarmArtifactType(evidencePath),
+      result: result.status === 'completed' || result.status === 'verified' ? 'pass' : result.status === 'failed' ? 'fail' : 'unknown',
+      artifactIds: [artifactId],
+      summary: `Evidence from ${result.jobId}`,
+      metadata: { source: 'frontier-swarm.result.evidence', jobId: result.jobId }
+    }), { parents: [artifactEvent.id], time });
+    events.push(evidenceEvent);
+    events.push(createRunEdgeEvent(runId, actorId, actorSeq++, linkRunNodes(attemptId, evidenceId, 'produces-evidence', { createdAt: time }), {
+      parents: [evidenceEvent.id],
+      time
+    }));
+  }
+
+  for (let index = 0; index < result.verification.length; index += 1) {
+    const verification = result.verification[index] as FrontierSwarmVerificationResult;
+    const verificationId = swarmRunVerificationNodeId(result.jobId, index, verification.name);
+    const verificationEvent = createRunNodeEvent(runId, actorId, actorSeq++, defineRunVerification({
+      id: verificationId,
+      title: verification.name,
+      status: verification.status === 0 ? 'passed' : verification.required === false && verification.status !== 0 ? 'skipped' : 'failed',
+      command: verification.command[0],
+      args: verification.command.slice(1),
+      cwd: verification.cwd,
+      exitCode: verification.status,
+      artifactIds: [],
+      required: verification.required,
+      summary: verification.commandLine,
+      metadata: pruneUndefinedJsonObject({
+        source: 'frontier-swarm.result.verification',
+        jobId: result.jobId,
+        durationMs: verification.durationMs,
+        stdoutTail: verification.stdoutTail,
+        stderrTail: verification.stderrTail,
+        category: verification.category,
+        metadata: verification.metadata
+      })
+    }), { parents: latestParents, time });
+    events.push(verificationEvent);
+    events.push(createRunEdgeEvent(runId, actorId, actorSeq++, linkRunNodes(attemptId, verificationId, 'verified-by', { createdAt: time }), {
+      parents: [verificationEvent.id],
+      time
+    }));
+  }
+
+  return events;
+}
+
+export function createRunEventsFromMergeBundle(
+  bundle: FrontierSwarmMergeBundle,
+  options: FrontierSwarmRunEventAdapterOptions = {}
+): FrontierRunEvent[] {
+  const runId = options.runId ?? bundle.runId ?? 'frontier-swarm';
+  const actorId = options.actorId ?? 'frontier-swarm-collector';
+  const time = swarmRunEventTime(options, bundle.generatedAt);
+  let actorSeq = options.startActorSeq ?? 1;
+  const parents = [...(options.parents ?? [])];
+  const events: FrontierRunEvent[] = [];
+  const patchId = swarmRunPatchNodeId(bundle.jobId);
+  const patchEvent = createRunNodeEvent(runId, actorId, actorSeq++, defineRunPatch({
+    id: patchId,
+    title: bundle.title ?? `Merge bundle ${bundle.jobId}`,
+    changedPaths: bundle.changedPaths,
+    artifactId: bundle.patchPath ? swarmRunArtifactNodeId(bundle.patchPath) : undefined,
+    summary: bundle.reasons.join('; '),
+    risk: swarmRiskToRunRisk(bundle.riskLevel),
+    metadata: pruneUndefinedJsonObject({
+      source: 'frontier-swarm.merge-bundle',
+      bundleId: bundle.id,
+      jobId: bundle.jobId,
+      taskId: bundle.taskId,
+      lane: bundle.lane,
+      mergeReadiness: bundle.mergeReadiness,
+      disposition: bundle.disposition,
+      autoMergeable: bundle.autoMergeable,
+      staleAgainstHead: bundle.staleAgainstHead,
+      changedRegions: bundle.changedRegions,
+      ownedFilesTouched: bundle.ownedFilesTouched,
+      ownershipViolations: bundle.ownershipViolations,
+      patchHash: bundle.patchHash,
+      branchName: bundle.branchName,
+      commit: bundle.commit,
+      semanticImport: bundle.semanticImport
+    })
+  }), { parents, time });
+  events.push(patchEvent);
+
+  if (bundle.patchPath) {
+    events.push(createRunEvent({
+      runId,
+      actorId,
+      actorSeq: actorSeq++,
+      parents: [patchEvent.id],
+      time,
+      type: 'artifact.attached',
+      payload: {
+        subjectId: patchId,
+        artifact: toJsonValue(defineRunArtifact({
+          id: swarmRunArtifactNodeId(bundle.patchPath),
+          title: bundle.patchPath,
+          artifactType: 'patch',
+          path: bundle.patchPath,
+          hash: bundle.patchHash,
+          summary: `Merge patch for ${bundle.jobId}`,
+          metadata: { source: 'frontier-swarm.merge-bundle.patch', bundleId: bundle.id }
+        }))
+      }
+    }));
+  }
+
+  for (const evidencePath of bundle.evidencePaths) {
+    events.push(createRunEvent({
+      runId,
+      actorId,
+      actorSeq: actorSeq++,
+      parents: [patchEvent.id],
+      time,
+      type: 'artifact.attached',
+      payload: {
+        subjectId: patchId,
+        artifact: toJsonValue(defineRunArtifact({
+          id: swarmRunArtifactNodeId(evidencePath),
+          title: evidencePath,
+          artifactType: inferSwarmArtifactType(evidencePath),
+          path: evidencePath,
+          summary: `Merge evidence for ${bundle.jobId}`,
+          metadata: { source: 'frontier-swarm.merge-bundle.evidence', bundleId: bundle.id }
+        }))
+      }
+    }));
+  }
+
+  const decisionKind = swarmDispositionToRunDecision(bundle.disposition, bundle.mergeReadiness);
+  const decisionEvent = createRunEvent({
+    runId,
+    actorId,
+    actorSeq: actorSeq++,
+    parents: [patchEvent.id],
+    time,
+    type: 'decision.recorded',
+    payload: {
+      decision: toJsonValue(defineRunDecision({
+        id: swarmRunDecisionNodeId(bundle.id || bundle.jobId),
+        title: `Merge decision ${bundle.jobId}`,
+        decision: decisionKind,
+        subjectIds: uniqueStrings([patchId, bundle.taskId ? swarmRunTaskNodeId(bundle.taskId) : undefined]),
+        actorId,
+        reason: bundle.reasons.join('; ') || bundle.disposition,
+        requiredActions: bundle.disposition === 'needs-port' ? ['human-port'] : bundle.staleAgainstHead ? ['rerun-against-head'] : [],
+        metadata: pruneUndefinedJsonObject({
+          source: 'frontier-swarm.merge-bundle.decision',
+          bundleId: bundle.id,
+          disposition: bundle.disposition,
+          mergeReadiness: bundle.mergeReadiness,
+          riskLevel: bundle.riskLevel,
+          autoMergeable: bundle.autoMergeable
+        })
+      }))
+    }
+  });
+  events.push(decisionEvent);
+  return events;
+}
+
+export function createRunEventsFromCoordinatorDecision(
+  decision: FrontierSwarmQueueOutcomeDecision | FrontierSwarmQueueOutcomeDecisionInput,
+  options: FrontierSwarmRunEventAdapterOptions = {}
+): FrontierRunEvent[] {
+  const normalized = createSwarmQueueOutcomeDecision(decision);
+  const runId = options.runId ?? 'frontier-swarm';
+  const actorId = options.actorId ?? 'frontier-swarm-coordinator';
+  const time = swarmRunEventTime(options, normalized.generatedAt);
+  const subjectIds = uniqueStrings([
+    normalized.jobId ? swarmRunAttemptNodeId(normalized.jobId) : undefined,
+    normalized.taskId ? swarmRunTaskNodeId(normalized.taskId) : undefined,
+    normalized.subjectId
+  ]);
+  return [createRunEvent({
+    runId,
+    actorId,
+    actorSeq: options.startActorSeq ?? 1,
+    parents: [...(options.parents ?? [])],
+    time,
+    type: 'decision.recorded',
+    payload: {
+      decision: toJsonValue(defineRunDecision({
+        id: swarmRunDecisionNodeId(normalized.id),
+        title: `Coordinator decision ${normalized.subjectId}`,
+        decision: swarmQueueOutcomeToRunDecision(normalized),
+        subjectIds,
+        actorId,
+        reason: normalized.reasons.join('; ') || normalized.outcome,
+        requiredActions: swarmQueueOutcomeRequiredActions(normalized),
+        metadata: pruneUndefinedJsonObject({
+          source: 'frontier-swarm.queue-outcome-decision',
+          decision: normalized.decision,
+          action: normalized.action,
+          assignedAction: normalized.assignedAction,
+          category: normalized.category,
+          outcome: normalized.outcome,
+          terminal: normalized.terminal,
+          queueItemIds: normalized.queueItemIds,
+          queueId: normalized.queueId,
+          lane: normalized.lane,
+          disposition: normalized.disposition,
+          mergeReadiness: normalized.mergeReadiness,
+          status: normalized.status,
+          conflictingJobIds: normalized.conflictingJobIds,
+          metadata: normalized.metadata
+        })
+      }))
+    }
+  })];
+}
+
+export function createRunProjectionFromSwarmRunEvents(
+  events: readonly FrontierRunEvent[],
+  options: FrontierSwarmRunProjectionOptions = {}
+): FrontierRunProjection {
+  return replayRunEvents(events, {
+    id: options.runId,
+    goal: options.goal,
+    metadata: toJsonObject(options.metadata)
+  });
+}
+
+export function createRunDashboardFromSwarmRun(
+  input: FrontierSwarmRun | readonly FrontierRunEvent[],
+  options: FrontierSwarmRunProjectionOptions = {}
+): FrontierRunDashboardSnapshot {
+  const events = isFrontierRunEventList(input) ? input : createRunEventsFromSwarmRun(input, options);
+  return createRunDashboardSnapshot(createRunProjectionFromSwarmRunEvents(events, options));
+}
+
+export function createRunEventsFromSwarmRun(
+  run: FrontierSwarmRun,
+  options: FrontierSwarmRunEventAdapterOptions = {}
+): FrontierRunEvent[] {
+  const runId = options.runId ?? run.id;
+  const actorId = options.actorId ?? 'frontier-swarm';
+  const created = createRunEvent({
+    runId,
+    actorId,
+    actorSeq: options.startActorSeq ?? 1,
+    parents: [...(options.parents ?? [])],
+    time: swarmRunEventTime(options, run.startedAt),
+    type: 'run.created',
+    payload: {
+      goal: run.metadata?.objective ?? run.metadata?.goal ?? `Frontier swarm ${run.id}`,
+      metadata: pruneUndefinedJsonObject({
+        source: 'frontier-swarm.run',
+        planId: run.planId,
+        manifestId: run.manifestId,
+        status: run.status,
+        summary: run.summary,
+        metadata: run.metadata
+      })
+    }
+  });
+  return [
+    created,
+    ...run.results.flatMap((result, index) => createRunEventsFromSwarmResult(result, {
+      runId,
+      actorId: 'frontier-swarm-worker',
+      startActorSeq: 1000 + index * 100,
+      parents: [created.id],
+      job: run.jobs.find((job) => job.id === result.jobId)
+    }))
+  ];
 }
 
 export function recordSwarmEvent(runInput: FrontierSwarmRun, eventInput: FrontierSwarmEventInput): FrontierSwarmRun {
@@ -15041,6 +15612,134 @@ function joinPathParts(...parts: readonly string[]): string {
     .map((part, index) => String(part).replace(index === 0 ? /\/+$/g : /^\/+|\/+$/g, ''))
     .filter(Boolean)
     .join('/');
+}
+
+function swarmRunEventTime(options: Pick<FrontierSwarmRunEventAdapterOptions, 'time' | 'now'>, fallback?: number): string {
+  if (options.time) return options.time;
+  const value = options.now ?? fallback;
+  return new Date(Number.isFinite(value) ? value as number : Date.now()).toISOString();
+}
+
+function isFrontierRunEventList(input: FrontierSwarmRun | readonly FrontierRunEvent[]): input is readonly FrontierRunEvent[] {
+  return Array.isArray(input);
+}
+
+function swarmRunLaneNodeId(lane: string): string {
+  return String(lane).startsWith('lane:') ? String(lane) : `lane:${lane}`;
+}
+
+function swarmRunTaskNodeId(taskId: string): string {
+  return String(taskId).startsWith('task:') ? String(taskId) : `task:${taskId}`;
+}
+
+function swarmRunAttemptNodeId(jobId: string): string {
+  return String(jobId).startsWith('attempt:') ? String(jobId) : `attempt:${jobId}`;
+}
+
+function swarmRunLeaseNodeId(leaseId: string): string {
+  return String(leaseId).startsWith('lease:') ? String(leaseId) : `lease:${leaseId}`;
+}
+
+function swarmRunPatchNodeId(jobId: string): string {
+  return String(jobId).startsWith('patch:') ? String(jobId) : `patch:${jobId}`;
+}
+
+function swarmRunArtifactNodeId(artifactPath: string): string {
+  return `artifact:${slug(artifactPath)}:${stableHash(artifactPath).slice('fnv1a32:'.length)}`;
+}
+
+function swarmRunEvidenceNodeId(jobId: string, evidencePath: string): string {
+  return `evidence:${slug(jobId)}:${stableHash(evidencePath).slice('fnv1a32:'.length)}`;
+}
+
+function swarmRunVerificationNodeId(jobId: string, index: number, name?: string): string {
+  return `verification:${slug(jobId)}:${index}:${slug(name || 'command')}`;
+}
+
+function swarmRunDecisionNodeId(id: string): string {
+  return String(id).startsWith('decision:') ? String(id) : `decision:${id}`;
+}
+
+function inferSwarmLanePackageId(jobs: readonly FrontierSwarmJob[]): string | undefined {
+  for (const job of jobs) {
+    const candidate = job.task.metadata?.packageId ?? job.metadata?.packageId ?? job.task.metadata?.package ?? job.metadata?.package;
+    if (typeof candidate === 'string' && candidate) return candidate;
+  }
+  return undefined;
+}
+
+function formatSwarmCommandLine(command: FrontierSwarmCommand): string {
+  return [command.command, ...command.args].join(' ');
+}
+
+function swarmStatusToRunStatus(status: string | undefined): FrontierRunStatus {
+  if (status === 'completed' || status === 'verified') return 'done';
+  if (status === 'failed' || status === 'rejected') return 'rejected';
+  if (status === 'blocked') return 'blocked';
+  if (status === 'running') return 'running';
+  if (status === 'planned') return 'planned';
+  return 'ready';
+}
+
+function swarmResultStatusToAttemptStatus(status: string): 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'timed-out' {
+  if (status === 'completed' || status === 'verified') return 'completed';
+  if (status === 'running') return 'running';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'timed-out' || status === 'timeout') return 'timed-out';
+  if (status === 'queued' || status === 'ready' || status === 'planned') return 'queued';
+  return 'failed';
+}
+
+function swarmRiskToRunRisk(risk: string): 'low' | 'medium' | 'high' {
+  if (risk === 'low' || risk === 'medium' || risk === 'high') return risk;
+  return 'medium';
+}
+
+function inferSwarmArtifactType(file: string): string {
+  const lower = file.toLowerCase();
+  if (lower.endsWith('.patch') || lower.endsWith('.diff')) return 'patch';
+  if (lower.endsWith('.json') || lower.endsWith('.jsonl')) return 'json';
+  if (lower.endsWith('.log') || lower.endsWith('.txt') || lower.includes('stdout') || lower.includes('stderr')) return 'log';
+  if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp')) return 'image';
+  return 'artifact';
+}
+
+function swarmDispositionToRunDecision(
+  disposition: FrontierSwarmMergeDisposition,
+  readiness?: FrontierSwarmMergeReadiness
+): FrontierRunDecisionKind {
+  if (disposition === 'auto-mergeable' || readiness === 'verified-patch') return 'apply';
+  if (disposition === 'stale-against-head') return 'rerun';
+  if (disposition === 'rejected' || readiness === 'rejected') return 'reject';
+  if (disposition === 'needs-port' || disposition === 'blocked' || readiness === 'blocked') return 'human-question';
+  return 'record-only';
+}
+
+function swarmQueueOutcomeToRunDecision(decision: FrontierSwarmQueueOutcomeDecision): FrontierRunDecisionKind {
+  if (decision.outcome === 'applied' || decision.decision === 'applied' || decision.action === 'apply-local') return 'apply';
+  if (decision.outcome === 'rerun' || decision.decision === 'rerun' || decision.staleOrRerun) return 'rerun';
+  if (decision.outcome === 'rejected' || decision.decision === 'rejected') return 'reject';
+  if (decision.action === 'promote') return 'promote';
+  if (decision.humanBlocked || decision.outcome === 'human-blocked') return 'human-question';
+  return 'record-only';
+}
+
+function swarmQueueOutcomeRequiredActions(decision: FrontierSwarmQueueOutcomeDecision): string[] {
+  const actions: string[] = [];
+  if (decision.coordinatorReview || decision.reviewDebt) actions.push('coordinator-review');
+  if (decision.humanBlocked) actions.push('human-answer');
+  if (decision.staleOrRerun) actions.push('rerun');
+  if (decision.conflict) actions.push('resolve-conflict');
+  return uniqueStrings(actions);
+}
+
+function pruneUndefinedJsonObject(value: Record<string, unknown>): JsonObject {
+  const out: Record<string, JsonValue> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) continue;
+    out[key] = toJsonValue(entry);
+  }
+  return out as JsonObject;
 }
 
 function normalizeId(value: string, label: string): string {

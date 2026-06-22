@@ -90,6 +90,13 @@ import {
   createSwarmPanelEvaluation,
   createSwarmOptimizationSummary,
   createSwarmProgressModel,
+  createRunDashboardFromSwarmRun,
+  createRunEventsFromCoordinatorDecision,
+  createRunEventsFromMergeBundle,
+  createRunEventsFromSwarmLease,
+  createRunEventsFromSwarmPlan,
+  createRunEventsFromSwarmResult,
+  createRunProjectionFromSwarmRunEvents,
   createSwarmSemanticOwnershipStableKey,
   createSwarmSemanticOwnershipRegionId,
   createSwarmSemanticChange,
@@ -1803,6 +1810,44 @@ assert.strictEqual(run.summary.completedCount, 1);
 const jsonl = encodeSwarmJsonl([plan, run]);
 assert.strictEqual(decodeSwarmJsonl(jsonl).length, 2);
 assert.ok(createSwarmProof(run, { generatedAt: 20, validation: plan.validation }).hash.length > 0);
+const runAdapterPlanEvents = createRunEventsFromSwarmPlan(plan, {
+  actorId: 'adapter-test',
+  time: '2026-06-22T00:00:00.000Z'
+});
+const runAdapterLeases = createSwarmLeases({
+  schedule: createSwarmSchedule(plan),
+  workerId: 'worker-adapter',
+  now: 13,
+  count: 1
+});
+const runAdapterLeaseEvents = createRunEventsFromSwarmLease(runAdapterLeases[0], {
+  runId: plan.runId,
+  job: plan.jobs[0],
+  actorId: 'worker-adapter',
+  startActorSeq: 100,
+  parents: [runAdapterPlanEvents[0].id],
+  time: '2026-06-22T00:00:01.000Z'
+});
+const runAdapterResultEvents = createRunEventsFromSwarmResult(run.results[0], {
+  runId: plan.runId,
+  job: plan.jobs[0],
+  actorId: 'worker-adapter',
+  startActorSeq: 200,
+  parents: [runAdapterLeaseEvents[0].id],
+  time: '2026-06-22T00:00:02.000Z'
+});
+const runAdapterProjection = createRunProjectionFromSwarmRunEvents([
+  ...runAdapterPlanEvents,
+  ...runAdapterLeaseEvents,
+  ...runAdapterResultEvents
+], { runId: plan.runId });
+assert.strictEqual(runAdapterProjection.run.graph.nodes['lane:runtime'].kind, 'lane');
+assert.strictEqual(runAdapterProjection.run.graph.nodes[`task:${plan.jobs[0].taskId}`].kind, 'task');
+assert.strictEqual(runAdapterProjection.run.graph.nodes[`attempt:${plan.jobs[0].id}`].kind, 'attempt');
+assert.ok(Object.values(runAdapterProjection.run.graph.nodes).some((node) => node.kind === 'evidence'));
+const runAdapterDashboard = createRunDashboardFromSwarmRun(run, { runId: run.id });
+assert.strictEqual(runAdapterDashboard.kind, 'frontier.run.dashboard');
+assert.strictEqual(runAdapterDashboard.counts.attempt, 1);
 
 const invalid = validateSwarmManifest({
   compute: [{ id: 'known' }],
@@ -2570,6 +2615,31 @@ assert.deepStrictEqual(mergeBundle.traceShards, [{ kind: 'trace-summary', spanCo
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageId, 'frontier-swarm');
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packagePath, 'packages/frontier-swarm');
 assert.strictEqual(mergeBundle.metadata.verificationGates[0].metadata.packageName, '@shapeshift-labs/frontier-swarm');
+const mergeBundleRunEvents = createRunEventsFromMergeBundle(mergeBundle, {
+  runId: scaleRun.id,
+  actorId: 'collector',
+  time: '2026-06-22T00:01:00.000Z'
+});
+const coordinatorDecisionEvents = createRunEventsFromCoordinatorDecision(createSwarmQueueOutcomeDecision({
+  jobId: firstScaleJob.id,
+  taskId: firstScaleJob.taskId,
+  decision: 'applied',
+  outcome: 'applied',
+  reasons: ['adapter smoke'],
+  generatedAt: 22
+}), {
+  runId: scaleRun.id,
+  actorId: 'coordinator',
+  startActorSeq: 50,
+  parents: [mergeBundleRunEvents.at(-1).id],
+  time: '2026-06-22T00:01:01.000Z'
+});
+const mergeProjection = createRunProjectionFromSwarmRunEvents([
+  ...mergeBundleRunEvents,
+  ...coordinatorDecisionEvents
+], { runId: scaleRun.id });
+assert.ok(Object.values(mergeProjection.run.graph.nodes).some((node) => node.kind === 'patch'));
+assert.ok(Object.values(mergeProjection.run.graph.nodes).some((node) => node.kind === 'decision' && node.decision === 'apply'));
 const verificationMetadataBundle = createSwarmMergeBundle({
   job: firstScaleJob,
   result: {

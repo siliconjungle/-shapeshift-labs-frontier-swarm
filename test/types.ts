@@ -59,6 +59,13 @@ import {
   checkSwarmBudget,
   createSwarmPlan,
   createSwarmRun,
+  createRunDashboardFromSwarmRun,
+  createRunEventsFromCoordinatorDecision,
+  createRunEventsFromMergeBundle,
+  createRunEventsFromSwarmLease,
+  createRunEventsFromSwarmPlan,
+  createRunEventsFromSwarmResult,
+  createRunProjectionFromSwarmRunEvents,
   createSwarmOptimizationSummary,
   classifySwarmQueueOutcome,
   collapseSwarmQueueOutcomeDecisions,
@@ -294,6 +301,21 @@ const checkpoint = createSwarmRunCheckpoint(run);
 const reviewPlan: FrontierSwarmReviewPlan = createSwarmReviewPlan({ plan, run, reviewers: ['reviewer'] });
 const mergePlan: FrontierSwarmMergePlan = createSwarmMergePlan({ plan, run, reviewPlan });
 const mergeBundle: FrontierSwarmMergeBundle = createSwarmMergeBundle({ job: plan.jobs[0], result: run.results[0] });
+const frontierRunPlanEvents = createRunEventsFromSwarmPlan(plan);
+const frontierRunLeaseEvents = createRunEventsFromSwarmLease(leases[0], { runId: plan.runId, job: plan.jobs[0] });
+const frontierRunResultEvents = createRunEventsFromSwarmResult(run.results[0], { runId: plan.runId, job: plan.jobs[0] });
+const frontierRunMergeEvents = createRunEventsFromMergeBundle(mergeBundle, { runId: plan.runId });
+const frontierRunDecisionEvents = createRunEventsFromCoordinatorDecision({ jobId: plan.jobs[0].id, decision: 'applied' }, { runId: plan.runId });
+const frontierRunProjection = createRunProjectionFromSwarmRunEvents([
+  ...frontierRunPlanEvents,
+  ...frontierRunLeaseEvents,
+  ...frontierRunResultEvents,
+  ...frontierRunMergeEvents,
+  ...frontierRunDecisionEvents
+], { runId: plan.runId });
+const frontierRunDashboard = createRunDashboardFromSwarmRun(run, { runId: run.id });
+frontierRunProjection.run.id satisfies string;
+frontierRunDashboard.counts satisfies Record<string, number>;
 const adaptiveLoadPlan = createSwarmAdaptiveLoadPlan({
   plan,
   observations: [{ severity: 'warning', reason: 'load spike' }]
