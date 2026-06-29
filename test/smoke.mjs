@@ -11,6 +11,7 @@ import {
   FRONTIER_SWARM_PATCH_EVENT_KIND,
   FRONTIER_SWARM_PRIORITY_POLICY_KIND,
   FRONTIER_SWARM_QUEUE_OUTCOME_MODEL_KIND,
+  FRONTIER_SWARM_MERGE_METRICS_FEEDBACK_KIND,
   FRONTIER_SWARM_REPLAY_RECORD_KIND,
   FRONTIER_SWARM_IMPROVEMENT_LOOP_KIND,
   FRONTIER_SWARM_RUN_GRAPH_KIND,
@@ -71,6 +72,8 @@ import {
   validateSwarmCoordinatorSemanticLeaseFence,
   createSwarmLanePlaybook,
   createSwarmMergeAdmission,
+  createSwarmMergeMetricWorkEvents,
+  createSwarmMergeMetricsFeedback,
   createSwarmMergeCandidate,
   createSwarmMergeCandidateGraph,
   createSwarmManifest,
@@ -3233,6 +3236,29 @@ assert.strictEqual(regionIndex.entries.find((entry) => entry.jobId === regionBun
 const sameRegionIndex = createSwarmMergeIndex({ bundles: [regionBundleA, sameRegionBundle], generatedAt: 6150 });
 assert.strictEqual(sameRegionIndex.summary.conflictCount, 1);
 assert.deepStrictEqual(sameRegionIndex.entries.find((entry) => entry.jobId === sameRegionBundle.jobId).conflictingJobIds, [regionBundleA.jobId]);
+const mergeMetricEvents = createSwarmMergeMetricWorkEvents({
+  index: sameRegionIndex,
+  runId: 'run-merge-metrics',
+  baseRef: 'HEAD~1',
+  headRef: 'HEAD',
+  generatedAt: 6155
+});
+assert.strictEqual(mergeMetricEvents.length, 2);
+assert.strictEqual(mergeMetricEvents.every((event) => event.outcome === 'conflict'), true);
+assert.ok(mergeMetricEvents.every((event) => event.changedRegions.some((region) => region.key === 'content.docs')));
+const mergeMetricsFeedback = createSwarmMergeMetricsFeedback({
+  index: sameRegionIndex,
+  runId: 'run-merge-metrics',
+  options: { minTouches: 2, minTasks: 2 },
+  generatedAt: 6160
+});
+assert.strictEqual(mergeMetricsFeedback.kind, FRONTIER_SWARM_MERGE_METRICS_FEEDBACK_KIND);
+assert.strictEqual(mergeMetricsFeedback.summary.eventCount, 2);
+assert.ok(mergeMetricsFeedback.report.summary.outcomeCounts.conflict >= 2);
+assert.ok(mergeMetricsFeedback.feedback.avoidConcurrentRegionKeys.includes('content.docs'));
+assert.ok(mergeMetricsFeedback.feedback.preferredLeaseKeys.includes('content.docs'));
+assert.ok(mergeMetricsFeedback.semanticLeaseHints.some((hint) => hint.leaseKey === 'content.docs'));
+assert.ok(mergeMetricsFeedback.routingFeedback.some((entry) => entry.tags.includes('merge-metrics')));
 const crossScopeIndex = createSwarmMergeIndex({ bundles: [crossScopeBundle], generatedAt: 6160 });
 assert.strictEqual(crossScopeIndex.summary.conflictCount, 0);
 const highRiskIndex = createSwarmMergeIndex({ bundles: [highRiskBundle], generatedAt: 6170 });

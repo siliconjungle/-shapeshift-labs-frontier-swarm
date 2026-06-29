@@ -1,5 +1,14 @@
 import type { JsonObject, JsonValue } from '@shapeshift-labs/frontier';
 import {
+  analyzeCorrelatedWork,
+  type FrontierMergeMetricCorrelatedWorkOptions,
+  type FrontierMergeMetricCorrelatedWorkReport,
+  type FrontierMergeMetricWorkEvent,
+  type FrontierMergeMetricWorkOutcome,
+  type FrontierMergeMetricWorkRegion,
+  type FrontierMergeMetricWorkRegionKind
+} from '@shapeshift-labs/frontier-merge-metrics';
+import {
   createRunDashboardSnapshot,
   createRunEdgeEvent,
   createRunEvent,
@@ -96,6 +105,8 @@ export const FRONTIER_SWARM_MERGE_INDEX_KIND = 'frontier.swarm.merge-index';
 export const FRONTIER_SWARM_MERGE_INDEX_VERSION = 1;
 export const FRONTIER_SWARM_HOTSPOT_REPORT_KIND = 'frontier.swarm.hotspot-report';
 export const FRONTIER_SWARM_HOTSPOT_REPORT_VERSION = 1;
+export const FRONTIER_SWARM_MERGE_METRICS_FEEDBACK_KIND = 'frontier.swarm.merge-metrics-feedback';
+export const FRONTIER_SWARM_MERGE_METRICS_FEEDBACK_VERSION = 1;
 export const FRONTIER_SWARM_REVIEWER_LANE_PLAN_KIND = 'frontier.swarm.reviewer-lane-plan';
 export const FRONTIER_SWARM_REVIEWER_LANE_PLAN_VERSION = 1;
 export const FRONTIER_SWARM_RUN_STORE_SHARDS_KIND = 'frontier.swarm.run-store-shards';
@@ -2659,6 +2670,66 @@ export interface FrontierSwarmHotspotRecommendation {
   suggestedModuleId: string;
   suggestedOwnershipRegions: string[];
   jobIds: string[];
+}
+
+export interface FrontierSwarmMergeMetricWorkEventInput {
+  runId?: string;
+  planId?: string;
+  baseRef?: string;
+  headRef?: string;
+  agentId?: string;
+  bundles?: readonly FrontierSwarmMergeBundle[];
+  index?: FrontierSwarmMergeIndex;
+  events?: readonly FrontierMergeMetricWorkEvent[];
+  generatedAt?: number;
+  metadata?: unknown;
+}
+
+export interface FrontierSwarmMergeMetricsFeedbackInput extends FrontierSwarmMergeMetricWorkEventInput {
+  id?: string;
+  options?: FrontierMergeMetricCorrelatedWorkOptions;
+}
+
+export interface FrontierSwarmMergeMetricsLeaseHint {
+  leaseKey: string;
+  regionKeys: string[];
+  severity: 'low' | 'medium' | 'high';
+  reason: string;
+}
+
+export interface FrontierSwarmMergeMetricsTaskSplitHint {
+  regionKeys: string[];
+  severity: 'low' | 'medium' | 'high';
+  reason: string;
+  taskHint?: string;
+}
+
+export interface FrontierSwarmMergeMetricsFeedback {
+  kind: typeof FRONTIER_SWARM_MERGE_METRICS_FEEDBACK_KIND;
+  version: typeof FRONTIER_SWARM_MERGE_METRICS_FEEDBACK_VERSION;
+  id: string;
+  generatedAt: number;
+  runId?: string;
+  planId?: string;
+  eventCount: number;
+  events: FrontierMergeMetricWorkEvent[];
+  report: FrontierMergeMetricCorrelatedWorkReport;
+  semanticLeaseHints: FrontierSwarmMergeMetricsLeaseHint[];
+  taskSplitHints: FrontierSwarmMergeMetricsTaskSplitHint[];
+  routingFeedback: FrontierSwarmModelRoutingFeedback[];
+  feedback: FrontierMergeMetricCorrelatedWorkReport['feedback'];
+  summary: {
+    eventCount: number;
+    correlatedRegionCount: number;
+    correlatedPairCount: number;
+    suggestionCount: number;
+    highSeveritySuggestionCount: number;
+    preferredLeaseKeyCount: number;
+    avoidConcurrentRegionKeyCount: number;
+    splitTaskRegionKeyCount: number;
+    refactorCandidateRegionKeyCount: number;
+  };
+  metadata?: JsonObject;
 }
 
 export interface FrontierSwarmReviewerLanePlanInput {
@@ -7933,6 +8004,279 @@ export function createSwarmHotspotReport(input: FrontierSwarmHotspotReportInput 
     },
     ...(toJsonObject(input.metadata) ? { metadata: toJsonObject(input.metadata) } : {})
   };
+}
+
+export function createSwarmMergeMetricWorkEvents(input: FrontierSwarmMergeMetricWorkEventInput = {}): FrontierMergeMetricWorkEvent[] {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const completedAt = new Date(generatedAt).toISOString();
+  const events: FrontierMergeMetricWorkEvent[] = [];
+  const entriesByJob = new Map((input.index?.entries ?? []).map((entry) => [entry.jobId, entry]));
+  const sourceBundles = input.bundles ?? [];
+  const sourceEntries = input.index && sourceBundles.length === 0 ? input.index.entries : [];
+  for (const bundle of sourceBundles) {
+    const entry = entriesByJob.get(bundle.jobId);
+    events.push(swarmMergeMetricWorkEventFromBundle(bundle, {
+      entry,
+      runId: input.runId ?? bundle.runId ?? input.index?.runId,
+      planId: input.planId ?? bundle.planId ?? input.index?.planId,
+      baseRef: input.baseRef,
+      headRef: input.headRef,
+      agentId: input.agentId,
+      completedAt,
+      metadata: input.metadata
+    }));
+  }
+  for (const entry of sourceEntries) {
+    events.push(swarmMergeMetricWorkEventFromMergeIndexEntry(entry, {
+      runId: input.runId ?? input.index?.runId,
+      planId: input.planId ?? input.index?.planId,
+      baseRef: input.baseRef,
+      headRef: input.headRef,
+      agentId: input.agentId,
+      completedAt,
+      metadata: input.metadata
+    }));
+  }
+  return [...events, ...(input.events ?? [])];
+}
+
+export function createSwarmMergeMetricsFeedback(input: FrontierSwarmMergeMetricsFeedbackInput = {}): FrontierSwarmMergeMetricsFeedback {
+  const generatedAt = input.generatedAt ?? Date.now();
+  const generatedAtIso = new Date(generatedAt).toISOString();
+  const events = createSwarmMergeMetricWorkEvents({ ...input, generatedAt });
+  const report = analyzeCorrelatedWork({ events }, { generatedAt: generatedAtIso, ...(input.options ?? {}) });
+  const semanticLeaseHints = report.suggestions
+    .filter((suggestion) => suggestion.action === 'lease' || suggestion.leaseKeys?.length)
+    .flatMap((suggestion) => {
+      const leaseKeys = suggestion.leaseKeys?.length ? suggestion.leaseKeys : suggestion.regionKeys;
+      return leaseKeys.map((leaseKey) => ({
+        leaseKey,
+        regionKeys: [...suggestion.regionKeys],
+        severity: suggestion.severity,
+        reason: suggestion.reason
+      }));
+    });
+  const taskSplitHints = report.suggestions
+    .filter((suggestion) => suggestion.action === 'split-task' || suggestion.action === 'route')
+    .map((suggestion) => ({
+      regionKeys: [...suggestion.regionKeys],
+      severity: suggestion.severity,
+      reason: suggestion.reason,
+      ...(suggestion.taskHint ? { taskHint: suggestion.taskHint } : {})
+    }));
+  const routingFeedback = report.suggestions.map((suggestion) => createSwarmModelRoutingFeedback({
+    scope: 'repository',
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.planId ? { planId: input.planId } : {}),
+    taskKind: 'semantic-merge',
+    workKind: 'semantic-merge',
+    resultStatus: `merge-metrics:${suggestion.action}`,
+    riskLevel: suggestion.severity === 'high' ? 'high' : suggestion.severity === 'medium' ? 'medium' : 'low',
+    evidenceQuality: {
+      band: report.summary.eventCount > 0 ? 'adequate' : 'missing',
+      score: Math.min(1, Math.max(0, suggestion.regionKeys.length / 4)),
+      confidence: suggestion.severity === 'high' ? 'high' : suggestion.severity === 'medium' ? 'medium' : 'low',
+      deterministic: true,
+      verifierKinds: ['merge-metrics']
+    },
+    tags: ['merge-metrics', suggestion.action, suggestion.severity],
+    generatedAt,
+    metadata: {
+      suggestionId: suggestion.id,
+      action: suggestion.action,
+      regionKeys: [...suggestion.regionKeys],
+      ...(suggestion.leaseKeys?.length ? { leaseKeys: [...suggestion.leaseKeys] } : {}),
+      reason: suggestion.reason
+    }
+  }));
+  const metadata = mergeSwarmMetadata([input.metadata, {
+    source: 'frontier-swarm-merge-metrics-feedback',
+    reportKind: report.kind,
+    reportGeneratedAt: report.generatedAt
+  }]);
+  return {
+    kind: FRONTIER_SWARM_MERGE_METRICS_FEEDBACK_KIND,
+    version: FRONTIER_SWARM_MERGE_METRICS_FEEDBACK_VERSION,
+    id: input.id ?? 'swarm-merge-metrics-feedback:' + stableHash([input.runId, input.planId, events, report.feedback, generatedAt]),
+    generatedAt,
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.planId ? { planId: input.planId } : {}),
+    eventCount: events.length,
+    events,
+    report,
+    semanticLeaseHints,
+    taskSplitHints,
+    routingFeedback,
+    feedback: report.feedback,
+    summary: {
+      eventCount: report.summary.eventCount,
+      correlatedRegionCount: report.summary.correlatedRegionCount,
+      correlatedPairCount: report.summary.correlatedPairCount,
+      suggestionCount: report.summary.suggestionCount,
+      highSeveritySuggestionCount: report.summary.highSeveritySuggestionCount,
+      preferredLeaseKeyCount: report.feedback.preferredLeaseKeys.length,
+      avoidConcurrentRegionKeyCount: report.feedback.avoidConcurrentRegionKeys.length,
+      splitTaskRegionKeyCount: report.feedback.splitTaskRegionKeys.length,
+      refactorCandidateRegionKeyCount: report.feedback.refactorCandidateRegionKeys.length
+    },
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function swarmMergeMetricWorkEventFromBundle(
+  bundle: FrontierSwarmMergeBundle,
+  context: {
+    entry?: FrontierSwarmMergeIndexEntry;
+    runId?: string;
+    planId?: string;
+    baseRef?: string;
+    headRef?: string;
+    agentId?: string;
+    completedAt: string;
+    metadata?: unknown;
+  }
+): FrontierMergeMetricWorkEvent {
+  const outcome = context.entry
+    ? swarmMergeMetricOutcomeFromMergeIndexEntry(context.entry)
+    : swarmMergeMetricOutcomeFromBundle(bundle);
+  const metadata = mergeSwarmMetadata([context.metadata, bundle.metadata, {
+    planId: context.planId,
+    mergeBundleId: bundle.id,
+    disposition: bundle.disposition,
+    mergeReadiness: bundle.mergeReadiness,
+    riskLevel: bundle.riskLevel,
+    staleAgainstHead: bundle.staleAgainstHead,
+    autoMergeable: bundle.autoMergeable,
+    reasonCount: bundle.reasons.length,
+    conflictingJobIds: context.entry?.conflictingJobIds ?? []
+  }]);
+  return {
+    id: `swarm-merge-metric-event:${bundle.jobId}`,
+    ...(context.runId ? { runId: context.runId } : {}),
+    ...(bundle.taskId ? { taskId: bundle.taskId } : {}),
+    jobId: bundle.jobId,
+    ...(context.agentId ?? bundle.branchName ? { agentId: context.agentId ?? bundle.branchName } : {}),
+    ...(bundle.lane ? { lane: bundle.lane } : {}),
+    ...(context.baseRef ? { baseRef: context.baseRef } : {}),
+    ...(context.headRef ?? bundle.commit ? { headRef: context.headRef ?? bundle.commit } : {}),
+    completedAt: context.completedAt,
+    changedPaths: [...bundle.changedPaths],
+    changedRegions: swarmMergeMetricRegions(bundle.changedRegions, bundle.changedPaths),
+    outcome,
+    evidenceRefs: [...bundle.evidencePaths],
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function swarmMergeMetricWorkEventFromMergeIndexEntry(
+  entry: FrontierSwarmMergeIndexEntry,
+  context: {
+    runId?: string;
+    planId?: string;
+    baseRef?: string;
+    headRef?: string;
+    agentId?: string;
+    completedAt: string;
+    metadata?: unknown;
+  }
+): FrontierMergeMetricWorkEvent {
+  const metadata = mergeSwarmMetadata([context.metadata, entry.metadata, {
+    planId: context.planId,
+    mergeDisposition: entry.disposition,
+    mergeReadiness: entry.mergeReadiness,
+    riskLevel: entry.riskLevel,
+    patchStatus: entry.patchStatus,
+    staleAgainstHead: entry.staleAgainstHead,
+    autoMergeable: entry.autoMergeable,
+    conflictingJobIds: entry.conflictingJobIds,
+    conflictKeys: entry.conflictKeys
+  }]);
+  return {
+    id: `swarm-merge-metric-event:${entry.jobId}`,
+    ...(context.runId ? { runId: context.runId } : {}),
+    ...(entry.taskId ? { taskId: entry.taskId } : {}),
+    jobId: entry.jobId,
+    ...(context.agentId ? { agentId: context.agentId } : {}),
+    ...(entry.lane ? { lane: entry.lane } : {}),
+    ...(context.baseRef ? { baseRef: context.baseRef } : {}),
+    ...(context.headRef ? { headRef: context.headRef } : {}),
+    completedAt: context.completedAt,
+    changedPaths: [...entry.changedPaths],
+    changedRegions: swarmMergeMetricRegions(entry.changedRegions, entry.changedPaths),
+    outcome: swarmMergeMetricOutcomeFromMergeIndexEntry(entry),
+    evidenceRefs: [...entry.evidencePaths],
+    ...(metadata ? { metadata } : {})
+  };
+}
+
+function swarmMergeMetricOutcomeFromBundle(bundle: FrontierSwarmMergeBundle): FrontierMergeMetricWorkOutcome {
+  if (bundle.staleAgainstHead || bundle.disposition === 'stale-against-head') return 'stale';
+  if (bundle.commandsFailed.length > 0) return 'gate-failed';
+  if (bundle.ownershipViolations.length > 0) return 'rejected';
+  if (bundle.disposition === 'rejected' || bundle.disposition === 'blocked') return 'rejected';
+  if (bundle.disposition === 'needs-port') return 'human-needed';
+  if (bundle.disposition === 'discovery-only') return 'research-complete';
+  if (bundle.patchPath === undefined && bundle.changedPaths.length === 0 && bundle.changedRegions.length === 0) return 'no-change';
+  if (bundle.autoMergeable) return 'clean-apply';
+  return 'unknown';
+}
+
+function swarmMergeMetricOutcomeFromMergeIndexEntry(entry: FrontierSwarmMergeIndexEntry): FrontierMergeMetricWorkOutcome {
+  if (entry.staleAgainstHead || entry.disposition === 'stale-against-head' || entry.patchStatus === 'stale') return 'stale';
+  if (entry.conflictingJobIds.length > 0) return 'conflict';
+  if (entry.ownershipViolations.length > 0 || entry.disposition === 'rejected' || entry.disposition === 'blocked') return 'rejected';
+  if (entry.disposition === 'needs-port') return 'human-needed';
+  if (entry.disposition === 'discovery-only') return 'research-complete';
+  if (entry.patchStatus === 'failed-check') return 'gate-failed';
+  if (entry.autoMergeable) return 'clean-apply';
+  return 'unknown';
+}
+
+function swarmMergeMetricRegions(regions: readonly string[], paths: readonly string[]): FrontierMergeMetricWorkRegion[] {
+  const semanticRegions = regions.map((region) => swarmMergeMetricRegionFromSwarmRegion(region));
+  const fileRegions = paths.map((file) => ({ kind: 'file' as const, file, key: `file|file=${file}` }));
+  const byKey = new Map<string, FrontierMergeMetricWorkRegion>();
+  for (const region of [...semanticRegions, ...fileRegions]) byKey.set(region.key ?? stableHash(region), region);
+  return Array.from(byKey.values()).sort((left, right) => String(left.key ?? '').localeCompare(String(right.key ?? '')));
+}
+
+function swarmMergeMetricRegionFromSwarmRegion(region: string): FrontierMergeMetricWorkRegion {
+  const marker = '#semanticOwnershipRegion:';
+  const markerIndex = region.indexOf(marker);
+  const file = markerIndex >= 0 ? region.slice(0, markerIndex) : undefined;
+  const stableKey = markerIndex >= 0 ? region.slice(markerIndex + marker.length) : region;
+  const kind = swarmMergeMetricRegionKind(stableKey);
+  const symbol = swarmMergeMetricRegionSymbol(stableKey);
+  return {
+    key: region,
+    kind,
+    ...(file ? { file } : {}),
+    ...(symbol ? { symbol } : {}),
+    leaseKey: `merge:semantic:${region}`
+  };
+}
+
+function swarmMergeMetricRegionKind(stableKey: string): FrontierMergeMetricWorkRegionKind {
+  const normalized = stableKey.toLowerCase();
+  if (normalized.includes('css-selector') || normalized.includes('selector')) return 'css-selector';
+  if (normalized.includes('custom-property')) return 'css-custom-property';
+  if (normalized.includes('html') || normalized.includes('element')) return 'html-element';
+  if (normalized.startsWith('export') || normalized.includes(':export:')) return 'export';
+  if (normalized.startsWith('type') || normalized.includes(':type:') || normalized.includes('interface')) return 'type';
+  if (normalized.includes('class')) return 'class';
+  if (normalized.includes('method')) return 'method';
+  if (normalized.includes('function')) return 'function';
+  if (normalized.includes('test')) return 'test';
+  if (normalized.includes('fixture')) return 'fixture-family';
+  if (normalized.includes('public') || normalized.includes('api')) return 'public-api';
+  if (normalized.includes('package')) return 'package';
+  return 'semantic-region';
+}
+
+function swarmMergeMetricRegionSymbol(stableKey: string): string | undefined {
+  const parts = stableKey.split(':').map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return undefined;
+  return parts[parts.length - 1];
 }
 
 export function createSwarmReviewerLanePlan(input: FrontierSwarmReviewerLanePlanInput): FrontierSwarmReviewerLanePlan {

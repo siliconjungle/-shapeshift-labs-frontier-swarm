@@ -53,6 +53,8 @@ import {
   createSwarmReviewPlan,
   createSwarmMergeIndex,
   createSwarmMergeAdmission,
+  createSwarmMergeMetricWorkEvents,
+  createSwarmMergeMetricsFeedback,
   classifySwarmMergeCandidateAdmission,
   createSwarmHierarchicalMergeQueue,
   createSwarmSemanticLeaseStateForMergeQueue,
@@ -177,6 +179,7 @@ import {
   type FrontierSwarmMergeIndex,
   type FrontierSwarmMergeAdmission,
   type FrontierSwarmMergeAdmissionPressure,
+  type FrontierSwarmMergeMetricsFeedback,
   type FrontierSwarmMergePlan,
   type FrontierSwarmMergeQueueAssignment,
   type FrontierSwarmMergeQueueRetrySlice,
@@ -387,6 +390,10 @@ const dashboard = createSwarmCoordinatorDashboard({
 const queriedDashboard = querySwarmCoordinatorDashboard(dashboard);
 const queueOverlay: FrontierSwarmQueueOverlay = createSwarmQueueOverlay({ bundles: [mergeBundle] });
 const mergeIndex: FrontierSwarmMergeIndex = createSwarmMergeIndex({ bundles: [mergeBundle] });
+const mergeMetricEvents = createSwarmMergeMetricWorkEvents({ index: mergeIndex, runId: plan.runId });
+const mergeMetricsFeedback: FrontierSwarmMergeMetricsFeedback = createSwarmMergeMetricsFeedback({ index: mergeIndex, runId: plan.runId });
+mergeMetricEvents[0]?.changedRegions satisfies readonly unknown[] | undefined;
+mergeMetricsFeedback.feedback.preferredLeaseKeys satisfies readonly string[];
 const admission: FrontierSwarmMergeAdmission = createSwarmMergeAdmission({ index: mergeIndex, maxReady: 1 });
 const hierarchicalQueue: FrontierSwarmHierarchicalMergeQueue = createSwarmHierarchicalMergeQueue({ index: mergeIndex, admission });
 const coordinatorDrainWork: FrontierSwarmCoordinatorAgentDrainWork = createSwarmCoordinatorAgentDrainWork({ queue: hierarchicalQueue });
